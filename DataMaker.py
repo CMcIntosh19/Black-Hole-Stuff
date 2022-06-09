@@ -5,32 +5,6 @@ Created on Fri May 27 18:20:12 2022
 @author: hepiz
 """
 
-'''
-Okay I guess I'm doing this the hard way
-can only limit each orbit by maxtime, so what is maxtime??
-radial frequency is
-w_r = ((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2))))
-
-so total period is 2*pi/w
-
-but that's based on r0, which I don't actually KNOW yet so
-
-anyway
-
-calculate orbit, start high, set lower bound to 0 (or crazy close)
-if it orbits
-    take average of this and lower bound
-    set it as upper bound
-    set it as new speed
-if it plunges
-    set it as lower bound
-    take average of it and upper bound
-    set that as new speed
-    
-keep doing that until upper and lower bound are arbitrarily close
-
-
-'''
 
 import numpy as np
 import MainLoops as ml
