@@ -17,8 +17,11 @@ def per_diff(upp, low):
 
 
 def run_it(radius, spin, err): 
-    upper, lower = 10, 0
-    mult = 1
+    if err < 10**(-13):
+        print("Desired percent error too small, reverting to 10^(-13)")
+        err = 10**(-13)
+    upper, lower = 10.0, 0.0
+    mult = 2.0
     
     if spin >= 0.0:
         pro = 1
@@ -43,9 +46,10 @@ def run_it(radius, spin, err):
             
         print(str(mult) + " HEY LOOK OVER HERE ---------------------------------")
         print(upper, lower)
+        print(per_diff(upper, lower))
         
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 4*np.pi/(launch), 0.1, True, 10**(-11), 90, pro*90, 'blah', verbose=False)
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, np.pi/launch + 1000*(launch**(1/4)), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
         
         small = min(test0["pos"][:, 0])
         print(small, "small")
@@ -53,6 +57,7 @@ def run_it(radius, spin, err):
         
         if small >= bound:
             peaks = np.where( abs(test0["pos"][:,0] - radius) < (radius-bound)/1000)
+            print(peaks)
             try:
                 idx = peaks[0][np.where(np.diff(peaks)[0] > 10)[0][0] + 1]
                 orbs = test0["pos"][idx, 2] - pro*2*np.pi
@@ -63,21 +68,23 @@ def run_it(radius, spin, err):
         
 
     
-    diff = upper - mult
+    diff = (upper - mult)/2
     
     while small < bound:
         mult = mult + diff
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 4*np.pi/(launch), 0.1, True, 10**(-11), 90, pro*90, 'blah', verbose=False)        
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 1000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)        
         small = min(test0["pos"][:, 0])
         print(str(mult) + " HEY WHAT THE HECK ++++++++++++++++++++++++++++++++++")
+        print(small)
     
     diff2 = (1 - mult)/30
-    hold = mult + diff2
+    hold = mult
     while hold <= 1:
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*hold] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 4*np.pi/(launch), 0.1, True, 10**(-11), 90, pro*90, 'blah', verbose=False)
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 1000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
         peaks = np.where( abs(test0["pos"][:,0] - radius) < (radius-bound)/1000)
+        print(peaks)
         try:
             idx = peaks[0][np.where(np.diff(peaks)[0] > 10)[0][0] + 1]
             orbs = test0["pos"][idx, 2] - pro*2*np.pi
@@ -96,63 +103,7 @@ def run_it(radius, spin, err):
     return (ang_list, orb_list, launch*mult)
 
 
-def run_it2(radius, spin, err, pro=True): 
-    upper, lower = 10, 0
-    mult = 1
-    launch = 1/(radius**(3/2) + spin)
-    
-    if pro == True:
-        pro = 1
-    else:
-        pro = -1
 
-    bound = (1 + (1 - pro*spin)**(1/2))**(2)
-    small = radius
-    
-    orb_list = []
-    ang_list = []
-    
-    while per_diff(upper, lower) > err:
-        if small <= bound:
-            lower = mult
-            mult = (upper + lower)/2
-        else:
-            upper = mult
-            mult = (upper + lower)/2
-            
-        print(str(mult) + " HEY LOOK OVER HERE ---------------------------------")
-        print(upper, lower)
-        
-        initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 6*np.pi*mult/launch, 0.1, True, 10**(-11), 90, pro*90, 'blah', verbose=False)
-        
-        small = min(test0["pos"][:, 0])
-        print(small, "small")
-        print(bound, "bound")
-        
-        if small >= bound:
-            peaks = np.where( abs(test0["pos"][:,0] - radius)/radius < 0.0001)
-            try:
-                idx = peaks[0][np.where(np.diff(peaks)[0] > 10)[0][0] + 1]
-                orbs = (test0["pos"][idx, 2] - 2*np.pi)/(2*np.pi)
-                orb_list.append(orbs)
-                ang_list.append(test0["phi_momentum"][0])
-            except:
-                print("unsuited launch speed")
-        
-    orb_list = np.array(orb_list)
-    ang_list = np.array(ang_list)
-    
-    diff = upper - mult
-    
-    while small < bound:
-        mult = mult + diff
-        initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 6*np.pi*mult/launch, 0.1, True, 10**(-11), 90, pro*90, 'blah', verbose=False)        
-        small = min(test0["pos"][:, 0])
-        print(str(mult) + " HEY WHAT THE HECK ++++++++++++++++++++++++++++++++++")
-
-    return (orb_list, ang_list, launch*mult)
 
 '''
 def run_big(radii, spins):
