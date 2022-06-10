@@ -233,6 +233,8 @@ def inspiral_long(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targe
         else:
           if trial >= 10:
             print("giving up!", trial, test)
+          else:
+              print("fixed?")
           loop2 = False
       
       #Update stuff!
