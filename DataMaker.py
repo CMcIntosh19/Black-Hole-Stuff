@@ -49,7 +49,7 @@ def run_it(radius, spin, err):
         print(per_diff(upper, lower))
         
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, np.pi/launch + 1000*(launch**(1/4)), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, np.pi/launch + 10000*(launch**(1/4)), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
         
         small = min(test0["pos"][:, 0])
         print(small, "small")
@@ -73,7 +73,7 @@ def run_it(radius, spin, err):
     while small < bound:
         mult = mult + diff
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 1000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)        
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 10000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)        
         small = min(test0["pos"][:, 0])
         print(str(mult) + " HEY WHAT THE HECK ++++++++++++++++++++++++++++++++++")
         print(small)
@@ -82,7 +82,7 @@ def run_it(radius, spin, err):
     hold = mult
     while hold <= 1:
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*hold] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 1000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 10000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
         peaks = np.where( abs(test0["pos"][:,0] - radius) < (radius-bound)/1000)
         print(peaks)
         try:
