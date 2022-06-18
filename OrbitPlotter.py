@@ -37,7 +37,6 @@ def orthoplots(datalist, merge=True, start=0, end=-1):
             tf = get_index(data["time"], end)
         else:
             tf = get_index(data["time"], data["time"][-1])
-        print(data["pos"][tf, 0])
         cap = max(max(data["pos"][to:tf,0])*1.05, cap)
         carts = np.array([sph2cart(pos) for pos in data["pos"]])
         ax_list[0].plot(carts[to:tf,0], carts[to:tf,1], label=data["name"])  #XY Plot

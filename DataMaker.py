@@ -7,6 +7,7 @@ Created on Fri May 27 18:20:12 2022
 
 
 import numpy as np
+import MetricMath as mm
 import MainLoops as ml
 import matplotlib.pyplot as plt
 import OrbitPlotter as op
@@ -103,7 +104,31 @@ def run_it(radius, spin, err):
     return (ang_list, orb_list, launch*mult)
 
 
-
+def run_it2(spin):
+    l_mb, r_mb = mm.find_rmb(spin)
+    max_l, small = l_mb*(4/3), 100.0
+    angs = []
+    del_phi = []
+    
+    l_now = max_l
+    while (small >= r_mb) and per_diff(l_now, l_mb) >= 10**(-13):
+        initial  = np.array([ [0.00, 100.0, np.pi/2, 0.00, 0.9999999999999999, l_now, 0] ])
+        test0 = ml.inspiral_long(initial, 1, 0.0, 0, 1, 2000, 0.1, True, 10**(-13), 90, 90, 'basic', verbose=False)
+        
+        small = min(test0["pos"][:, 0])
+        print(small)
+        angs.append(l_now)
+        del_phi.append(test0["pos"][-1, 2])
+        
+        l_now = l_mb + (l_now - l_mb)*(1/2)
+    
+    angs, del_phi = np.array(angs) - l_mb, np.array(del_phi)
+    
+    return(angs, del_phi)
+        
+    
+    
+    
 
 '''
 def run_big(radii, spins):

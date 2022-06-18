@@ -10,6 +10,19 @@ import matplotlib.pyplot as plt
 g = 1
 #whenever present, mass is usually set equal to 1
 
+def find_rmb(spin):
+    if spin >= 0.0:
+        pro = 1.0
+    else:
+        pro = -1.0
+    def pro_min(x, a):
+        ang = (a - np.sqrt(a**2 - (a**2 + x**2)*(1 - (x/2))))/(1- (x/2))
+        return ang
+    
+    data = optimize.minimize(pro_min, 4, args=(spin), bounds=( (1+np.sqrt(1-spin**2), 10), ))
+    l_mb, r_mb = pro*data['fun'][0], data['x'][0]
+    return l_mb, r_mb
+
 def fix_sin(value):
     '''
     fix_sin function smooths values from numpy.sin,
