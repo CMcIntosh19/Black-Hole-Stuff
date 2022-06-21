@@ -16,7 +16,11 @@ def find_rmb(spin):
     else:
         pro = -1.0
     def pro_min(x, a):
-        ang = (a - np.sqrt(a**2 - (a**2 + x**2)*(1 - (x/2))))/(1- (x/2))
+        if a >= 0.0:
+            ang = (a - np.sqrt(a**2 - (a**2 + x**2)*(1 - (x/2))))/(1- (x/2))
+        else:
+            a = abs(a)
+            ang = -(a + np.sqrt(a**2 - (a**2 + x**2)*(1 - (x/2))))/(1- (x/2))
         return ang
     
     data = optimize.minimize(pro_min, 4, args=(spin), bounds=( (1+np.sqrt(1-spin**2), 10), ))
