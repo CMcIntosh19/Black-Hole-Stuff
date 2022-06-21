@@ -7,13 +7,14 @@ Created on Fri May 27 18:20:12 2022
 
 
 import numpy as np
+import MetricMath as mm
 import MainLoops as ml
 import matplotlib.pyplot as plt
 import OrbitPlotter as op
 import operator
 
 def per_diff(upp, low):
-    return 2*abs(upp-low)/(upp+low) * 100
+    return 2*abs(upp-low)/abs(upp+low) * 100
 
 
 def run_it(radius, spin, err): 
@@ -49,7 +50,7 @@ def run_it(radius, spin, err):
         print(per_diff(upper, lower))
         
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, np.pi/launch + 1000*(launch**(1/4)), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, np.pi/launch + 10000*(launch**(1/4)), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
         
         small = min(test0["pos"][:, 0])
         print(small, "small")
@@ -73,7 +74,7 @@ def run_it(radius, spin, err):
     while small < bound:
         mult = mult + diff
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 1000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)        
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 10000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)        
         small = min(test0["pos"][:, 0])
         print(str(mult) + " HEY WHAT THE HECK ++++++++++++++++++++++++++++++++++")
         print(small)
@@ -82,7 +83,7 @@ def run_it(radius, spin, err):
     hold = mult
     while hold <= 1:
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*hold] ])
-        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 1000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
+        test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 10000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)
         peaks = np.where( abs(test0["pos"][:,0] - radius) < (radius-bound)/1000)
         print(peaks)
         try:
@@ -103,6 +104,29 @@ def run_it(radius, spin, err):
     return (ang_list, orb_list, launch*mult)
 
 
+def run_it2(spin):
+    l_mb, r_mb = mm.find_rmb(spin)
+    print(l_mb, r_mb)
+    max_l, small = l_mb*(4/3), 100.0
+    angs = []
+    del_phi = []
+    
+    l_now = max_l
+    while (small >= r_mb) and per_diff(l_now, l_mb) >= 10**(-13):
+        initial  = np.array([ [0.00, 100.0, np.pi/2, 0.00, 0.9999999999999999, l_now, 0] ])
+        test0 = ml.inspiral_long(initial, 1, abs(spin), 0, 1, 2000, 0.1, True, 10**(-13), 90, 90, 'basic', verbose=False)
+        
+        small = min(test0["pos"][:, 0])
+        print(small)
+        angs.append(l_now)
+        del_phi.append(test0["pos"][-1, 2])
+        
+        l_now = l_mb + (l_now - l_mb)*(1/2)
+    
+    angs, del_phi = np.array(angs) - l_mb, np.array(del_phi)
+    
+    return(angs, del_phi)
+        
 
 
 '''

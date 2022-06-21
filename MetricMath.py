@@ -10,6 +10,23 @@ import matplotlib.pyplot as plt
 g = 1
 #whenever present, mass is usually set equal to 1
 
+def find_rmb(spin):
+    if spin >= 0.0:
+        pro = 1.0
+    else:
+        pro = -1.0
+    def pro_min(x, a):
+        if a >= 0.0:
+            ang = (a - np.sqrt(a**2 - (a**2 + x**2)*(1 - (x/2))))/(1- (x/2))
+        else:
+            a = abs(a)
+            ang = -(a + np.sqrt(a**2 - (a**2 + x**2)*(1 - (x/2))))/(1- (x/2))
+        return ang
+    
+    data = optimize.minimize(pro_min, 4, args=(spin), bounds=( (1+np.sqrt(1-spin**2), 10), ))
+    l_mb, r_mb = pro*data['fun'][0], data['x'][0]
+    return l_mb, r_mb
+
 def fix_sin(value):
     '''
     fix_sin function smooths values from numpy.sin,
@@ -287,6 +304,9 @@ def set_u_kerr(state, mass, a, timelike, eta, xi, special=False):
     ----------
     state : 8 element list/numpy array
         4-position and 4-velocity of the test particle at a particular moment
+            OR
+            7 element list/numpy array
+        4-position, Energy, Phi-momentum, and Carter constant (C) of the test particle at a particular moment
     mass : int/float
         mass of black hole in arbitrary units. Generally set to 1
     a : int/float
@@ -313,6 +333,12 @@ def set_u_kerr(state, mass, a, timelike, eta, xi, special=False):
 
     '''
   
+    if len(state) == 7:
+        print("Constants given, defaulting to Sago calculation.")
+        cons = state[4:]
+        new = recalc_state(cons, state, mass, a)
+        return new
+    
     r, theta = state[1], state[2]
     metric, chris = kerr(state, mass, a)
     #various defined values that make math easier
@@ -699,9 +725,16 @@ def recalc_state(constants, state, mass, a):
   phitau = philam/sig
   
   #sign correction
-  rtau = abs(rtau) * np.sign(state[5]) 
+  if len(state) == 7:
+    rtau = abs(rtau) * -1
+  else:
+    rtau = abs(rtau) * np.sign(state[5]) 
   thetau = abs(thetau) * np.sign(state[6])
 
-  new_state = np.copy(state)
+  if len(state) == 8:
+    new_state = np.copy(state)
+  else:
+    new_state = np.zeros(8)
+    new_state[:4] = state[:4]
   new_state[4:] = np.array([ttau, rtau, thetau, phitau])
   return new_state
