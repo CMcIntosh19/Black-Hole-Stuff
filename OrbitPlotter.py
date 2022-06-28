@@ -71,12 +71,13 @@ def physplots(datalist, merge=True, start=0, end=-1):
         fig7, ax7 = plt.subplots()
         ax_list2 = [ax4, ax5, ax6, ax7]
     
-    elapse_max = -1000000
-    elapse_min = 1000000
+    elapse_max = -(10**(30))
+    elapse_min = 10**(30)
     max_time = 0
-    min_time = 1000000
+    min_time = 10**(30)
     for data in datalist:
         to1 = get_index(data["time"], start)
+        print(to1)
         if end == -1:
             tf1 = get_index(data["time"], data["time"][-1])
         else: 
@@ -115,6 +116,7 @@ def physplots(datalist, merge=True, start=0, end=-1):
     all_lines = np.arange(0, elapse_max, step*2*np.pi)
     all_lines = np.append(all_lines, np.arange(0, elapse_min, -step*2*np.pi))
     print(all_lines)
+    print(min_time)
     ax_list1[2].hlines(all_lines, min_time, max_time, color='black')
     ax_list1[2].set_title('Phi vs Time (Marked Per ' + str(step) + ' Orbits)')
 

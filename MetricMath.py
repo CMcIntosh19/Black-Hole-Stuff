@@ -332,13 +332,16 @@ def set_u_kerr(state, mass, a, timelike, eta, xi, special=False):
         4-position and 4-velocity of the test particle at a particular moment
 
     '''
-  
-    if len(state) == 7:
+    
+    print("hHEY LOOK")
+    print(special)
+    if len(state) == 7 and special == False:
         print("Constants given, defaulting to Sago calculation.")
         cons = state[4:]
         new = recalc_state(cons, state, mass, a)
         return new
     
+
     r, theta = state[1], state[2]
     metric, chris = kerr(state, mass, a)
     #various defined values that make math easier
@@ -355,6 +358,7 @@ def set_u_kerr(state, mass, a, timelike, eta, xi, special=False):
                               [w/np.sqrt(al2),   0,                 0,               1/np.sqrt(wu2)]])
 
     if special == "circle":
+        print("say yes!")
         #calculates trajectory directly from known E and L for equicircular orbit
         ene = (r**2 - 2*mass*r + plusmin*a*np.sqrt(mass*r))/(r*np.sqrt(r**2 - 3*mass*r + plusmin*2*a*np.sqrt(mass*r)))
         lel = plusmin*np.sqrt(mass*r)*(r**2 - plusmin*2*a*np.sqrt(mass*r) + a**2)/(r*np.sqrt(r**2 - 3*mass*r + plusmin*2*a*np.sqrt(mass*r)))

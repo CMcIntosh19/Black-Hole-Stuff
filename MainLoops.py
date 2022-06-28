@@ -5,9 +5,8 @@ Created on Thu May 19 16:14:26 2022
 @author: hepiz
 """
 
-import MetricMath as mm
 import numpy as np
-
+import MetricMath as mm
 
 
 
@@ -198,6 +197,8 @@ def inspiral_long(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targe
         test = mm.check_interval(mm.kerr, new_step, mass, a)
         if abs(test+1)>(err_target):
           print("HEY SOMETHING'S UP")
+          print(i)
+          print("behold")
           print(test)
           print(new_step)
           print(constants)
