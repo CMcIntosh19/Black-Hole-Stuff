@@ -17,21 +17,28 @@ import OrbitPlotter as op
 
 # Approximated data (non_specific to stellar mass)
 
+
 msun = 1.989*(10**30)             # kg
-mbh = 5*(10**7) * msun
 
 period = 114.2 * 24 * 60 * 60     # seconds
 G = 6.6743 * (10**(-11))          # Newton * kg / s^2
-semi_m = (period/(2*np.pi) * np.sqrt(G*mbh) )**(2/3)
-                                  # semimajor axis in meters
 c = 299792458.0                   # speed of light in m/s
-rs = 2*G*mbh / (c**2)             # schwarzschild radius (zero-spin)
+            
 
 # Convert some things for use in program (c=G=1)
 
-gu = rs/2.0                       # 1/2 rs = 1 of whatever distance unit the program uses
-semi = semi_m / gu                 # semimajor axis in program distance units
 
+
+def make_scale(mbh):
+    mbh = mbh * msun
+    semi_m = (period/(2*np.pi) * np.sqrt(G*mbh) )**(2/3)
+                                  # semimajor axis in meters
+                                  
+    rs = 2*G*mbh / (c**2)         # schwarzschild radius (zero-spin)
+    gu = rs/2.0                   # 1/2 rs = 1 of whatever distance unit the program uses
+    semi = semi_m / gu            # semimajor axis in program distance units
+    
+    return semi, gu
 
 # Specifics of orbit are determined by properties of star
 # Tidal disruption radius (aka periapsis of orbit) is roughly equal to r_star * (mbh/mstar)^(1/3)
@@ -40,22 +47,24 @@ semi = semi_m / gu                 # semimajor axis in program distance units
 
 rsun = 696.34 * (10**6)           # meters
 
-def wheres_peri(mass, rad=None):  # mass and radius are in units of stellar mass/radius; rad=None means main sequence
+def wheres_peri(mbh, mstar, rad=None):  # mass and radius are in units of stellar mass/radius; rad=None means main sequence
+    semi, gu = make_scale(mbh)
     if rad == None:               
-        if mass >= 1.0:
+        if mstar >= 1.0:
             xi = 0.57
         else:
             xi = 0.8
-        rad = mass**(xi)          # determines radius for a main sequence star
+        rad = mstar**(xi)          # determines radius for a main sequence star
     
     rad = rad * rsun
-    mass = mass * msun
+    mstar = mstar
+    mbh = mbh
     
-    peri_m = rad * ((mbh/mass)**(1/3))
+    peri_m = rad * ((mbh/mstar)**(1/3))
                                   # perihelion in meters
     peri = peri_m / gu
     
-    return peri
+    return peri, rad
 
 
 # Then you need to actually calculate the orbit
@@ -70,60 +79,49 @@ def per_diff(upp, low):
     return 2*abs(upp-low)/abs(upp+low) * 100
 
 
-def find_orbit2(mass, rad=None):      # mass and radius are in units of stellar mass/radius; rad=None means main sequence
-    circle_launch  = np.array([ [0.00, semi, np.pi/2, 0.00, 1.0, 5.0, 0.0, 1.0] ])  #ELC values don't matter since this is circular
-    circle_orb = ml.inspiral_long(circle_launch, 1.0, 0.0, 0.0, 1, 20000, 0.1, True, 10**(-10), 90, 90, 'circle', spec='circle',verbose=False)
-    return circle_orb
-
-def find_orbit(mass, rad=None):      # mass and radius are in units of stellar mass/radius; rad=None means main sequence
-    peri = wheres_peri(mass, rad)
-    mass = mass * msun
-    mu = mbh/mass
+def find_orbit(mbh, mstar, rad=None):      # masses and radius are in units of stellar mass/radius; rad=None means main sequence
+    semi, gu = make_scale(mbh)
+    peri, rad = wheres_peri(mbh, mstar, rad)
+    mu = mstar/mbh
     
     circle_launch  = np.array([ [0.00, semi, np.pi/2, 0.00, 1.0, 5.0, 0.0, 1.1] ])  #ELC values don't matter since this is circular
-    print("booty")
-    print(circle_launch)
-    circle_orb = ml.inspiral_long(circle_launch, 1.0, 0.0, 0.0, 1, 20000, 0.1, True, 10**(-10), 90, 90, 'circle', spec='circle',verbose=False)                                 # Run for a little over a full orbit, just to be sure everything settles out nicely
+    circle_orb = ml.inspiral_long(circle_launch, 1.0, 0.0, mu, 1, 45000, 0.1, True, 10**(-10), 90, 90, 'circle', spec='circle',verbose=False)
+                                     # Run for a little over a full orbit, just to be sure everything settles out nicely
                           
-    print("YO WHAT THE HECK")
     ene, lel = circle_orb["energy"][-1], circle_orb["phi_momentum"][-1]
-    print(ene, lel)
     small = min(circle_orb["pos"][:,0])
-    lel_min, lel_max = 4.0, lel
+    lel_min, lel_max = 0.0, lel
     plunge = 0
     
-    while per_diff(small, peri) >= 10**(-8):
+    
+    while (per_diff(lel_min, lel_max) >= 10**(-8)) and (plunge <= 10):
+        if small < 2.5:
+            plunge += 1
+            
         if small < peri:
-            if small <= 2.5:
-                plunge += 1
-                if plunge >= 20:
-                    print("Too many plunges.")
             lel_min = lel
-        else: 
-            last_good = lel
+            lel = (lel_min + lel_max)/2.0
+        else:
+            best = lel
             lel_max = lel
+            lel = (lel_min + lel_max)/2.0
         
-        lel = (lel_min + lel_max)*0.5
         
-        lab = str(lel)
-        print("hey check this out:", lel)
-        launch = np.array([ [0.00, semi, np.pi/2, 0.00, ene, lel, 0.0] ])
-        orb = ml.inspiral_long(launch, 1.0, 0.0, mu, 1, 20000, 0.1, True, 10**(-15), 90, 90, lab, verbose=False)
-        small = min(circle_orb["pos"][:,0])
-        
-        if plunge >- 20:
-            lel = last_good
-            lab = str(lel)
-            launch = np.array([ [0.00, semi, np.pi/2, 0.00, ene, lel, 0.0] ])
-            orb = ml.inspiral_long(launch, 1.0, 0.0, mu, 1, 20000, 0.1, True, 10**(-15), 90, 90, lab, verbose=False)
-            small = min(circle_orb["pos"][:,0])
-            break
+        print(lel_min)
+        print(lel_max)
+        print(peri)
+        print(small)
+        print(plunge)
+        lab = "M=" + str(mstar) + ", R=" + str(rad/rsun)
+        launch  = np.array([ [0.00, semi, np.pi/2, 0.00, ene, lel, 0.0] ])  #ELC values don't matter since this is circular
+        orb = ml.inspiral_long(launch, 1.0, 0.0, mu, 1, 45000, 0.1, True, 10**(-10), 90, 90, lab, verbose=False)
+        small = min(orb["pos"][:,0])
     
-    if per_diff(small, peri) >= 10**(-8):
-        print("For whatever reason, this does not work. Returning closest approximation.")
-    else:
-        print("Run complete.")
-    
+    if plunge > 9:
+        print("\nParameters might be non-physical, plotting best guess.")
+        launch  = np.array([ [0.00, semi, np.pi/2, 0.00, ene, best, 0.0] ])  #ELC values don't matter since this is circular
+        orb = ml.inspiral_long(launch, 1.0, 0.0, mu, 1, 45000, 0.1, True, 10**(-10), 90, 90, lab, verbose=False)
+        
     return orb
     
         
