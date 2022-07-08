@@ -185,7 +185,7 @@ def inspiral_long(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targe
           flip = False
         else:
           flip = True
-      if (( np.sign(new_step[1] - r0) != orbitside ) or (new_step[0] - con_derv[-1][10]) > np.pi*(r0**(3/2) + a) or flip):
+      if (( np.sign(new_step[1] - r0) != orbitside ) or (flip)):  #(new_step[0] - con_derv[-1][10]) > np.pi*(r0**(3/2) + a) or
         orbitside = np.sign(new_step[1] - r0)
         update = True
         dt = new_step[0] - con_derv[-1][10]
@@ -212,32 +212,26 @@ def inspiral_long(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targe
       #Updates the constants based on the calculated derivatives, then updates the state velocities based on the new constants.
       #Only happens the step before the derivatives are recalculated.
       
-      #Helps keep the interval from going crazy by forcing the current step to be on the mass shell (active)
+      #new interval thing
       trial = 0
-      while (loop2 == True):
-        int_steps = [np.copy(new_step), np.copy(new_step)]
+      while loop2 == True:
+        ut, up = new_step[4], new_step[7]
+        err = mm.check_interval(mm.kerr, new_step, mass, a)
         metric = mm.kerr(new_step, mass, a)[0]
-        g00, g03, error = metric[0][0], metric[0][3], -mm.check_interval(mm.kerr, new_step, mass, a) - 1
-        fix1 = -new_step[4] - (g03/g00)*new_step[7] + (1/g00)*np.sqrt((g00*new_step[4] + g03*new_step[7])**2 + g00*error)
-        fix2 = -new_step[4] - (g03/g00)*new_step[7] - (1/g00)*np.sqrt((g00*new_step[4] + g03*new_step[7])**2 + g00*error)
-        int_steps[0][4] += fix1
-        int_steps[1][4] += fix2
-        fix = [fix1, fix2]
-        checks = [mm.check_interval(mm.kerr, int_steps[0], mass, a), mm.check_interval(mm.kerr, int_steps[1], mass, a)]
-        adf = lambda list_value : abs(list_value)
-        closest_value = min(fix, key=adf)
-        new_step[4] += closest_value
-        new_con = mm.find_constants(new_step, mass, a)
-        if (abs(mm.check_interval(mm.kerr, new_step, mass, a) + 1) > err_target) and (trial<10):
-          print("mass shell error")
-          trial += 1
-        else:
-          if trial >= 10:
-            print("giving up!", trial, test)
-          else:
-              print("fixed?")
+        gtt, gtp = metric[0][0], metric[0][3]
+        disc = np.sqrt(ut**2 + ((gtp/gtt)**2)*(up**2) + 2*(gtp/gtt)*ut*up - (1.0 + err)/gtt)
+        int_steps = [np.copy(new_step), np.copy(new_step)]
+        int_steps[0][4] += -ut - (gtp/gtt)*up + disc
+        int_steps[1][4] += -ut - (gtp/gtt)*up - disc
+        checks = [(mm.check_interval(mm.kerr, int_steps[0], mass, a)+1)**2, (mm.check_interval(mm.kerr, int_steps[1], mass, a)+1)**2]
+        test = mm.check_interval(mm.kerr, int_steps[checks.index(min(checks))], mass, a)
+        trial += 1
+        if abs(test+1)<=(err_target):
+          new_step = int_steps[checks.index(min(checks))]
           loop2 = False
-      
+        if trial >= 10:
+          print("giving up!", trial, test)  
+              
       #Update stuff!
       if update == True:
         constants.append(new_con)
@@ -332,15 +326,19 @@ def inspiral_long_resume(original, add_time):
   state, a, dTau = [original["raw"][-1]], original["spin"], original["dTau"]
   mass, mu, vstep, max_time, timelike, err_target, circular = original["inputs"]
   eta, xi = np.arctan(state[0][7]/state[0][5]), np.arctan(state[0][7]/state[0][5])
-  print(circular, err_target, timelike, max_time, vstep, mu, mass)
+  ene, lel, car = original["energy"][-1], original["phi_momentum"][-1], original["carter"][-1]
+  constate = [[*original["raw"][-1, :4], ene, lel, car]]
+  print(constate)
+  print(circular, err_target, timelike, max_time, vstep, mu, mass, ene, lel, car)
   
-  next = inspiral_long(state, mass, a, mu, vstep, original["time"][-1] + add_time, dTau, timelike, err_target, circular, eta, xi)
+  next = inspiral_long(constate, mass, a, mu, vstep, original["time"][-1] + add_time, dTau, timelike, err_target, circular, eta, xi)
 
-  if len(next["carter"]) < 2:
+  if len(next["energy"]) < 2:
     print("")
     return original
 
-  final = {"raw": np.append(original["raw"][:-1], next["raw"], axis=0),
+  final = {"name": original["name"],
+           "raw": np.append(original["raw"][:-1], next["raw"], axis=0),
            "inputs": original["inputs"],
            "dTau": next["dTau"],
            "r_av": np.append(original["r_av"][:-1], next["r_av"]),

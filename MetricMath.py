@@ -658,6 +658,24 @@ def constant_derivatives(constants, mass, a, mu, rad):
   dcdt = -(64/5)*(mu**3)*(v**6)*y*(1-(743/336)*(v**2) - ((85/8)*q - 4*np.pi)*(v**3) - ((129193/18144) - (307/96)*(q**2))*(v**4) + ((2553/224)*q - (4159/672)*np.pi)*(v**5) + ((43/8) - (2425/224)*(v**2) + ((337/8)*np.pi - (1793/16)*q)*(v**3) - ((453601/4536) - (7849/192)*(q**2))*(v**4) + ((3421/224)*q - (38029/672)*np.pi)*(v**5))*(e**2))
   return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn)
 
+def constant_derivatives2(constants, mass, a, mu, rad):
+    #peters version
+  energy, lmom, cart = constants[0], constants[1], constants[2] 
+  coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
+  roots = np.sort(np.roots(coeff))
+  r0 = find_ro(energy, lmom, cart, mass, a)
+  if (True in np.iscomplex([r0, *roots])):
+    r0 = r0.real
+    roots = roots.real
+  outer_turn, inner_turn = roots[-1], roots[-2]
+  y, v, q, e = cart/(lmom**2), np.sqrt(mass/r0), a/mass, (outer_turn/r0) - 1
+  dedt = -(32/5)*(mu**2)*((1+mu)/((r0**5)*((1-(e**2))**(7/2))))*(1 + (73/24)*(e**2) + (37/96)*(e**4))
+  dldt = -(32/5)*(mu**2)*( np.sqrt(1+mu)/( (r0**(7/2)) * (1-(e**2))**2 ) )*(1 + (7/8)*(e**2))
+  #dqdt = -(64/5)*(mu**3)*(v**6)*(1 - q*v - (743/336)*(v**2) - ((1637/336)*q - 4*np.pi)*(v**3) + ((439/48)*(q**2) - (129193/18144) - 4*np.pi*q)*(v**4) + ((151765/18144)*q - (4159/672)*np.pi - (33/16)*(q**3))*(v**5) + ((43/8) - (51/8)*q*v - (2425/224)*(v**2) - ((14869/224)*q - (337/8)*np.pi)*(v**3) - ((453601/4536) - (3631/32)*(q**2) + (369/8)*np.pi*q)*(v**4) + ((141049/9072)*q - (38029/672)*np.pi - (929/32)*(q**3))*(v**5))*(e**2) + ((1/2)*q*v + (1637/672)*q*(v**3) - ((1355/96)*(q**2) - 2*np.pi*q)*(v**4) - ((151765/36288)*q - (213/32)*(q**3))*(v**5))*y + ((51/16)*q*v + (14869/448)*q*(v**3) + ((369/16)*np.pi*q - (33257/192)*(q**2))*(v**4) + (-(141049/18144)*q + (5981/64)*(q**3))*(v**5))*(e**2)*y )
+  #dcdt = -(64/5)*(mu**3)*(v**6)*y*(1-(743/336)*(v**2) - ((85/8)*q - 4*np.pi)*(v**3) - ((129193/18144) - (307/96)*(q**2))*(v**4) + ((2553/224)*q - (4159/672)*np.pi)*(v**5) + ((43/8) - (2425/224)*(v**2) + ((337/8)*np.pi - (1793/16)*q)*(v**3) - ((453601/4536) - (7849/192)*(q**2))*(v**4) + ((3421/224)*q - (38029/672)*np.pi)*(v**5))*(e**2))
+  dcdt = 0
+  return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn)
+
 def test_stuff(constants, mass, a, mu, rad):
   energy, lmom, cart = constants[0], constants[1], constants[2] 
   coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
@@ -686,6 +704,7 @@ def constant_derivatives_long(constants, mass, a, mu):
   return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
 
 def constant_derivatives_long2(constants, mass, a, mu):
+    #alternate e
   compErr = False
   energy, lmom, cart = constants[0], constants[1], constants[2]
   coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
@@ -701,6 +720,43 @@ def constant_derivatives_long2(constants, mass, a, mu):
   dldt = -(32/5)*((mu**2)/mass)*(v**7)*(1 - (1247/336)*(v**2) - ((61/12)*q - 4*np.pi)*(v**3) - ((44711/9072) - (33/16)*(q**2))*(v**4) + ((417/56)*q - (8191/672)*np.pi)*(v**5) + ((51/8) - (17203/672)*(v**2) + (-(781/12)*q + (369/8)*np.pi)*(v**3) + ((929/32)*(q**2) - (1680185/18144))*(v**4) + ((1809/224)*q - (48373/336)*np.pi)*(v**5))*(e**2) + (-(1/2) + (1247/672)*(v**2) + ((61/8)*q - 2*np.pi)*(v**3) - ((213/32)*(q**2) - (44711/18144))*(v**4) - ((4301/224)*q - (8191/1344)*np.pi)*(v**5))*y + (-(51/16) + (17203/1344)*(v**2) + ((1513/16)*q - (369/16)*np.pi)*(v**3) + ((1680185/36288) - (5981/64)*(q**2))*(v**4) - (168*q - (48373/672)*np.pi)*(v**5))*((e**2)*y))
   dcdt = -(64/5)*(mu**3)*(v**6)*y*(1-(743/336)*(v**2) - ((85/8)*q - 4*np.pi)*(v**3) - ((129193/18144) - (307/96)*(q**2))*(v**4) + ((2553/224)*q - (4159/672)*np.pi)*(v**5) + ((43/8) - (2425/224)*(v**2) + ((337/8)*np.pi - (1793/16)*q)*(v**3) - ((453601/4536) - (7849/192)*(q**2))*(v**4) + ((3421/224)*q - (38029/672)*np.pi)*(v**5))*(e**2))
   return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
+
+def constant_derivatives_long3(constants, mass, a, mu):
+    #peters version
+  compErr = False
+  energy, lmom, cart = constants[0], constants[1], constants[2]
+  coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
+  roots = np.sort(np.roots(coeff))
+  r0 = find_ro(energy, lmom, cart, mass, a)
+  if (True in np.iscomplex([r0, *roots])):
+    compErr = True
+    r0 = r0.real
+    roots = roots.real
+  outer_turn, inner_turn = roots[-1], roots[-2]
+  y, v, q, e = cart/(lmom**2), np.sqrt(mass/r0), a/mass, (outer_turn/r0) - 1
+  dedt = -(32/5)*(mu**2)*((1+mu)/((r0**5)*((1-(e**2))**(7/2))))*(1 + (73/24)*(e**2) + (37/96)*(e**4))
+  dldt = -(32/5)*(mu**2)*( np.sqrt(1+mu)/( (r0**(7/2)) * (1-(e**2))**2 ) )*(1 + (7/8)*(e**2))
+  dcdt = 0
+  return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
+
+def constant_derivatives_long4(constants, mass, a, mu):
+    #peters new e version
+  compErr = False
+  energy, lmom, cart = constants[0], constants[1], constants[2]
+  coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
+  roots = np.sort(np.roots(coeff))
+  r0 = find_ro(energy, lmom, cart, mass, a)
+  if (True in np.iscomplex([r0, *roots])):
+    compErr = True
+    r0 = r0.real
+    roots = roots.real
+  outer_turn, inner_turn = roots[-1], roots[-2]
+  y, v, q, e = cart/(lmom**2), np.sqrt(mass/r0), a/mass, (outer_turn - inner_turn)/(outer_turn + inner_turn)
+  dedt = -(32/5)*(mu**2)*((1+mu)/((r0**5)*((1-(e**2))**(7/2))))*(1 + (73/24)*(e**2) + (37/96)*(e**4))
+  dldt = -(32/5)*(mu**2)*( np.sqrt(1+mu)/( (r0**(7/2)) * (1-(e**2))**2 ) )*(1 + (7/8)*(e**2))
+  dcdt = 0
+  return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
+
 
 def recalc_state(constants, state, mass, a):
   energy, lmom, cart = constants[0], constants[1], constants[2]
@@ -725,7 +781,7 @@ def recalc_state(constants, state, mass, a):
   phitau = philam/sig
   
   #sign correction
-  if len(state) == 7:
+  if (len(state) == 7):
     rtau = abs(rtau) * -1
   else:
     rtau = abs(rtau) * np.sign(state[5]) 

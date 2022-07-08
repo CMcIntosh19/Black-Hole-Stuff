@@ -75,7 +75,7 @@ def run_it(radius, spin, err):
         mult = mult + diff
         initial  = np.array([ [0.00, radius, np.pi/2, 0.00, 1.0, 0.00, 0.00, launch*mult] ])
         test0 = ml.inspiral_long(initial, 1, spin, 0, 1, 2*(np.pi/launch + 10000*(launch**(1/4))), 0.1, True, min(err, 10**(-11)), 90, pro*90, 'blah', verbose=False)        
-        small = min(test0["pos"][:, 0])
+        small = min(test0["pos"][:, 0]) 
         print(str(mult) + " HEY WHAT THE HECK ++++++++++++++++++++++++++++++++++")
         print(small)
     

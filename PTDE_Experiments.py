@@ -85,19 +85,15 @@ def find_orbit(mbh, mstar, rad=None):      # masses and radius are in units of s
     mu = mstar/mbh
     
     circle_launch  = np.array([ [0.00, semi, np.pi/2, 0.00, 1.0, 5.0, 0.0, 1.1] ])  #ELC values don't matter since this is circular
-    circle_orb = ml.inspiral_long(circle_launch, 1.0, 0.0, mu, 1, 45000, 0.1, True, 10**(-10), 90, 90, 'circle', spec='circle',verbose=False)
+    circle_orb = ml.inspiral_long(circle_launch, 1.0, 0.0, mu, 1, 50000, 0.1, True, 10**(-14), 90, 90, 'circle', spec='circle',verbose=False)
                                      # Run for a little over a full orbit, just to be sure everything settles out nicely
                           
     ene, lel = circle_orb["energy"][-1], circle_orb["phi_momentum"][-1]
     small = min(circle_orb["pos"][:,0])
     lel_min, lel_max = 0.0, lel
-    plunge = 0
     
     
-    while (per_diff(lel_min, lel_max) >= 10**(-8)) and (plunge <= 10):
-        if small < 2.5:
-            plunge += 1
-            
+    while (per_diff(lel_min, lel_max) >= 10**(-8)):
         if small < peri:
             lel_min = lel
             lel = (lel_min + lel_max)/2.0
@@ -107,21 +103,22 @@ def find_orbit(mbh, mstar, rad=None):      # masses and radius are in units of s
             lel = (lel_min + lel_max)/2.0
         
         
-        print(lel_min)
-        print(lel_max)
-        print(peri)
-        print(small)
-        print(plunge)
         lab = "M=" + str(mstar) + ", R=" + str(rad/rsun)
         launch  = np.array([ [0.00, semi, np.pi/2, 0.00, ene, lel, 0.0] ])  #ELC values don't matter since this is circular
-        orb = ml.inspiral_long(launch, 1.0, 0.0, mu, 1, 45000, 0.1, True, 10**(-10), 90, 90, lab, verbose=False)
+        orb = ml.inspiral_long(launch, 1.0, 0.0, mu, 1, 50000, 0.1, True, 10**(-14), 90, 90, lab, verbose=False)
         small = min(orb["pos"][:,0])
-    
-    if plunge > 9:
-        print("\nParameters might be non-physical, plotting best guess.")
-        launch  = np.array([ [0.00, semi, np.pi/2, 0.00, ene, best, 0.0] ])  #ELC values don't matter since this is circular
-        orb = ml.inspiral_long(launch, 1.0, 0.0, mu, 1, 45000, 0.1, True, 10**(-10), 90, 90, lab, verbose=False)
+        print("Target Periapsis: " + str(peri))
+        print("Actual Periapsis: " + str(small) + "\n")
         
+    
+    if per_diff(peri, small) > 0.1:
+        print("\nCalculated periapsis is a plunge orbit, returning closest guess.\n")
+        
+    print("Schwarzschild radius is:   " + str(gu/500.0) + "km")
+    print("Marginally bound orbit is: " + str(gu/250.0) + "km")
+    print("Calculated Periapsis is:   " + str(peri*gu/1000.0) + "km")
+    print("Equivalent to " + str(peri) + " in program units.")
+    
     return orb
     
         
@@ -154,8 +151,6 @@ ene, lel, car = test0["energy"][-1], test0["phi_momentum"][-1], test0["carter"][
 
 [-0.99854886  0.          0.         18.62317351]
 '''
-
-
 
 
 
