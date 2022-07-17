@@ -6,6 +6,7 @@ Metric Math stuff
 import numpy as np
 from scipy import optimize
 import matplotlib.pyplot as plt
+import scipy.interpolate as spi
 
 g = 1
 #whenever present, mass is usually set equal to 1
@@ -745,16 +746,65 @@ def constant_derivatives_long4(constants, mass, a, mu):
   energy, lmom, cart = constants[0], constants[1], constants[2]
   coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
   roots = np.sort(np.roots(coeff))
-  r0 = find_ro(energy, lmom, cart, mass, a)
+  #print(roots)
+  r0 = 0 #find_ro(energy, lmom, cart, mass, a)
   if (True in np.iscomplex([r0, *roots])):
     compErr = True
     r0 = r0.real
     roots = roots.real
-  outer_turn, inner_turn = roots[-1], roots[-2]
-  y, v, q, e = cart/(lmom**2), np.sqrt(mass/r0), a/mass, (outer_turn - inner_turn)/(outer_turn + inner_turn)
+    
+  y, q = cart/(lmom**2), a/mass
+  if len(roots) == 4:
+    outer_turn, inner_turn = roots[-1], roots[-2]
+    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+  else:
+    outer_turn, inner_turn = (10**25), roots[-1]
+    e = 1.0 - (10**(-16))
+
+  r0 = (outer_turn + inner_turn)/2
+  #print(r0, e)
+  v = np.sqrt(mass/r0)
+
   dedt = -(32/5)*(mu**2)*((1+mu)/((r0**5)*((1-(e**2))**(7/2))))*(1 + (73/24)*(e**2) + (37/96)*(e**4))
   dldt = -(32/5)*(mu**2)*( np.sqrt(1+mu)/( (r0**(7/2)) * (1-(e**2))**2 ) )*(1 + (7/8)*(e**2))
   dcdt = 0
+  print(dedt, dldt)
+  return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
+
+def constant_derivatives_long5(constants, mass, a, mu):
+    #ryan new e version
+  compErr = False
+  energy, lmom, cart = constants[0], constants[1], constants[2]
+  qart = cart + (a*energy - lmom)**2
+  coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
+  roots = np.sort(np.roots(coeff))
+  #print(roots)
+  r0 = 0 #find_ro(energy, lmom, cart, mass, a)
+  if (True in np.iscomplex([r0, *roots])):
+    compErr = True
+    r0 = r0.real
+    roots = roots.real
+    
+  y, q = cart/(lmom**2), a/mass
+  if len(roots) == 4:
+    outer_turn, inner_turn = roots[-1], roots[-2]
+    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+  else:
+    outer_turn, inner_turn = (10**25), roots[-1]
+    e = 1.0 - (10**(-16))
+
+  r0 = (outer_turn + inner_turn)/2
+  v = np.sqrt(mass/r0)
+  
+  ci = lmom/((qart + lmom**(2))**(1/2))
+  si = np.sqrt(1.0 - ci**2)
+  psi0 = 0
+
+
+  dedt = -(32/5)* (mu**2) * (1/(r0**5)) * ((1/(1-(e**2)))**(7/2)) * ((1 + (73/24)*(e**2) + (37/96)*(e**4)) - a*((1/(r0*(1-(e**2))))**(3/2))*ci*((73/12) + (1211/24)*(e**2) + (3143/96)*(e**4) + (66/65)*(e**6)))
+  dldt = -(32/5)* (mu**2) * ((1/r0)**(7/2)) * ((1/(1-(e**2)))**2) * ( ci*(1 + (7/8)*(e**2)) + a*((1/(r0*(1-(e**2))))**(3/2))*( ((61/24) + (63/8)*(e**2) + (95/64)*(e**4)) - (ci**2)*((61/8) + (109/4)*(e**2) + (293/64)*(e**4)) - np.cos(2*psi0)*(si**2)*((5/4)*(e**2) + (13/16)*(e**4))) )
+  dcdt = 0
+  #print(dedt, dldt)
   return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
 
 
@@ -794,3 +844,106 @@ def recalc_state(constants, state, mass, a):
     new_state[:4] = state[:4]
   new_state[4:] = np.array([ttau, rtau, thetau, phitau])
   return new_state
+
+
+#interpolate function takes calculated orbit and recalculates values for regular time intervals
+def interpolate(data, time, step):
+  new_time = np.arange(time[0], time[-1], step)
+  r_poly = spi.CubicSpline(time, data[:,0])
+  theta_poly = spi.CubicSpline(time, data[:,1])
+  phi_poly = spi.CubicSpline(time, data[:,2])
+  new_data = np.array([[r_poly(i), theta_poly(i), phi_poly(i)] for i in new_time])
+  return new_data, new_time
+
+#sphr2quad function finds the quadrupole moment of a specific position in spherical coordinates
+def sphr2quad(pos):
+  x = pos[0] * np.sin(pos[1]) * np.cos(pos[2])
+  y = pos[0] * np.sin(pos[1]) * np.sin(pos[2])
+  z = pos[0] * np.cos(pos[1])
+  qmom = np.array([[2*x*x - (x**2 + y**2), 3*x*y,                 3*x*z],
+                   [3*y*x,                 2*y*y - (x**2 + y**2), 3*y*z],
+                   [3*z*x,                 3*z*y,                 0    ]], dtype=np.float64)
+  return qmom
+
+#matrix_derive function calculates the nth time derivative of a series of 3x3 matrices,
+#where n is determined by degree
+def matrix_derive(data, time, degree):
+  polys = [[0, 0, 0],
+           [0, 0, 0],
+           [0, 0, 0]]
+  for i in range(3):
+    for j in range(3):
+      polys[i][j] = spi.CubicSpline(time, data[:,i,j])
+  new_data = np.array([[[polys[0][0](i, degree), polys[0][1](i, degree), polys[0][2](i, degree)],
+                        [polys[1][0](i, degree), polys[1][1](i, degree), polys[1][2](i, degree)],
+                        [polys[2][0](i, degree), polys[2][1](i, degree), polys[2][2](i, degree)]] for i in time])
+  return new_data
+
+#gwaves function calculates gravitational wave data based on 
+#quadrupole moments, time data, and some given distance from the source
+def gwaves(quad_moment, time, distance):
+  der_2 = matrix_derive(quad_moment, time, 2)
+  waves = np.array([(2/distance) * entry for entry in der_2])
+  return waves
+
+#full_transform combines all previous functions in this block in order to
+#produce gravitational wave data from the orbits calculated by one of the
+#main orbit functions, like schw_orbit or kerr_orbit
+def full_transform(data, distance):
+  sphere, time = data["pos"], data["time"]
+  int_sphere, int_time = interpolate(sphere, time, 8.5)
+  quad = np.array([sphr2quad(pos) for pos in int_sphere])
+  waves = gwaves(quad, int_time, distance)
+  return waves, int_time
+
+#sphr2quad function finds the quadrupole moment of a specific position in spherical coordinates
+def ortholize(pos):
+  x = pos[0] * np.sin(pos[1]) * np.cos(pos[2])
+  y = pos[0] * np.sin(pos[1]) * np.sin(pos[2])
+  z = pos[0] * np.cos(pos[1])
+  qmom = np.array([[x*x,      x*y,     x*z],
+                   [y*x,      y*y,     y*z],
+                   [z*x,      z*y,     z*z]], dtype=np.float64)
+  return qmom
+
+def peters_integrate(constants, a, states, ind1, ind2):
+    compErr = False
+    mass = 1
+    energy, lmom, cart = constants[0], constants[1], constants[2]
+    coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
+    roots = np.sort(np.roots(coeff))
+    if (True in np.iscomplex(*roots)):
+      compErr = True
+      roots = roots.real    
+    y, q = cart/(lmom**2), a/mass
+    if len(roots) == 4:
+      outer_turn, inner_turn = roots[-1], roots[-2]
+      e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+    else:
+      outer_turn, inner_turn = (10**25), roots[-1]
+      e = 1.0 - (10**(-16))
+    r0 = (outer_turn + inner_turn)/2
+    v = np.sqrt(mass/r0)
+    
+    sphere, time = states[ind1:ind2, 1:4], states[ind1:ind2, 0]
+    step = np.round((time[-1] - time[0])/(2*len(time)), 2)
+    int_sphere, int_time = interpolate(sphere, time, step)
+    div = int_time[1]-int_time[0]
+    quad = np.array([ortholize(pos) for pos in int_sphere])
+    dt2 = matrix_derive(quad, int_time, 2)
+    dt3 = matrix_derive(quad, int_time, 3)
+    dedt, dldt, dcdt = 0, 0, 0
+    
+    for i in range(3):
+        for j in range(3):
+            dedt += sum( ((dt3[:,i,j])**2 - (1/3)*(dt3[:,i,i])*(dt3[:,j,j]))*div )
+            for k in range(3):
+                if (i + j == 1):
+                    dldt += (j-i)*sum( (dt2[:,i,k]*dt3[:,j,k])*div )  
+            
+    dedt = (-1/5)*dedt
+    dldt = (-2/5)*dldt
+    dcdt = 0
+    print(dedt, dldt)
+    return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
+
