@@ -122,7 +122,7 @@ def inspiral_long(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targe
                        0]])           #tracktime - timestamp
   '''
 
-  con_derv = [[0, *mm.constant_derivatives_long5(constants[0], mass, a, mu), all_states[0][0]]]    # returns [index, [dedt, dldt, dcdt], r0, y, v, q, e, outer_turn, inner_turn, compErr, timestamp]
+  con_derv = [[0, *mm.constant_derivatives_long(constants[0], mass, a, mu), all_states[0][0]]]    # returns [index, [dedt, dldt, dcdt], r0, y, v, q, e, outer_turn, inner_turn, compErr, timestamp]
   r0 = con_derv[0][2]
   #con_derv[0][-1] = np.pi*(r0**(3/2) + a)/2
   #timestamp is set to a quarter-period to keep the half-orbit forced update from happening at max or min r
@@ -236,7 +236,7 @@ def inspiral_long(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targe
       if update == True:
         constants.append(new_con)
         qarter.append(new_con[2] + (a*new_con[0] - new_con[1])**2)
-        con_derv.append([i, *mm.constant_derivatives_long5(constants[-1], mass, a, mu), new_step[0]])
+        con_derv.append([i, *mm.constant_derivatives_long(constants[-1], mass, a, mu), new_step[0]])
         if con_derv[-1][9] == True:
           compErr += 1
           issues.append((i, new_step[0]))
@@ -272,7 +272,7 @@ def inspiral_long(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targe
       true_u_t = true_u_t[:cap]
       constants = constants[:cap]
       qarter = qarter[:cap]
-      phys_avgs = phys_avgs[:cap]
+      #phys_avgs = phys_avgs[:cap]
       break
 
   r = all_states[0][1]
@@ -400,7 +400,7 @@ def inspiral_long2(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targ
                        0]])           #tracktime - timestamp
   '''
 
-  #con_derv = [[0, *mm.constant_derivatives_long4(constants[0], mass, a, mu), all_states[0][0]]]    # returns [index, [dedt, dldt, dcdt], r0, y, v, q, e, outer_turn, inner_turn, compErr, timestamp]
+  con_derv = [[0, *mm.peters_integrate(constants[0], a, mu, all_states, 0, 0), all_states[0][0]]]    # returns [index, [dedt, dldt, dcdt], r0, y, v, q, e, outer_turn, inner_turn, compErr, timestamp]
   
   #r0 = con_derv[0][2]
   #con_derv[0][-1] = np.pi*(r0**(3/2) + a)/2
@@ -409,6 +409,7 @@ def inspiral_long2(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targ
   #doing this because more circular orbits are wonky
   #but this might break stuff for non-circular orbits??
   #problem for later
+  
   
   compErr = 0
   milestone = 0
@@ -452,22 +453,11 @@ def inspiral_long2(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targ
 
 
       #Whenever you pass from one side of r0 to the other, mess with the effective potential.
-      '''
-      if i == 0:
-        flip = False       
-      else:
-        old_accel = np.sign((state[5] - all_states[i-1][5])/(state[0] - all_states[i-1][0]))
-        new_accel = np.sign((new_step[5] - state[5])/(new_step[0] - state[0]))
-        if old_accel == new_accel:
-          flip = False
-        else:
-          flip = True
-      '''
       if (( np.sign(new_step[1] - r0) != orbitside )):  # or (flip)):  #(new_step[0] - con_derv[-1][10]) > np.pi*(r0**(3/2) + a) or
         orbitside = np.sign(new_step[1] - r0)
         update = True
-        
-        new_con = constants[-1] + con_derv[-1][1]*dt                                #Figure out how the constants have changed!
+        con_derv.append([i, *mm.peters_integrate(constants[-1], a, mu, all_states, con_derv[-1][0], i), new_step[0]])
+        new_con = constants[-1] + con_derv[-1][1]                                   #Figure out how the constants have changed!
         dir1 = new_step[5]
         new_step = mm.recalc_state(new_con, new_step, mass, a)                           #Change the velocity so it actually makes sense with those constants
         test = mm.check_interval(mm.kerr, new_step, mass, a)
@@ -483,7 +473,7 @@ def inspiral_long2(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targ
           loop2 = True
           #break
         if dir1 != new_step[5]:
-          checker.append([dir1, new_step[5], con_derv[-1][1]*dt  ])
+          checker.append([dir1, new_step[5], con_derv[-1][1]  ])
       #Initializing for the next step
       #Updates the constants based on the calculated derivatives, then updates the state velocities based on the new constants.
       #Only happens the step before the derivatives are recalculated.
@@ -512,7 +502,8 @@ def inspiral_long2(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targ
       if update == True:
         constants.append(new_con)
         qarter.append(new_con[2] + (a*new_con[0] - new_con[1])**2)
-        con_derv.append([i, *mm.constant_derivatives_long4(constants[-1], mass, a, mu), new_step[0]])
+        #print(constants[-1], a, mu, all_states, con_derv[-1], i)
+        
         if con_derv[-1][9] == True:
           compErr += 1
           issues.append((i, new_step[0]))
@@ -559,7 +550,7 @@ def inspiral_long2(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targ
   dTau_change = np.array(dTau_change)
   true_u_t = np.array(true_u_t)
   all_states = np.array(all_states)
-  phys_avgs = np.array(phys_avgs)
+  #phys_avgs = np.array(phys_avgs)
   if verbose == True:
       print("There were " + str(compErr) + " issues with complex roots/turning points.")
       for i in issues:
@@ -570,9 +561,9 @@ def inspiral_long2(state, mass, a, mu, vstep, max_time, dTau, timelike, err_targ
            "raw": all_states,
            "inputs": inputs,
            "dTau": dTau,
-           "r_av": phys_avgs[:,0],
-           "theta_av": phys_avgs[:,1],
-           "phi_av": phys_avgs[:,2],
+           #"r_av": phys_avgs[:,0],
+           #"theta_av": phys_avgs[:,1],
+           #"phi_av": phys_avgs[:,2],
            "pos": all_states[:,1:4],
            "all_vel": all_states[:,4:], 
            "time": all_states[:,0],

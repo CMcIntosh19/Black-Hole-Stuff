@@ -847,8 +847,10 @@ def recalc_state(constants, state, mass, a):
 
 
 #interpolate function takes calculated orbit and recalculates values for regular time intervals
-def interpolate(data, time, step):
-  new_time = np.arange(time[0], time[-1], step)
+def interpolate(data, time):
+  data = np.array(data)
+  #print(data[0] )
+  new_time = np.linspace(time[0], time[-1], min(len(time), 10**5))
   r_poly = spi.CubicSpline(time, data[:,0])
   theta_poly = spi.CubicSpline(time, data[:,1])
   phi_poly = spi.CubicSpline(time, data[:,2])
@@ -862,7 +864,7 @@ def sphr2quad(pos):
   z = pos[0] * np.cos(pos[1])
   qmom = np.array([[2*x*x - (x**2 + y**2), 3*x*y,                 3*x*z],
                    [3*y*x,                 2*y*y - (x**2 + y**2), 3*y*z],
-                   [3*z*x,                 3*z*y,                 0    ]], dtype=np.float64)
+                   [3*z*x,                 3*z*y,                 2*z*z - (x**2 + y**2)    ]], dtype=np.float64)
   return qmom
 
 #matrix_derive function calculates the nth time derivative of a series of 3x3 matrices,
@@ -889,30 +891,31 @@ def gwaves(quad_moment, time, distance):
 #full_transform combines all previous functions in this block in order to
 #produce gravitational wave data from the orbits calculated by one of the
 #main orbit functions, like schw_orbit or kerr_orbit
-def full_transform(data, distance):
+def full_transform(data, distance):    #defunctish??
   sphere, time = data["pos"], data["time"]
-  int_sphere, int_time = interpolate(sphere, time, 8.5)
+  int_sphere, int_time = interpolate(sphere, time)
   quad = np.array([sphr2quad(pos) for pos in int_sphere])
   waves = gwaves(quad, int_time, distance)
   return waves, int_time
 
 #sphr2quad function finds the quadrupole moment of a specific position in spherical coordinates
-def ortholize(pos):
+def ortholize(pos, mu):
   x = pos[0] * np.sin(pos[1]) * np.cos(pos[2])
   y = pos[0] * np.sin(pos[1]) * np.sin(pos[2])
   z = pos[0] * np.cos(pos[1])
   qmom = np.array([[x*x,      x*y,     x*z],
                    [y*x,      y*y,     y*z],
                    [z*x,      z*y,     z*z]], dtype=np.float64)
+  qmom = qmom*mu
   return qmom
 
-def peters_integrate(constants, a, states, ind1, ind2):
+def peters_integrate(constants, a, mu, states, ind1, ind2):
     compErr = False
     mass = 1
     energy, lmom, cart = constants[0], constants[1], constants[2]
     coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*mass*((a*energy - lmom)**2) + 2*mass*cart, 2*((a*energy - lmom)**2)*(a**2) + cart*(a**2)]
     roots = np.sort(np.roots(coeff))
-    if (True in np.iscomplex(*roots)):
+    if (True in np.iscomplex(roots)):
       compErr = True
       roots = roots.real    
     y, q = cart/(lmom**2), a/mass
@@ -924,26 +927,33 @@ def peters_integrate(constants, a, states, ind1, ind2):
       e = 1.0 - (10**(-16))
     r0 = (outer_turn + inner_turn)/2
     v = np.sqrt(mass/r0)
-    
-    sphere, time = states[ind1:ind2, 1:4], states[ind1:ind2, 0]
-    step = np.round((time[-1] - time[0])/(2*len(time)), 2)
-    int_sphere, int_time = interpolate(sphere, time, step)
-    div = int_time[1]-int_time[0]
-    quad = np.array([ortholize(pos) for pos in int_sphere])
-    dt2 = matrix_derive(quad, int_time, 2)
-    dt3 = matrix_derive(quad, int_time, 3)
     dedt, dldt, dcdt = 0, 0, 0
     
-    for i in range(3):
-        for j in range(3):
-            dedt += sum( ((dt3[:,i,j])**2 - (1/3)*(dt3[:,i,i])*(dt3[:,j,j]))*div )
-            for k in range(3):
-                if (i + j == 1):
-                    dldt += (j-i)*sum( (dt2[:,i,k]*dt3[:,j,k])*div )  
+    #print(ind1)
+    #print("what?")
+    #print(ind2)
+    if ind1 != ind2:
+        states = np.array(states)
+        sphere, time = states[ind1:ind2][:,1:4], states[ind1:ind2][:,0]
+        #print(sphere)
+        int_sphere, int_time = interpolate(sphere, time)
+        #print(int_time)
+        div = int_time[1]-int_time[0]
+        quad = np.array([ortholize(pos, mu) for pos in int_sphere])
+        dt2 = matrix_derive(quad, int_time, 2)
+        dt3 = matrix_derive(quad, int_time, 3)
+    
+        
+        for i in range(3):
+            for j in range(3):
+                dedt += sum( ((dt3[:,i,j])**2 - (1/3)*(dt3[:,i,i])*(dt3[:,j,j]))*div )
+                if (i+j == 1):
+                    for m in range(3):
+                        dldt += (j-i)*sum( (dt2[:,i,m]*dt3[:,j,m])*div )  
             
     dedt = (-1/5)*dedt
     dldt = (-2/5)*dldt
     dcdt = 0
-    print(dedt, dldt)
+    #print(dedt, dldt)
     return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
 
