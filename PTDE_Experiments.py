@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+ # -*- coding: utf-8 -*-
 """
 Created on Mon Jun 27 16:42:29 2022
 
@@ -29,7 +29,7 @@ c = 299792458.0                   # speed of light in m/s
 
 
 
-def make_scale(mbh):
+def make_scale(mbh):              #mbh is mass of black hole in solar masses
     mbh = mbh * msun
     semi_m = (period/(2*np.pi) * np.sqrt(G*mbh) )**(2/3)
                                   # semimajor axis in meters
@@ -63,6 +63,7 @@ def wheres_peri(mbh, mstar, rad=None):  # mass and radius are in units of stella
     peri_m = rad * ((mbh/mstar)**(1/3))
                                   # perihelion in meters
     peri = peri_m / gu
+    rad = rad / gu
     
     return peri, rad
 
@@ -122,11 +123,61 @@ def find_orbit(mbh, mstar, rad=None):      # masses and radius are in units of s
     return orb
     
         
-        
+def collision(state, mu, mass, a, r0, e, density=2.95*(10**(-7)), rad=False):
+    peri, rad = wheres_peri(mass, mass*mu, rad)
     
+    md = np.pi*(rad**2) * density
+        #assumes disk has constant surface density, star impacts fully within it
+        #10^(-4) of the star's mass spread in a disk between 3R_s and 6R_s is roughly 2.95*(10^-7)
+        #will probably need to modify this to account for distance stuff or whatever
+    thing = np.array(mm.set_u_kerr(state, 1.0, a, True, 90, 90, special="circle"))
+    pd = md * thing[4:]    #4 momentum of disk segment
+    pstar = mu * state[4:]  #4 momentum of star
+    pos = state[:4]        #position data
+    pnew = pd + pstar      #4 momentum of modified star
+    new_mu = (-mm.check_interval(mm.kerr, [*pos, *pnew], 1.0, a))**(1/2)
+        #applying check_interval to a 4-momentum gives -m^2
+    new_state = np.array([*pos, *(pnew/new_mu)])
+    #since mu changes, I'm gonna have to do the constant update right before the change is applied, i think
+    #Which means I update it THREE times per orbit at the very least, since there's a chance it could hit the disk multiple times
+    return new_state, new_mu
+    
+def PTDE(state, a, mu, r0):
+    ene, lel, cart = mm.find_constants(state, 1.0, 0.0)
+    incline = lel / np.sqrt(cart + lel**2)
+    r, theta = state[1], state[2]
+    period = 2*np.pi*(r0**(3/2))
+    r0_dot = (-0.0017)*(2/3)*(1/(4*(np.pi**2)*period))**(1/3)
+    dEdr0 = (r0**(7/2) - 6*(r0**(5/2)) + 8*a*(r0**2) - 3*(a**2)*(r0**(3/2)))/(2*(r0**(5/2))*((r0**2 - 3*r0 + a*np.sqrt(r0))**(3/2)))
+    dEdt = dEdr0*r0_dot
+    ene_new = ene + dEdt*period
+    full_mom = (1/(r-2))*(-2*a*ene_new + np.sqrt( (r-2)*(4*a*ene*lel + (lel**2)*(r-2) + (r**3)*(ene_new**2 - ene**2)) + (a**2)*((ene_new*r)**2 - (ene**2)*(r**2 - 4))))
+    lel_new, cart_new = full_mom*incline, full_mom*(1 - incline**2)
+    star_state = mm.recalc_state([ene_new, lel_new, cart_new], state, 1.0, a)
+    A, B = (1 - (2*r)/(r**2 + (a*mm.fix_cos(theta))**2)), 2*a*r*(mm.fix_sin(theta)**2)/(r**2 + (a*mm.fix_cos(theta))**2)
+    dm = mu*( (A*(state[4] - star_state[4]) + B*(state[7] - star_state[7])) /  (1 - A*star_state[4] - B*star_state[7]) )
+    p_full, p_star = mu*state[4:], (mu - dm)*star_state[4:]
+    p_dm = p_full - p_star
+    dm_state = np.array([*state[:4], *(p_dm/dm)])
 
+    return ((mu-dm, star_state), (dm, dm_state))
 
-
+def rel_E_disk(state, a, mu):
+    d_state = np.array(mm.set_u_kerr(state, 1.0, a, True, 90, 90, special="circle"))      #position, velocity of disk at given radius
+    disk_v2 = ((d_state[5]/d_state[4])**2 + (d_state[1]*d_state[6]/d_state[4])**2 + (d_state[1]*np.sin(d_state[2])*d_state[7]/d_state[4])**2)   #v^2 of disk
+    disk_gamma = 1/np.sqrt(1-disk_v2)     #gamma of disk
+    boost = np.array([[disk_gamma,     -np.sqrt(disk_v2)*disk_gamma,     0,     0],
+                      [-np.sqrt(disk_v2)*disk_gamma,     disk_gamma,     0,     0],
+                      [0,               0,                       0, 0],
+                      [0,               0,                       0, 0]])       #boost matrix into disk frame
+    print(boost)
+    cart_state = np.array([state[4], state[5], state[1]*state[7], -state[1]*state[6]])   #convert object velocity to cartesian
+    print(cart_state)
+    boost_state = np.matmul(boost, cart_state)      #apply boost to get object velocity in disk frame
+    object_v2 = ((boost_state[1]/boost_state[0])**2 + (boost_state[2]/boost_state[0])**2 + (boost_state[3]/boost_state[0])**2) #object v2 in disk frame
+    object_gamma = 1/np.sqrt(1-object_v2)     #gamma of object in disk frame
+    object_ke = (object_gamma - 1)*mu
+    return object_ke
 
 '''
 #Calculate some real values
@@ -151,14 +202,6 @@ ene, lel, car = test0["energy"][-1], test0["phi_momentum"][-1], test0["carter"][
 
 [-0.99854886  0.          0.         18.62317351]
 '''
-
-
-
-
-
-
-
-
 
 
 

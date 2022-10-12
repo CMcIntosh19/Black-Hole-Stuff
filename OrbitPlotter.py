@@ -43,8 +43,8 @@ def orthoplots(datalist, merge=True, start=0, end=-1):
         ax_list[0].set_title('XY')
         ax_list[1].plot(carts[to:tf,0], carts[to:tf,2], label=data["name"])  #XZ Plot
         ax_list[1].set_title('XZ')
-        ax_list[2].plot(carts[to:tf,2], carts[to:tf,1], label=data["name"])  #ZY Plot
-        ax_list[2].set_title('ZY')
+        ax_list[2].plot(carts[to:tf,1], carts[to:tf,2], label=data["name"])  #ZY Plot
+        ax_list[2].set_title('YZ')
 
     for i in ax_list:
         i.label_outer()
@@ -98,8 +98,8 @@ def physplots(datalist, merge=True, start=0, end=-1):
         ax_list1[1].set_title('Theta vs Time')
         ax_list1[2].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 2], label=data["name"])  #ZY Plot
         ax_list1[2].set_title('Phi vs Time')
-        elapse_min = min(elapse_min, min(data["pos"][:, 2]))
-        elapse_max = max(elapse_max, max(data["pos"][:, 2]))
+        elapse_min = min(elapse_min, min(data["pos"][to1:tf1, 2]))
+        elapse_max = max(elapse_max, max(data["pos"][to1:tf1, 2]))
         print(elapse_min, elapse_max)
 
         ax_list2[0].plot(data["tracktime"][to2:tf2], data["energy"][to2:tf2], label=data["name"])  #XY Plot
@@ -113,8 +113,8 @@ def physplots(datalist, merge=True, start=0, end=-1):
     
 
     step = max(1, int((elapse_max - elapse_min)//(20*np.pi)))
-    all_lines = np.arange(0, elapse_max, step*2*np.pi)
-    all_lines = np.append(all_lines, np.arange(0, elapse_min, -step*2*np.pi))
+    all_lines = np.arange(elapse_min, elapse_max, step*2*np.pi)
+    #all_lines = np.append(all_lines, np.arange(0, elapse_min, -step*2*np.pi))
     print(all_lines)
     print(min_time)
     ax_list1[2].hlines(all_lines, min_time, max_time, color='black')
