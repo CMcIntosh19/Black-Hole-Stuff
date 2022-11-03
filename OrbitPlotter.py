@@ -19,7 +19,7 @@ def sph2cart(pos):
   z = pos[0] * np.cos(pos[1])
   return [x, y, z]
 
-def orthoplots(datalist, merge=True, start=0, end=-1):
+def orthoplots(datalist, merge=True, start=0, end=-1, leg=True):
     if type(datalist) != list:
         datalist = [datalist]
     if merge == True:
@@ -51,15 +51,16 @@ def orthoplots(datalist, merge=True, start=0, end=-1):
         i.set_xlim(-cap, cap)
         i.set_ylim(-cap, cap)
         i.set_aspect('equal')
-        i.legend()
+        if leg == True:
+            i.legend()
     return ax_list
 
-def physplots(datalist, merge=True, start=0, end=-1):
+def physplots(datalist, merge=True, start=0, end=-1, leg=True):
     if type(datalist) != list:
         datalist = [datalist]
     if merge == True:
         fig1, ax_list1 = plt.subplots(3)
-        fig2, ax_list2 = plt.subplots(4)
+        fig2, ax_list2 = plt.subplots(6)
     else:
         fig1, ax1 = plt.subplots()
         fig2, ax2 = plt.subplots()
@@ -69,7 +70,9 @@ def physplots(datalist, merge=True, start=0, end=-1):
         fig5, ax5 = plt.subplots()
         fig6, ax6 = plt.subplots()
         fig7, ax7 = plt.subplots()
-        ax_list2 = [ax4, ax5, ax6, ax7]
+        fig8, ax8 = plt.subplots()
+        fig9, ax9 = plt.subplots()
+        ax_list2 = [ax4, ax5, ax6, ax7, ax8, ax9]
     
     elapse_max = -(10**(30))
     elapse_min = 10**(30)
@@ -77,7 +80,7 @@ def physplots(datalist, merge=True, start=0, end=-1):
     min_time = 10**(30)
     for data in datalist:
         to1 = get_index(data["time"], start)
-        print(to1)
+        #print(to1)
         if end == -1:
             tf1 = get_index(data["time"], data["time"][-1])
         else: 
@@ -100,32 +103,38 @@ def physplots(datalist, merge=True, start=0, end=-1):
         ax_list1[2].set_title('Phi vs Time')
         elapse_min = min(elapse_min, min(data["pos"][to1:tf1, 2]))
         elapse_max = max(elapse_max, max(data["pos"][to1:tf1, 2]))
-        print(elapse_min, elapse_max)
+        #print(elapse_min, elapse_max)
 
         ax_list2[0].plot(data["tracktime"][to2:tf2], data["energy"][to2:tf2], label=data["name"])  #XY Plot
         ax_list2[0].set_title('Energy vs Time')
-        ax_list2[1].plot(data["tracktime"][to2:tf2], data["phi_momentum"][to2:tf2], label=data["name"])  #XY Plot
-        ax_list2[1].set_title('Phi Momentum vs Time')
-        ax_list2[2].plot(data["tracktime"][to2:tf2], data["carter"][to2:tf2], label=data["name"])  #XZ Plot
-        ax_list2[2].set_title('Carter(C) vs Time')
-        ax_list2[3].plot(data["tracktime"][to2:tf2], data["e"][to2:tf2], label=data["name"])  #ZY Plot
-        ax_list2[3].set_title('Eccentricity vs Time')
+        ax_list2[1].plot(data["tracktime"][to2:tf2], data["Lx_momentum"][to2:tf2], label=data["name"])  #XY Plot
+        ax_list2[1].set_title('Lx vs Time')
+        ax_list2[2].plot(data["tracktime"][to2:tf2], data["Ly_momentum"][to2:tf2], label=data["name"])  #XY Plot
+        ax_list2[2].set_title('Ly vs Time')
+        ax_list2[3].plot(data["tracktime"][to2:tf2], data["phi_momentum"][to2:tf2], label=data["name"])  #XY Plot
+        ax_list2[3].set_title('Lz vs Time')
+        ax_list2[4].plot(data["tracktime"][to2:tf2], data["carter"][to2:tf2], label=data["name"])  #XZ Plot
+        ax_list2[4].set_title('Carter(C) vs Time')
+        ax_list2[5].plot(data["tracktime"][to2:tf2], data["e"][to2:tf2], label=data["name"])  #ZY Plot
+        ax_list2[5].set_title('Eccentricity vs Time')
     
 
     step = max(1, int((elapse_max - elapse_min)//(20*np.pi)))
     all_lines = np.arange(elapse_min, elapse_max, step*2*np.pi)
     #all_lines = np.append(all_lines, np.arange(0, elapse_min, -step*2*np.pi))
-    print(all_lines)
-    print(min_time)
+    #print(all_lines)
+    #print(min_time)
     ax_list1[2].hlines(all_lines, min_time, max_time, color='black')
     ax_list1[2].set_title('Phi vs Time (Marked Per ' + str(step) + ' Orbits)')
 
     for i in ax_list1:
         i.label_outer()
         #i.set_aspect('equal')
-        i.legend()
+        if leg == True:
+            i.legend()
     for i in ax_list2:
         i.label_outer()
         #i.set_aspect('equal')
-        i.legend()
+        if leg == True:
+            i.legend()
     return ax_list1, ax_list2

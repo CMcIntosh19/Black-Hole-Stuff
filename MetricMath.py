@@ -43,7 +43,7 @@ def fix_sin(value):
 
     '''
     num = np.sin(value)
-    if abs(num) <= 10**(-15):
+    if abs(num) <= 10**(-8):
         num = 0.0
     return num
 
@@ -62,7 +62,7 @@ def fix_cos(value):
 
     '''
     num = np.cos(value)
-    if abs(num) <= 10**(-15):
+    if abs(num) <= 10**(-8):
         num = 0.0
     return num
 
@@ -844,9 +844,10 @@ def recalc_state(constants, state, mass, a):
   #sign correction
   if (len(state) == 7):
     rtau = abs(rtau) * -1
+    thetau = abs(thetau) 
   else:
     rtau = abs(rtau) * np.sign(state[5]) 
-  thetau = abs(thetau) * np.sign(state[6])
+    thetau = abs(thetau) * np.sign(state[6])
 
   if len(state) == 8:
     new_state = np.copy(state)
@@ -915,9 +916,10 @@ def ortholize(pos, mu):
   x = pos[0] * np.sin(pos[1]) * np.cos(pos[2])
   y = pos[0] * np.sin(pos[1]) * np.sin(pos[2])
   z = pos[0] * np.cos(pos[1])
-  qmom = np.array([[x*x,      x*y,     x*z],
-                   [y*x,      y*y,     y*z],
-                   [z*x,      z*y,     z*z]], dtype=np.float64)
+
+  qmom = np.array([[3*x*x - pos[0]**2,       3*x*y,             3*x*z      ],
+                   [      3*y*x,       3*y*y - pos[0]**2,       3*y*z      ],
+                   [      3*z*x,             3*z*y,       3*z*z - pos[0]**2]], dtype=np.float64)
   qmom = qmom*mu
   return qmom
 
@@ -977,6 +979,7 @@ def levi_civita(i,j,k):
         return 0
 
 def peters_integrate2(constants, a, mu, states, ind1, ind2):
+    #print("t1")
     compErr = False
     mass = 1
     energy, lx, ly, lz, cart = constants[0], constants[1], constants[2], constants[3], constants[4]
@@ -1000,29 +1003,32 @@ def peters_integrate2(constants, a, mu, states, ind1, ind2):
     if ind1 != ind2:
         states = np.array(states)
         sphere, time = states[ind1:ind2][:,1:4], states[ind1:ind2][:,0]
+        #print(sphere)
+        #print(time)
         int_sphere, int_time = interpolate(sphere, time)
         div = int_time[1]-int_time[0]
         quad = np.array([ortholize(pos, mu) for pos in int_sphere])
         dt2 = matrix_derive(quad, int_time, 2)
         dt3 = matrix_derive(quad, int_time, 3)
+        #print((int_time[-1]-int_time[0]))
     
         
         for i in range(3):
             for j in range(3):
-                dedt += sum( ((dt3[:,i,j])**2 - (1/3)*(dt3[:,i,i])*(dt3[:,j,j]))*div )
-                for k in range(3):
-                    bigE = levi_civita(i,j,k)
-                    if bigE != 0:
-                        for m in range(3):
-                            dldt[i] += bigE*sum( (dt2[:,j,m]*dt3[:,k,m])*div )
-                            #print(i,j,k, bigE*sum( (dt2[:,j,m]*dt3[:,k,m])*div ))
-            
+                dedt += np.sum( ( (dt3[:,i,j])**2 - (1/3)*(dt3[:,i,i])*(dt3[:,j,j]) )*div)
+                dldt[i] += np.sum(dt2[:,(i+1)%3,j]*dt3[:,(i+2)%3, j]*div)
+                dldt[i] -= np.sum(dt2[:,(i-1)%3,j]*dt3[:,(i-2)%3, j]*div)
+
     dedt = (-1/5)*dedt
     #print(dldt)
     dlxdt, dlydt, dlzdt = (-2/5)*dldt
-    dcdt = 2*lx*dlxdt + 2*ly*dlydt
+    dcdt = 2*lx*dlxdt + 2*ly*dlydt  #only true if a=0
+    #print(states[0])
+    theta = states[0][2]
+    dcdt = 2*((fix_sin(theta)**(-2))*(lz - a*energy*(fix_sin(theta)**(2)))*(dlzdt - a*dedt*(fix_sin(theta)**(2))) + (a*energy - lz)*(a*dedt - dlzdt))
     #print("SURPRISE", dedt, dlxdt, dlydt, dlzdt, dcdt)
-    #print(dedt, dldt)
+    #print("why")
+    #print(dedt, dlxdt, dlydt, dlzdt)
     return (np.array([dedt, dlxdt, dlydt, dlzdt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
 
 def new_recalc_state(constants, state, mass, a):
@@ -1061,7 +1067,7 @@ def new_recalc_state(constants, state, mass, a):
 def new_recalc_state2(constants, con_derv, state, mu, mass, a):
   ene, lmom, cart = constants[0], np.array([constants[1], constants[2], constants[3]]), constants[4]
   ened, lmomd, cartd = con_derv[0], np.array([con_derv[1], con_derv[2], con_derv[3]]), con_derv[4]
-  print("change", lmomd)
+  #print("change", lmomd)
   full_v = np.sqrt(state[5]**2 + (state[1]*state[6])**2 + (state[1]*fix_cos(state[2])*state[7])**2)
   orthostate = np.array([state[0], 
                          state[1]*fix_sin(state[2])*fix_cos(state[3]),
@@ -1090,7 +1096,7 @@ def new_recalc_state2(constants, con_derv, state, mu, mass, a):
   metric, chris = kerr(state, mass, a)
   #print(metric)
   #print((metric[0][0] + metric[1][1]*(new_3vel[0])**2 + metric[2][2]*(new_3vel[1])**2 + metric[3][3]*(new_3vel[2])**2 + 2*metric[0][3]*new_3vel[2]))
-  #new_ut = np.sqrt(abs(-1/(metric[0][0] + metric[1][1]*(new_3vel[0])**2 + metric[2][2]*(new_3vel[1])**2 + metric[3][3]*(new_3vel[2])**2 + 2*metric[0][3]*new_3vel[2]) ))
+  new_ut = np.sqrt(abs(-1/(metric[0][0] + metric[1][1]*(new_3vel[0])**2 + metric[2][2]*(new_3vel[1])**2 + metric[3][3]*(new_3vel[2])**2 + 2*metric[0][3]*new_3vel[2]) ))
   # new and BROKEN - new_ut = (-metric[0][0] - np.dot(pos, ortho_3vel)/(state[1]-2) - (state[1]*new_ortho_3vel[2] - (pos[2]/state[1])*np.dot(pos, ortho_3vel))*(1 - (pos[2]/pos[1])**2)**(-1/2) + ((state[1]*fix_sin(state[2]))**2)*(lmom[2]/(pos[1]**2 + 1))*((1/mu)*(np.dot(lmom, lmomd)/np.dot(lmom, lmom) + 1)))**(-1/2)
   #false_4vec = np.array([1, *new_3vel])
   #new_ut = np.sqrt(-1/np.matmul(np.matmul(metric, false_4vec), false_4vec))
@@ -1106,12 +1112,145 @@ def new_recalc_state2(constants, con_derv, state, mu, mass, a):
   #print(ut, new_ut)
   print("DIFFERENCE")
   #ut is old version, straight up doesn't work
-  new_vel = np.array([ut, *(new_3vel*ut)])
+  new_vel = np.array([new_ut, *(new_3vel*ut)])
   
   new_state = np.zeros(8)
   new_state[:4] = state[:4]
   new_state[4:] = new_vel
   return new_state
 
+def getEnergy(state, mass, a):
+    metric, chris = kerr(state, mass, a)
+    stuff = np.matmul(metric, state[4:])
+    ene = -stuff[0]
+    return ene
     
+def getLs(state, mu):
+    t, r, theta, phi, vel4 = *state[:4], state[4:]
+    sint, cost = fix_sin(theta), fix_cos(theta)
+    #print(sint, cost)
+    #print(np.sin(theta), np.cos(theta))
+    sinp, cosp = fix_sin(phi), fix_cos(phi)
+    sph2cart = np.array([[1, 0,         0,           0           ],
+                         [0, sint*cosp, r*cost*cosp, -r*sint*sinp],
+                         [0, sint*sinp, r*cost*sinp, r*sint*cosp ],
+                         [0, cost,      -r*sint,     0           ]])
+    #print(sph2cart)
+    vel4cart = np.matmul(sph2cart, vel4)
+    vel3cart = vel4cart[1:4]
+    pos3cart = np.array([r*sint*cosp, r*sint*sinp, r*cost])
+    #print(pos3cart)
+    #print(vel3cart)
+    Lmom = np.cross(pos3cart, vel3cart)
+    return Lmom
+                     
+def new_recalc_state3(con_derv, state, mu, mass, a, trial=0, old_diff=False):
+    #print("HEY",con_derv)
+    t, r, theta, phi, vel4 = *state[:4], state[4:]
+    sint, cost = fix_sin(theta), fix_cos(theta)
+    sinp, cosp = fix_sin(phi), fix_cos(phi)
+    rho2, tri = r**2 + (a*cost)**2, r**2 - 2*mass*r + a**2
+    al2, w = (rho2*tri)/(rho2*tri + 2*mass*r*(a**2 + r**2)), (2*mass*r*a)/(rho2*tri + 2*mass*r*(a**2 + r**2))
+    wu2 = ((rho2*tri + 2*mass*r*(a**2 + r**2))/(rho2))*sint**2
     
+    '''
+    #schwarz tetrad
+    evhor = (r-2)/r
+    tet2cor = np.array([[evhor**(-1/2),   0.0,            0.0,   0.0         ],
+                        [0.0,             evhor**(1/2),   0.0,   0.0         ],
+                        [0.0,             0.0,            1/r,   0.0         ],
+                        [0.0,             0.0,            0.0,   1/(r*sint)  ]])
+    '''
+    #kerr tetrad
+    tet2cor = np.array([[1/np.sqrt(al2), 0.0,               0.0,             0.0             ],
+                        [0.0,            np.sqrt(tri/rho2), 0.0,             0.0             ],
+                        [0.0,            0.0,               1/np.sqrt(rho2), 0.0             ],
+                        [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wu2)  ]])
+    cor2tet = np.linalg.inv(tet2cor)
+    sph2cart = np.array([[1.0, 0.0,       0.0,       0.0  ],
+                         [0.0, sint*cosp, cost*cosp, -sinp],
+                         [0.0, sint*sinp, cost*sinp, cosp ],
+                         [0.0, cost,      -sint,     0.0  ]])
+    cart2sph = np.linalg.inv(sph2cart)
+    #metric, chris = kerr(state, mass, a)
+    bigA = np.zeros([4,3])
+    
+    tet_state = np.matmul(cor2tet, vel4)
+    cart_tet_state = np.matmul(sph2cart, np.matmul(cor2tet, vel4))
+    strip_ct_state = (cart_tet_state[1:4])/(cart_tet_state[0])
+
+    for i in range(3):
+        dvel = np.array([0.0, 0.0, 0.0])
+        dvel[i] = 10**(-8)
+        new_strip_ct_state = strip_ct_state + dvel
+        newgamma = (1 - np.linalg.norm(new_strip_ct_state)**2)**(-1/2)
+        new_ct_state = newgamma*np.array([1, *new_strip_ct_state])
+        new_vel = np.matmul(tet2cor, np.matmul(cart2sph, new_ct_state))
+        new_state = np.array([*state[:4], *new_vel])
+        old_cons = np.array([getEnergy(state, mass, a), *getLs(state, mu)])
+        new_cons = np.array([getEnergy(new_state, mass, a), *getLs(new_state, mu)])
+        del_cons = new_cons - old_cons                                         #Using newcons - oldcons instead of assuming delcons is linear like Jeremy said
+        bigA[:, i] = del_cons/dvel[i]
+
+    dcons = con_derv[0:4]
+    #print(dcons[0])
+    #print(dcons[1])
+    #print(dcons[2])
+    #print(dcons[3])
+    bigAt = np.transpose(bigA)
+    block = np.linalg.inv(np.matmul(bigAt, bigA))
+    dvel = np.matmul(block, np.matmul(bigAt, dcons))
+    #print(dvel)
+    #print(dvel[0])
+    #print(dvel[1])
+    #print(dvel[2])
+    new_strip_ct_state = strip_ct_state + dvel
+    #print("diff")
+    #print(new_strip_ct_state - strip_ct_state)
+    #print((new_strip_ct_state - strip_ct_state)[0])
+    #print((new_strip_ct_state - strip_ct_state)[1])
+    #print((new_strip_ct_state - strip_ct_state)[2])
+    newgamma = 1/np.sqrt(1 - np.dot(new_strip_ct_state, new_strip_ct_state))
+    #print("old", cart_tet_state[0])
+    #print("new", newgamma)
+    new_ct_state = newgamma*np.array([1, *new_strip_ct_state])
+    new_vel = np.matmul(tet2cor, np.matmul(cart2sph, new_ct_state))
+    new_state = np.array([*state[:4], *new_vel])
+    #print(state)
+    #print(new_state)
+    #print(new_state-state)
+    
+    actuals = con_derv[0:4]
+    calcs = np.array([getEnergy(new_state, mass, a), *getLs(new_state, mu)]) - np.array([getEnergy(state, mass, a), *getLs(state, mu)])
+    if (trial<1):
+        #print("Trial -1")
+        #print(actuals)
+        #print(constants)
+        #print(con_derv)
+        #print(abs((actuals-constants[0:4])/(actuals+ 10**(-15)))*100)
+        #print(actuals/max(actuals))
+        no_change = np.array([0.0, 0.0, 0.0, 0.0])
+        diff = np.linalg.norm(actuals - no_change)
+        #print(diff)
+        
+    diff = np.linalg.norm(actuals - calcs)
+    
+    #print("Trial ", trial, ": Diff = ", diff)
+    if diff > 10**(-15):
+        if trial < 7:
+            #print("Failure")
+            #print("interval")
+            #print(check_interval(kerr, new_state, mass, a))
+            #print("actual vs calculated vs true actual??")
+            #print(actuals)
+            #print(calcs)
+            if old_diff != False:
+                if abs((diff-old_diff)/old_diff) <= 0.1:
+                    #print("hovering, skip")
+                    trial = 2*trial
+            #print(np.array([getEnergy(state, mass, a), *getLs(state, mu)]))
+            new_trial = trial + 1
+            #should_be = np.array([getEnergy(state, mass, a), *getLs(state, mu)]) + actuals
+            new_state = new_recalc_state3(actuals - calcs, new_state, mu, mass, a, trial = new_trial, old_diff=diff)
+
+    return(new_state)
