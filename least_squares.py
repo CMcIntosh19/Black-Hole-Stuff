@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+# -0*- coding: utf-8 -*-
 """
 Created on Thu Oct 13 00:09:16 2022
 
@@ -7,6 +7,9 @@ Created on Thu Oct 13 00:09:16 2022
 
 import numpy as np
 import MetricMath as mm
+import matplotlib.pyplot as plt
+import warnings
+from random import uniform
 
 def getEnergy(state, a):
     metric, chris = mm.kerr(state, 1, a)
@@ -146,3 +149,229 @@ def newLs(data):
     Lx = (Lz/L_props[:,2])*L_props[:,0]
     Ly = (Lz/L_props[:,2])*L_props[:,1]
     return(Lx, Ly, Lz, L_props)
+
+def l_locator(ene, a, dec):
+    low = 2.0
+    A, B, C, D = ene**2 - 1, 2, (a*ene + low)*(a*ene - low) - a**2, 2*(a*ene - low)**2
+    val = (B*C)**2 - 4*A*(C**3) - 4*(B**3)*D - 27*((A*D)**2) + 18*A*B*C*D
+    count = 0
+    for i in range(dec):
+        hold = low
+        while val <= 0.0:
+            low += (10**(-i-1))
+            low = round(low, dec)
+            A, B, C, D = ene**2 - 1, 2, (a*ene + low)*(a*ene - low) - a**2, 2*(a*ene - low)**2
+            val = (B*C)**2 - 4*A*(C**3) - 4*(B**3)*D - 27*((A*D)**2) + 18*A*B*C*D
+            #print(low, val)
+            count += 1
+            #print("fuck")
+            if low > 4.1:
+                print("boo")
+                low = hold
+                print(low)
+                break
+        if i+1 < dec:
+            low -= (10**(-i-1))
+            low = round(low, dec)
+            A, B, C, D = ene**2 - 1, 2, (a*ene + low)*(a*ene - low) - a**2, 2*(a*ene - low)**2
+            val = (B*C)**2 - 4*A*(C**3) - 4*(B**3)*D - 27*((A*D)**2) + 18*A*B*C*D
+    high = low
+    A, B, C, D = ene**2 - 1, 2, (a*ene + high)*(a*ene - high) - a**2, 2*(a*ene - high)**2
+    val = (B*C)**2 - 4*A*(C**3) - 4*(B**3)*D - 27*((A*D)**2) + 18*A*B*C*D
+    count = 0
+    for i in range(dec ):
+        while val > 0.0:
+            high += (10**(-i-1))
+            high = round(high, dec)
+            A, B, C, D = ene**2 - 1, 2, (a*ene + high)*(a*ene - high) - a**2, 2*(a*ene - high)**2
+            val = (B*C)**2 - 4*A*(C**3) - 4*(B**3)*D - 27*((A*D)**2) + 18*A*B*C*D
+            #print(high, val)
+            count +=1
+        high -= (10**(-i-1))
+        high = round(high, dec)
+        A, B, C, D = ene**2 - 1, 2, (a*ene + low)*(a*ene - low) - a**2, 2*(a*ene - low)**2
+        val = (B*C)**2 - 4*A*(C**3) - 4*(B**3)*D - 27*((A*D)**2) + 18*A*B*C*D
+    return low, high
+
+def getparams(vx, vy, vz, tet_mat, metric, r0, rmin, i0, a, showme = False):
+    warnings.filterwarnings("ignore")
+
+    gamma = 1.0/np.sqrt(1 - (vx**2 + vy**2 + vz**2))
+    tilde = np.array([ gamma,
+                       gamma*vx,
+                      -gamma*vz,
+                       gamma*vy])
+    final = np.matmul(tet_mat, tilde)
+    new = np.array([0.0, r0, np.pi/2, 0.0, *final])
+    
+    E = -np.matmul(new[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
+    L = np.matmul(new[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
+    Q = np.matmul(np.matmul(mm.kill_tensor(new, 1.0, a), new[4:]), new[4:])               #new Carter constant Q
+    C = abs(Q - (a*E - L)**2)
+    
+    Rco = [E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -(a**2)*C]
+    Rdco = [4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]
+    Tco = [(a**2)*(1 - E**2), -(C + (a**2)*(1 - E**2) + L**2), C]
+    turns = np.roots(Rco)
+    flats = np.roots(Rdco)
+    incs = np.roots(Tco)
+    incs = incs[(incs >= -1) & (incs <= 1)]
+    
+    rmax1, rmin1 = turns[0], turns[1]
+    r1 = np.real(flats[0])
+    i1 = abs(np.pi/2 - np.arccos(np.sqrt(incs[0])))
+    while (i1 > np.pi/2) or (i1 < 0.0):
+        fix = np.sign(i1)
+        i1 -= np.pi/2*fix
+    
+    rbound1, rbound2 = rmin1*0.7, rmax1*1.1
+    rads1 = np.linspace(rbound1, rbound2, num = int(r0*2))
+    
+    if showme == True:
+        R = lambda r: (E**2 - 1)*(r**4) + 2*(r**3) + ((a**2)*(E**2 - 1) - L**2 - C)*(r**2) + 2*((a*E - L)**2 + C)*r - (a**2)*C
+        T = lambda t: C - (C + (a**2)*(1 - E**2) + L**2)*(np.cos(t)**2) + (a**2)*(1 - E**2)*(np.cos(t)**4)
+        e = 1 - rmin/r0
+        rads = np.linspace(0, r0*(1+e)*1.15, num = int(r0**2))
+        thets = np.linspace(0.0, np.pi, num=50)
+        fig, ax = plt.subplots()
+        ax.plot(rads, R(rads))
+        ax.plot(rads, np.zeros(int(r0**2)))
+        ax.vlines([rmax1, rmin1], min(R(rads1)), max(R(rads1)), color='red')
+        ax.vlines([r1], min(R(rads1)), max(R(rads1)), color='green')
+        ax.vlines([r0*(1 + e), rmin], min(R(rads1)), max(R(rads1)), color='red', linestyle='dashed')
+        ax.vlines([r0], min(R(rads1)), max(R(rads1)), color='green', linestyle='dashed')
+        ax.set_title("err(r0, rmin) = (" + str(round(100*abs(r1-r0)/r0, 6)) + ", " + str(round(100*abs(rmin1-rmin)/rmin, 6)) + ")")
+        ax.set_xlim(min(rbound1, rmin*0.9), max(rbound2, r0*(1+e)*1.05))
+        ax.set_ylim(min(R(rads1)), max(R(rads1)) - 0.1*min(R(rads1)))
+        
+        fig1, ax1 = plt.subplots()
+        ax1.plot(thets, T(thets))
+        ax1.plot(thets, np.zeros(50))
+        ax1.vlines([np.pi/2 + i1, np.pi/2 - i1], min(T(thets)), max(T(thets)), color='black')
+        ax1.vlines([np.pi/2 + i0, np.pi/2 - i0], min(T(thets)), max(T(thets)), color='black', linestyle='dashed')
+        ax1.set_title("err =" + str(100*abs(i1 - i0)/(np.pi/2)))
+
+    stuff = np.array([r1, rmin1, i1])
+    return stuff
+
+def leastsquaresparam(r0, e, i, a):
+    rmin = r0*(1-e)
+    params = np.array([r0, rmin, i])
+    r, theta = r0, np.pi/2
+    
+    v0 = 1/np.sqrt(r0-2)
+    vx, vy, vz = v0/10.0, v0, v0/10.0
+    vel = np.array([vx, vy, vz])
+    pos = np.array([0.0, r0, theta, 0.0])
+    
+    #various defined values that make math easier
+    metric, chris = mm.kerr(np.array([*pos, 0, 0, 0, 0]), 1.0, a)
+    rho2 = r**2 + (a**2)*(np.cos(theta)**2)
+    tri = r**2 - 2*r + a**2
+    al2 = (rho2*tri)/(rho2*tri + 2*r*((a**2) + (r**2)))
+    w = (2*r*a)/(rho2*tri + 2*r*((a**2) + (r**2)))
+    wu2 = ((rho2*tri + 2*r*((a**2) + (r**2)))/rho2)*(np.sin(theta)**2)
+    new = np.array([*pos[:4], 0, 0, 0, 0])
+    tetrad_matrix = np.array([[1/(np.sqrt(al2)), 0,                 0,               0],
+                              [0,                np.sqrt(tri/rho2), 0,               0],
+                              [0,                0,                 1/np.sqrt(rho2), 0],
+                              [w/np.sqrt(al2),   0,                 0,               1/np.sqrt(wu2)]])
+
+    #get first guess
+    velguess = getparams(*vel, tetrad_matrix, metric, r0, rmin, i, a)
+    ack = 0
+    while (np.linalg.norm(abs((velguess - params)/np.array([r0, rmin, np.pi/2])))*100 > (10**(-7))) and (ack < 50):
+        go = False
+        eps = 10**(-5)
+        while go == False and eps > 10**(-9):
+            bigD = np.array([getparams(*(vel + np.array([eps, 0.0, 0.0])), tetrad_matrix, metric, r0, rmin, i, a) - velguess,
+                             getparams(*(vel + np.array([0.0, eps, 0.0])), tetrad_matrix, metric, r0, rmin, i, a) - velguess,
+                             getparams(*(vel + np.array([0.0, 0.0, eps])), tetrad_matrix, metric, r0, rmin, i, a) - velguess])/eps
+            bigD2 = np.transpose(bigD)
+            invBlock = np.linalg.inv(bigD2)
+            delpam = params - velguess
+            delvel = np.matmul(invBlock, delpam)
+            if np.linalg.norm(vel + delvel) > 1.0:
+                eps *= 0.25
+            else: 
+                go=True
+        if np.linalg.norm(delvel)/np.linalg.norm(vel) > 0.15:   
+            delvel *= 0.10*np.linalg.norm(vel)/np.linalg.norm(delvel)
+        eps = 10**(-5)
+        tryvel = vel + delvel
+        velguess = getparams(*tryvel, tetrad_matrix, metric, r0, rmin, i, a)
+        flip = 0
+        while True in np.iscomplex(velguess) and flip < 15:
+            delvel *= 0.5
+            tryvel = vel + delvel
+            velguess = getparams(*tryvel, tetrad_matrix, metric, r0, rmin, i, a)
+            flip += 1
+        if flip < 15:
+            vel = tryvel
+        else:
+            print("Exact match not found, giving best approximation")
+            ack = 49
+        velguess = getparams(*vel, tetrad_matrix, metric, r0, rmin, i, a)
+        ack += 1
+    gamma = 1/np.sqrt(1 - np.linalg.norm(vel)**2)
+    tilde = np.array([ gamma,
+                       gamma*vel[0],
+                      -gamma*vel[2],
+                       gamma*vel[1]])
+    final = np.matmul(tetrad_matrix, tilde)
+    new = np.array([0.0, r0, np.pi/2, 0.0, *final])
+    return new, velguess
+
+def schwtest():
+    r0, e, i = uniform(5, 500), uniform(0, 1), uniform(0, np.pi/2)
+    state, ans = leastsquaresparam(r0, e, i, 0)
+    val = np.linalg.norm(100*(np.array([r0, r0*(1-e), i]) - ans)/np.array([r0, r0*(1-e), 1]))
+    good = True
+    if val > 10**(-6):
+        good = False
+        #print(val)
+        #print(r0, r0*(1-e), i)
+        #print(ans)
+        metric, chris = mm.kerr(state, 1.0, 0.0)
+        E = -np.matmul(state[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
+        L = np.matmul(state[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
+        Q = np.matmul(np.matmul(mm.kill_tensor(state, 1.0, 0.0), state[4:]), state[4:])               #new Carter constant Q
+        C = abs(Q - (0.0*E - L)**2)
+        #print(E, L, C)
+        #if E < 0.95 or r0*(1-e) < 4.0:
+            #print("ignore!")
+        #print("\n")
+    return val
+
+def kerrtest():
+    r0, e, i, a = uniform(5, 500), uniform(0, 1), uniform(0, np.pi/2), uniform(0, 1)
+    state, ans = leastsquaresparam(r0, e, i, a)
+    val = np.linalg.norm(100*(np.array([r0, r0*(1-e), i]) - ans)/np.array([r0, r0*(1-e), 1]))
+    if val > 100:
+        #print(val)
+        #print(r0, r0*(1-e), i, a)
+        #print(ans, a)
+        metric, chris = mm.kerr(state, 1.0, a)
+        E = -np.matmul(state[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
+        L = np.matmul(state[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
+        Q = np.matmul(np.matmul(mm.kill_tensor(state, 1.0, a), state[4:]), state[4:])               #new Carter constant Q
+        C = abs(Q - (a*E - L)**2)
+        #print(E, L, C)
+        #if E < 0.95 or r0*(1-e) < 4.0:
+            #print("ignore!")
+        #print("\n")
+    return val
+
+def errorplot(x, y, num=1000, binns=50):
+    x = np.log(np.array([schwtest() for i in range(num)]))
+    y = np.log(np.array([kerrtest() for i in range(num)]))
+    xcounts, xbins = np.histogram(x, bins=binns)
+    ycounts, ybins = np.histogram(y, bins=xbins)
+    fig, ax = plt.subplots()
+    ax.set_title("Histogram of Errors for Least-Squares Parameter Calculation")
+    ax.set_ylabel("Count")
+    ax.set_xlabel("Logarithm of error")
+    ax.stairs(xcounts, xbins, label="Random r0, e, i; a=0")
+    ax.stairs(ycounts, ybins, label="Random r0, e, i, a")
+    ax.vlines(-6, 0, max(np.concatenate((xcounts, ycounts))), label="Maximum Accepted Error")
+    ax.legend()
