@@ -193,7 +193,7 @@ def l_locator(ene, a, dec):
         val = (B*C)**2 - 4*A*(C**3) - 4*(B**3)*D - 27*((A*D)**2) + 18*A*B*C*D
     return low, high
 
-def getparams(vx, vy, vz, tet_mat, metric, r0, rmin, i0, a, showme = False):
+def getparams(vx, vy, vz, tet_mat, metric, r0, e0, i0, a, showme = False):
     warnings.filterwarnings("ignore")
 
     gamma = 1.0/np.sqrt(1 - (vx**2 + vy**2 + vz**2))
@@ -209,6 +209,7 @@ def getparams(vx, vy, vz, tet_mat, metric, r0, rmin, i0, a, showme = False):
     Q = np.matmul(np.matmul(mm.kill_tensor(new, 1.0, a), new[4:]), new[4:])               #new Carter constant Q
     C = abs(Q - (a*E - L)**2)
     
+    #print(E, L, C)
     Rco = [E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -(a**2)*C]
     Rdco = [4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]
     Tco = [(a**2)*(1 - E**2), -(C + (a**2)*(1 - E**2) + L**2), C]
@@ -218,6 +219,8 @@ def getparams(vx, vy, vz, tet_mat, metric, r0, rmin, i0, a, showme = False):
     incs = incs[(incs >= -1) & (incs <= 1)]
     
     rmax1, rmin1 = turns[0], turns[1]
+    rc = (1 + np.sqrt(1 + a))**2
+    e1 = (rmax1 - rmin1)/(rmax1 + rmin1 - 2*rc)
     r1 = np.real(flats[0])
     i1 = abs(np.pi/2 - np.arccos(np.sqrt(incs[0])))
     while (i1 > np.pi/2) or (i1 < 0.0):
@@ -230,7 +233,7 @@ def getparams(vx, vy, vz, tet_mat, metric, r0, rmin, i0, a, showme = False):
     if showme == True:
         R = lambda r: (E**2 - 1)*(r**4) + 2*(r**3) + ((a**2)*(E**2 - 1) - L**2 - C)*(r**2) + 2*((a*E - L)**2 + C)*r - (a**2)*C
         T = lambda t: C - (C + (a**2)*(1 - E**2) + L**2)*(np.cos(t)**2) + (a**2)*(1 - E**2)*(np.cos(t)**4)
-        e = 1 - rmin/r0
+        e = e0
         rads = np.linspace(0, r0*(1+e)*1.15, num = int(r0**2))
         thets = np.linspace(0.0, np.pi, num=50)
         fig, ax = plt.subplots()
@@ -238,10 +241,10 @@ def getparams(vx, vy, vz, tet_mat, metric, r0, rmin, i0, a, showme = False):
         ax.plot(rads, np.zeros(int(r0**2)))
         ax.vlines([rmax1, rmin1], min(R(rads1)), max(R(rads1)), color='red')
         ax.vlines([r1], min(R(rads1)), max(R(rads1)), color='green')
-        ax.vlines([r0*(1 + e), rmin], min(R(rads1)), max(R(rads1)), color='red', linestyle='dashed')
+        ax.vlines([r0*(1 + e), r0*(1 - e)], min(R(rads1)), max(R(rads1)), color='red', linestyle='dashed')
         ax.vlines([r0], min(R(rads1)), max(R(rads1)), color='green', linestyle='dashed')
-        ax.set_title("err(r0, rmin) = (" + str(round(100*abs(r1-r0)/r0, 6)) + ", " + str(round(100*abs(rmin1-rmin)/rmin, 6)) + ")")
-        ax.set_xlim(min(rbound1, rmin*0.9), max(rbound2, r0*(1+e)*1.05))
+        ax.set_title("err(r0, rmin) = (" + str(round(100*abs(r1-r0)/r0, 6)) + ", " + str(round(100*abs(rmin1-r0*(1 - e))/(r0*(1 - e)), 6)) + ")")
+        ax.set_xlim(min(rbound1, r0*(1 - e)*0.9), max(rbound2, r0*(1+e)*1.05))
         ax.set_ylim(min(R(rads1)), max(R(rads1)) - 0.1*min(R(rads1)))
         
         fig1, ax1 = plt.subplots()
@@ -251,16 +254,21 @@ def getparams(vx, vy, vz, tet_mat, metric, r0, rmin, i0, a, showme = False):
         ax1.vlines([np.pi/2 + i0, np.pi/2 - i0], min(T(thets)), max(T(thets)), color='black', linestyle='dashed')
         ax1.set_title("err =" + str(100*abs(i1 - i0)/(np.pi/2)))
 
-    stuff = np.array([r1, rmin1, i1])
+    stuff = np.array([r1, e1, i1])
     return stuff
 
-def leastsquaresparam(r0, e, i, a):
-    rmin = r0*(1-e)
-    params = np.array([r0, rmin, i])
+def leastsquaresparam(r0, e, i, a, showme=False):
+    #rmin = r0*(1 - e)
+    #params = np.array([r0, rmin, i])
+    icor = (i%(2*np.pi))//(np.pi/2)
+    icor1 = i%(np.pi/2) if (icor%2 == 0) else np.pi - i%(np.pi)
+    params = np.array([r0, e, icor1])
     r, theta = r0, np.pi/2
+    pre1 = 1 if (icor < 1) or (icor > 2) else -1
+    pre2 = 1 if (icor < 2) else -1
     
-    v0 = 1/np.sqrt(r0-2)
-    vx, vy, vz = v0/10.0, v0, v0/10.0
+    v0 = (1/np.sqrt(r0-2) + 1/np.sqrt(r0))/2
+    vx, vy, vz = v0/10.0, pre1*v0, pre2*v0/10.0
     vel = np.array([vx, vy, vz])
     pos = np.array([0.0, r0, theta, 0.0])
     
@@ -278,15 +286,16 @@ def leastsquaresparam(r0, e, i, a):
                               [w/np.sqrt(al2),   0,                 0,               1/np.sqrt(wu2)]])
 
     #get first guess
-    velguess = getparams(*vel, tetrad_matrix, metric, r0, rmin, i, a)
+    velguess = getparams(*vel, tetrad_matrix, metric, r0, e, icor1, a)
     ack = 0
-    while (np.linalg.norm(abs((velguess - params)/np.array([r0, rmin, np.pi/2])))*100 > (10**(-7))) and (ack < 50):
+    while (np.linalg.norm(abs((velguess - params)/np.array([r0, 1, np.pi/2])))*100 > (10**(-10))) and (ack < 100):
+        #print(velguess)
         go = False
         eps = 10**(-5)
         while go == False and eps > 10**(-9):
-            bigD = np.array([getparams(*(vel + np.array([eps, 0.0, 0.0])), tetrad_matrix, metric, r0, rmin, i, a) - velguess,
-                             getparams(*(vel + np.array([0.0, eps, 0.0])), tetrad_matrix, metric, r0, rmin, i, a) - velguess,
-                             getparams(*(vel + np.array([0.0, 0.0, eps])), tetrad_matrix, metric, r0, rmin, i, a) - velguess])/eps
+            bigD = np.array([getparams(*(vel + np.array([eps, 0.0, 0.0])), tetrad_matrix, metric, r0, e, i, a) - velguess,
+                             getparams(*(vel + np.array([0.0, eps, 0.0])), tetrad_matrix, metric, r0, e, i, a) - velguess,
+                             getparams(*(vel + np.array([0.0, 0.0, eps])), tetrad_matrix, metric, r0, e, i, a) - velguess])/eps
             bigD2 = np.transpose(bigD)
             invBlock = np.linalg.inv(bigD2)
             delpam = params - velguess
@@ -299,20 +308,21 @@ def leastsquaresparam(r0, e, i, a):
             delvel *= 0.10*np.linalg.norm(vel)/np.linalg.norm(delvel)
         eps = 10**(-5)
         tryvel = vel + delvel
-        velguess = getparams(*tryvel, tetrad_matrix, metric, r0, rmin, i, a)
+        velguess = getparams(*tryvel, tetrad_matrix, metric, r0, e, icor1, a)
         flip = 0
         while True in np.iscomplex(velguess) and flip < 15:
             delvel *= 0.5
             tryvel = vel + delvel
-            velguess = getparams(*tryvel, tetrad_matrix, metric, r0, rmin, i, a)
+            velguess = getparams(*tryvel, tetrad_matrix, metric, r0, e, icor1, a)
             flip += 1
         if flip < 15:
             vel = tryvel
         else:
             print("Exact match not found, giving best approximation")
-            ack = 49
-        velguess = getparams(*vel, tetrad_matrix, metric, r0, rmin, i, a)
+            ack = 99
+        velguess = getparams(*vel, tetrad_matrix, metric, r0, e, icor1, a, showme=showme)
         ack += 1
+    print(ack, (np.linalg.norm(abs((velguess - params)/np.array([r0, 1, np.pi/2])))*100))
     gamma = 1/np.sqrt(1 - np.linalg.norm(vel)**2)
     tilde = np.array([ gamma,
                        gamma*vel[0],
@@ -375,3 +385,15 @@ def errorplot(x, y, num=1000, binns=50):
     ax.stairs(ycounts, ybins, label="Random r0, e, i, a")
     ax.vlines(-6, 0, max(np.concatenate((xcounts, ycounts))), label="Maximum Accepted Error")
     ax.legend()
+
+'''
+for i in range(len(enlist)):
+    small, big = l_locator(enlist[i], 0.0, 10)
+    xlist = np.linspace(small, big)
+    for l in range(50):
+        t = np.sqrt(4*(np.pi**2)*((1/(1-enlist[i]**2))**3))
+        test = clean_inspiral(1.0, 0.0, 0.0, t*10, 0.1, 10**(-13), "test", cons=[enlist[i], xlist[l], 0.0], verbose=False)
+        a, b = max(test["pos"][:,0]) - 4, min(test["pos"][:,0]) - 4
+        o = test["pos"][-1,2]/10
+        things[i, l] = a, b, o
+'''

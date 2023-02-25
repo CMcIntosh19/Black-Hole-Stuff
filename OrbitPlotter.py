@@ -172,35 +172,35 @@ def physplots(datalist, merge=False, start=0, end=-1, leg=True):
         min_time = min(data["time"][to1], min_time)
         max_time = max(data["time"][tf1], max_time)
         
-        ax_list1[0].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 0], label=data["name"])  #XY Plot
+        ax_list1[0].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 0], label=data["name"])
         ax_list1[0].set_title('Radius vs Time')
-        ax_list1[1].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 1], label=data["name"])  #XZ Plot
+        ax_list1[1].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 1], label=data["name"])
         ax_list1[1].set_title('Theta vs Time')
-        ax_list1[2].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 2], label=data["name"])  #ZY Plot
+        ax_list1[2].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 2], label=data["name"])
         ax_list1[2].set_title('Phi vs Time')
-        ax_list1[3].plot(data["time"][to1:tf1], data["Lx_momentum"][to1:tf1], label=data["name"])  #XY Plot
+        ax_list1[3].plot(data["time"][to1:tf1], data["Lx_momentum"][to1:tf1], label=data["name"])
         ax_list1[3].set_title('Psuedo Lx vs Time')
-        ax_list1[4].plot(data["time"][to1:tf1], data["Ly_momentum"][to1:tf1], label=data["name"])  #XY Plot
+        ax_list1[4].plot(data["time"][to1:tf1], data["Ly_momentum"][to1:tf1], label=data["name"])
         ax_list1[4].set_title('Psuedo Ly vs Time')
-        ax_list1[5].plot(data["time"][to1:tf1], data["Lz_momentum"][to1:tf1], label=data["name"])  #XY Plot
+        ax_list1[5].plot(data["time"][to1:tf1], data["Lz_momentum"][to1:tf1], label=data["name"])
         ax_list1[5].set_title('Psuedo Lz vs Time')
         elapse_min = min(elapse_min, min(data["pos"][to1:tf1, 2]))
         elapse_max = max(elapse_max, max(data["pos"][to1:tf1, 2]))
         #print(elapse_min, elapse_max)
 
-        ax_list2[0].plot(data["tracktime"][to2:tf2], data["energy"][to2:tf2], label=data["name"])  #XY Plot
+        ax_list2[0].plot(data["tracktime"][to2:tf2], data["energy"][to2:tf2], label=data["name"])
         ax_list2[0].set_title('Energy vs Time')
         b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["energy"][to2:tf2], 1)
         ax_list2[0].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-        ax_list2[1].plot(data["tracktime"][to2:tf2], data["phi_momentum"][to2:tf2], label=data["name"])  #XY Plot
+        ax_list2[1].plot(data["tracktime"][to2:tf2], data["phi_momentum"][to2:tf2], label=data["name"])
         ax_list2[1].set_title('L_phi vs Time')
         b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["phi_momentum"][to2:tf2], 1)
         ax_list2[1].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-        ax_list2[2].plot(data["tracktime"][to2:tf2], data["carter"][to2:tf2], label=data["name"])  #XZ Plot
+        ax_list2[2].plot(data["tracktime"][to2:tf2], data["carter"][to2:tf2], label=data["name"])
         ax_list2[2].set_title('Carter(C) vs Time')
         b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["carter"][to2:tf2], 1)
         ax_list2[2].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-        ax_list2[3].plot(data["tracktime"][to2:tf2], data["e"][to2:tf2], label=data["name"])  #ZY Plot
+        ax_list2[3].plot(data["tracktime"][to2:tf2], data["e"][to2:tf2], label=data["name"])
         ax_list2[3].set_title('Eccentricity vs Time')
         #print(data["e"][to2:tf2])
         #b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["e"][to2:tf2], 1)

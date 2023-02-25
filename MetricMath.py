@@ -447,7 +447,7 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
         tilde = np.array([gamma, gamma*beta*fix_cos(eta), -gamma*beta*fix_sin(eta)*fix_cos(xi), gamma*beta*fix_sin(eta)*fix_sin(xi)])
         new = np.matmul(tetrad_matrix, tilde)
         new = np.array([[*pos, *new]])
-    elif (np.shape(vel4) == (4,)) and np.shape(pos) != (4,):
+    elif (np.shape(vel4) == (4,)) and np.shape(pos) == (4,):
         print("Calculating initial velocity from tetrad component velocities")
         r, theta = pos[1], pos[2]
         metric, chris = kerr(pos, mass, a)
@@ -472,9 +472,9 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
     elif np.shape(params) == (3,):
         print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
         new, newpams = ls.leastsquaresparam(*params, a)
-        print(new)
+        #print(new)
         print("Actual parameters:")
-        print(newpams[0], 1 - newpams[1]/newpams[0], newpams[2])
+        print(newpams[0], newpams[1], newpams[2])
     else:
         print("Insufficent information provided, begone")
         #SEND THE INSOLENT ONE TO H E L L
@@ -1113,6 +1113,7 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
     energy, lz, cart = constants[0], constants[1], constants[2]
     coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2) + 2*mass*cart, -cart*(a**2)]
     coeff2 = [(energy**2 - 1)*4, (2*mass)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*mass*((a*energy - lz)**2) + 2*mass*cart]
+    #print(energy, lz, cart)
     #print(coeff)
     roots = np.sort(np.roots(coeff))
     r0 = max(np.roots(coeff2))
@@ -1313,6 +1314,7 @@ def new_recalc_state3(con_derv, state, mu, mass, a, trial=0, old_diff=False):
     bigAt = np.transpose(bigA)
     block = np.linalg.inv(np.matmul(bigAt, bigA))
     dvel = np.matmul(block, np.matmul(bigAt, dcons))
+    
     new_strip_ct_state = strip_ct_state + dvel
     newgamma = 1/np.sqrt(1 - np.dot(new_strip_ct_state, new_strip_ct_state))
     new_ct_state = newgamma*np.array([1, *new_strip_ct_state])
@@ -1324,12 +1326,11 @@ def new_recalc_state3(con_derv, state, mu, mass, a, trial=0, old_diff=False):
     if (trial<1):
         no_change = np.array([0.0, 0.0, 0.0, 0.0])
         diff = np.linalg.norm(actuals - no_change)
-        
     diff = np.linalg.norm(actuals - calcs)
     
     #print("Trial ", trial, ": Diff = ", diff)
     if diff > 10**(-15):
-        if trial < 7:
+        if trial < 15:
             #print("Failure")
             #print("interval")
             #print(check_interval(kerr, new_state, mass, a))
