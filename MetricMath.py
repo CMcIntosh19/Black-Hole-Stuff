@@ -404,19 +404,30 @@ def set_u_kerr(state, mass, a, timelike, eta, xi, special=False):
     new[4:] = final
     return new
 
-def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, pos=False):
+def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, pos=False, units="grav"):
+    if units == "mks":
+        G, M, c = 6.67*(10**-11), mass, 3*(10**8)
+    elif units == "cgs":
+        G, M, c = 6.67*(10**-8), mass, 3*(10**10)
+    else:
+        G, M, c = 1.0, 1.0, 1.0
+    mass = 1.0
     if np.shape(cons) == (3,):
         print("Calculating initial velocity from constants E,L,C")
+        cons = list(np.array(cons) / np.array([c**2, G*M/c, ((G*M)/c)**2]))
         if np.shape(pos) == (4,):
+            pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
             new = recalc_state(cons, pos, mass, a)
         else:
             E, L, C = cons
             Rdco = [4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]
             flats = np.roots(Rdco)
             pos = [0.0, flats[0], np.pi/2, 0.0]
+            pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
             new = recalc_state(cons, pos, mass, a)
     elif (np.shape(velorient) == (3,)):
         print("Calculating intial velocity from tetrad velocity and orientation")
+        velorient = list(np.array(velorient) / np.array([c, c, c]))
         beta, eta, xi = velorient
         #eta is radial angle - 0 degrees is radially outwards, 90 degrees is no radial component
         #xi is up/down - 0 degrees is along L vector, 90 degrees is no up/down component
@@ -429,7 +440,9 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
         if np.shape(pos) != (4,):
             r, theta = (1/beta*np.sin(eta)*np.sin(xi))**2, np.pi/2
             pos = [0.0, r, theta, 0.0]
+            pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
         else:
+            pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
             r, theta = pos[1], pos[2]
             
         metric, chris = kerr([0.0, r, theta, 0.0], mass, a)
@@ -449,6 +462,8 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
         new = np.array([[*pos, *new]])
     elif (np.shape(vel4) == (4,)) and np.shape(pos) == (4,):
         print("Calculating initial velocity from tetrad component velocities")
+        vel4 = list(np.array(vel4) / np.array([1.0, c, (c**3)/(G*M), (c**3)/(G*M)]))
+        pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
         r, theta = pos[1], pos[2]
         metric, chris = kerr(pos, mass, a)
         #various defined values that make math easier
@@ -470,14 +485,14 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
         tilde = np.array([gamma, gamma*beta*fix_cos(eta), -gamma*beta*fix_sin(eta)*fix_cos(xi), gamma*beta*fix_sin(eta)*fix_sin(xi)])
         new = np.matmul(tetrad_matrix, tilde)
     elif np.shape(params) == (3,):
+        params = list(np.array(params) / np.array([(G*M)/(c**2), 1.0, 1.0]))
         print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
         new, newpams = ls.leastsquaresparam(*params, a)
-        #print(new)
+        newpams = newpams * np.array([(G*M)/(c**2), 1.0, 1.0])
         print("Actual parameters:")
         print(newpams[0], newpams[1], newpams[2])
     else:
         print("Insufficent information provided, begone")
-        #SEND THE INSOLENT ONE TO H E L L
         new = np.array([0.0, 2000000.0, np.pi/2, 0.0, 7.088812050083354, -0.99, 0.0, 0.0])
     return new
         
@@ -1113,8 +1128,6 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
     energy, lz, cart = constants[0], constants[1], constants[2]
     coeff = [energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2) + 2*mass*cart, -cart*(a**2)]
     coeff2 = [(energy**2 - 1)*4, (2*mass)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*mass*((a*energy - lz)**2) + 2*mass*cart]
-    #print(energy, lz, cart)
-    #print(coeff)
     roots = np.sort(np.roots(coeff))
     r0 = max(np.roots(coeff2))
     if (True in np.iscomplex(roots)):
@@ -1297,25 +1310,34 @@ def new_recalc_state3(con_derv, state, mu, mass, a, trial=0, old_diff=False):
     cart_tet_state = np.matmul(sph2cart, np.matmul(cor2tet, vel4))
     strip_ct_state = (cart_tet_state[1:4])/(cart_tet_state[0])
 
-    for i in range(3):
-        dvel = np.array([0.0, 0.0, 0.0])
-        dvel[i] = 10**(-8)
-        new_strip_ct_state = strip_ct_state + dvel
-        newgamma = (1 - np.linalg.norm(new_strip_ct_state)**2)**(-1/2)
-        new_ct_state = newgamma*np.array([1, *new_strip_ct_state])
-        new_vel = np.matmul(tet2cor, np.matmul(cart2sph, new_ct_state))
-        new_state = np.array([*state[:4], *new_vel])
-        old_cons = np.array([getEnergy(state, mass, a), *getLs(state, mu)])
-        new_cons = np.array([getEnergy(new_state, mass, a), *getLs(new_state, mu)])
-        del_cons = new_cons - old_cons                                         #Using newcons - oldcons instead of assuming delcons is linear like Jeremy said
-        bigA[:, i] = del_cons/dvel[i]
+    new_strip_ct_state = np.array([1.0, 1.0, 1.0])
+    counter = 0
+    while (np.linalg.norm(new_strip_ct_state) >= 1) and (counter <= 4.0):
+        for i in range(3):
+            dvel = np.array([0.0, 0.0, 0.0])
+            dvel[i] = 10**(-(6 + counter))
+            new_strip_ct_state = strip_ct_state + dvel
+            newgamma = (1 - np.linalg.norm(new_strip_ct_state)**2)**(-1/2)
+            new_ct_state = newgamma*np.array([1, *new_strip_ct_state])
+            new_vel = np.matmul(tet2cor, np.matmul(cart2sph, new_ct_state))
+            new_state = np.array([*state[:4], *new_vel])
+            old_cons = np.array([getEnergy(state, mass, a), *getLs(state, mu)])
+            new_cons = np.array([getEnergy(new_state, mass, a), *getLs(new_state, mu)])
+            del_cons = new_cons - old_cons                                         #Using newcons - oldcons instead of assuming delcons is linear like Jeremy said
+                                                                                   #That's what linear means you dip
+            bigA[:, i] = del_cons/dvel[i]
+      
+        dcons = con_derv[0:4]
+        bigAt = np.transpose(bigA)
+        block = np.linalg.inv(np.matmul(bigAt, bigA))
+        dvel = np.matmul(block, np.matmul(bigAt, dcons))
 
-    dcons = con_derv[0:4]
-    bigAt = np.transpose(bigA)
-    block = np.linalg.inv(np.matmul(bigAt, bigA))
-    dvel = np.matmul(block, np.matmul(bigAt, dcons))
+        new_strip_ct_state = strip_ct_state + dvel
+        counter += 0.5
     
-    new_strip_ct_state = strip_ct_state + dvel
+    if np.linalg.norm(new_strip_ct_state) >= 1:
+        print("It's still screwed up???")
+        return state
     newgamma = 1/np.sqrt(1 - np.dot(new_strip_ct_state, new_strip_ct_state))
     new_ct_state = newgamma*np.array([1, *new_strip_ct_state])
     new_vel = np.matmul(tet2cor, np.matmul(cart2sph, new_ct_state))
@@ -1345,4 +1367,4 @@ def new_recalc_state3(con_derv, state, mu, mass, a, trial=0, old_diff=False):
             new_trial = trial + 1
             #should_be = np.array([getEnergy(state, mass, a), *getLs(state, mu)]) + actuals
             new_state = new_recalc_state3(actuals - calcs, new_state, mu, mass, a, trial = new_trial, old_diff=diff)
-    return(new_state)
+    return new_state

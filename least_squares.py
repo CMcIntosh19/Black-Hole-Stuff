@@ -289,7 +289,6 @@ def leastsquaresparam(r0, e, i, a, showme=False):
     velguess = getparams(*vel, tetrad_matrix, metric, r0, e, icor1, a)
     ack = 0
     while (np.linalg.norm(abs((velguess - params)/np.array([r0, 1, np.pi/2])))*100 > (10**(-10))) and (ack < 100):
-        #print(velguess)
         go = False
         eps = 10**(-5)
         while go == False and eps > 10**(-9):
@@ -322,7 +321,7 @@ def leastsquaresparam(r0, e, i, a, showme=False):
             ack = 99
         velguess = getparams(*vel, tetrad_matrix, metric, r0, e, icor1, a, showme=showme)
         ack += 1
-    print(ack, (np.linalg.norm(abs((velguess - params)/np.array([r0, 1, np.pi/2])))*100))
+    #print(ack, (np.linalg.norm(abs((velguess - params)/np.array([r0, 1, np.pi/2])))*100))
     gamma = 1/np.sqrt(1 - np.linalg.norm(vel)**2)
     tilde = np.array([ gamma,
                        gamma*vel[0],
