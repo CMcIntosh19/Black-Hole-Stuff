@@ -4,65 +4,66 @@ I guess I'll just go through all of it step by step and clean it up after
 
 Most updated form of the program is based around clean_inspiral2
 
-clean_inspiral2
+function_name
+    Location:
+    
+    Summary:
+    
     Inputs:
-        mass (float): The mass of the central body. Can be given in kg, g, or gravitational units.
-        
+    
+    Process:
+    
+    Outputs:
+
+clean_inspiral2
+    Location: MainLoops.py
+    
+    Summary: Base function of the program, generates the path of an orbiting body around a central mass.
+    
+    Inputs:
+        mass (float): The mass of the central body. Can be given in kg, g, or gravitational units.       
         a (float): Dimensionless spin of the central body. Can be any number between -1 and 1, where negative values correspond to prograde orbits.
-        
         mu (float): Ratio between masses of orbiting body and central body. Setting this to 0 generates a fully geodesic path.
-        
         endflag (string): Determines when the program will terminate. Currently takes inputs in the form "(term) (comparison operator) (value)", with spaces included.
             Currently accepted terms:
                 time: Elapsed coordinate time.
                 phi_orbit: Number of full revolutions around the central body.
                 rad_orbit: Number of full radial oscillations, regardless of change in phi.
-        
         err_target (float): Maximum acceptable error when making geodesic evolutions.
-        
         label (string): Internal label for data as a string.
-        
         cons (list of floats, length 3): Fundamental constants for the orbiting body. If provided, is given second highest priority for determining initial state. Use of 'pos' input is optional. Defaults to False.
             energy per unit mass: Can be given in J/kg, erg/g, or gravitational units.
             azimuthal angular momentum per unit mass: Can be given in N*m*s/kg, dyn*cm*s/g, or gravitational units.
             Carter constant per unit mass: Can be given in kg*m4/s2, g*cm4/s2, or gravitational units.
-        
         velorient (list of floats, length 3): Tetrad 3-velocity of the orbiting body. If provided, is given third highest priority for determining initial state. Use of 'pos' input is optional. Defaults to False.
             beta: Magnitude of tetrad velocity. Can be given in m/s, cm/s, or gravitational units.
             eta: Azimuthal angle of trajectory in degrees. 0 is radially outwards, 90 degrees is prograde, 180 degrees is radially inwards, 270 degrees is retrograde. Accepts negative values.
             xi: Altitude angle of trajectory in degrees. 0 degrees is parallel to the central body's angular momentum vector, 90 degrees is perpendicular, 180 degrees is antiparallel. Accepts negative values.
-        
         vel4 (list of floats, length 4): Tetrad 4-velocity of the orbiting body. If provided, is given fourth highest priority for determining initial state. Use of 'pos' input is required. Defaults to False.
             temporal component: speed of light times Lorentz factor. Can be given in m/s, cm/s, or gravitational units.
             radial component: Can be given in m/s, cm/s, or gravitational units.
             theta compenent: Can be given in radians/s, or gravitational units.
             phi compenent: Can be given in radians/s, or gravitational units.
-        
         params (list of floats, length 3): Orbital characteristics for the orbiting body. If provided, is given lowest priority for determining initial state. Defaults to False.
             semimajor axis: Semimajor axis of orbit, point where effective potential is lowest. Can be given in m, cm, or gravitational units.
             eccentricity: Modified eccentricity of orbit. 0 is a perfectly circular orbit, 1 makes the minimum radius equal to the marginally bound radius of the central body.
             inclination: Inclination of orbit in radians. 0 is a perfectly equatorial orbit, (+/-) pi/2 is a polar orbit launched in the (upward/downward) direction, values between (+/-) pi/2 and (+/-) 3*pi/2 are retrograde.
-        
         pos (list of floats, length 4): Time and position of orbiting body in spherical coordinates. Defaults to False.
             time: Coordinate time. Can be given in seconds or gravitational units.
             radius: Radial distance. Can be given in m, cm, or gravitational units.
             theta: Angular displacement from the 'north pole' of the central body in radians.
             phi: Angular displacement from the positive x-axis of the central body in radians.
-        
         veltrue (list of floats, length 4): 4-velocity of the orbiting body. If provided, is given highest priority for determining initial state. Defaults to False.
             temporal component: speed of light times Lorentz factor. Can be given in m/s, cm/s, or gravitational units.
             radial component: Can be given in m/s, cm/s, or gravitational units.
             theta compenent: Can be given in radians/s, or gravitational units.
             phi compenent: Can be given in radians/s, or gravitational units.
-        
         units (string): Determines what units the program will output results in. Defaults to "grav".
             Currently accepted units:
                 "grav": Gravitational units. G = c = M = 1.
                 "mks": Standard SI units. G = 6.67*10^-11 m^3/kg*s^2, c = 3*10^8 m/s, M is given.
                 "cgs": cgs units. G = 6.67*10^-8 cm^3/g*s^2, c = 3*10^10 cm/s, M is given.
-        
         verbose (bool): Determines whether or not program will provide periodic updates on progress. Completion percentage is based on endflag condition.
-        
     
     Process:
         Use veltrue + pos or set_u_kerr2 function to initialize starting state.
@@ -92,59 +93,159 @@ clean_inspiral2
         Finalizes all variables for output, verifying that all values match those provided by units variable
         Verbose Conditional 2: Activates if Verbose is set to True
             Prints a list of indices and timesteps where state had complex values, if any
-        Returns Output
     
-    
-    Output:
+    Outputs:
         final (dict): Contains all data
-            name (string): Same as label input
-            
+            name (string): Same as label input        
             raw (numpy array): All recorded states of the orbiting body
-                state (numpy array): [coordinate time, radius, theta, phi, c*Lorentz factor, radial velocity, theta velocity, phi velocity]
-            
+                state (numpy array of floats, length 8): [proper time, radius, theta, phi, c*Lorentz factor, radial velocity, theta velocity, phi velocity]
             inputs (list, length 12): All original inputs from function, minus veltrue, units, and verbose
-            
             pos (numpy array): Subset of raw containing only the radius, theta, and phi positions of each recorded state
-            
             all_vel (numpy array): Subset of raw containing only the 4-velocity of each recorded state
-            
             time (numpy array): Subset of raw containing only the coordinate time of each record state
-            
             interval (numpy array): Spacetime interval for all recorded states
-            
             vel (numpy array): The magnitude of the velocity for each recorded state
-            
             dTau_change (numpy array): The change in proper time for each recorded state
-            
             energy (numpy array): The energy per unit mass for the initial state and immediately after trajectory corrections
-            
             phi_momentum (numpy array): The azimuthal angular momentum per unit mass for the initial state and immediately after trajectory corrections
-            
             carter (numpy array): The non-negative Carter constant per unit (mass squared) for the initial state and immediately after trajectory corrections
-            
             qarter (numpy array): The unmodified Carter constant per unit (mass squared) for the initial state and immediately after trajectory corrections
-            
             energy2 (numpy array): The energy per unit mass calculated by getEnergy for each recorded state
-            
             Lx_momentum (numpy array): The x-component of the total angular momentum calculated by getLs for each recorded state
-            
             Ly_momentum (numpy array): The y-component of the total angular momentum calculated by getLs for each recorded state
-            
             Lz_momentum (numpy array): The z-component of the total angular momentum calculated by getLs for each recorded state
-            
             a (float): The dimensionless spin of the central body
-            
             freqs (numpy array, length 3): The calculated radial, phi, and theta frequencies of orbit
-            
-            some other bunkum
-                     "r0": con_derv[:,2],
-                     "y": con_derv[:,3],
-                     "v": con_derv[:,4],
-                     "q": con_derv[:,5],
-                     "e": con_derv[:,6],
-                     "ot": con_derv[:,7],
-                     "it": con_derv[:,8],
-                     "tracktime": tracktime,
-                     "omegadot": omega/otime,
-                     "otime": all_states[:,0][ind][1:],
-                     "stop": stop}
+            r0 (numpy array): The semimajor axis/potential minimum for the initial state and immediately after trajectory corrections
+            y (numpy array): The inclination relation C/L^2 for the initial state and immediately after trajectory corrections
+            v (numpy array): The orbital velocity relation sqrt(M/r0) for the initial state and immediately after trajectory corrections
+            q (numpy array): a/M
+            e (numpy array): The modified eccentricity for the initial state and immediately after trajectory corrections
+            ot (numpy array): The maximum radius for the initial state and immediately after trajectory corrections
+            it (numpy array): The minimum radius for the initial state and immediately after trajectory corrections
+            tracktime (numpy array): Coordinate time for the initial state and immediately after trajectory corrections
+            omegadot (numpy array): Precession of pericenter per unit time between each radial minimum
+            otime (numpy array): Coordinate time of each radial minimum
+            stop (bool): Records True if program was stopped via KeyboardInterrupt, False otherwise
+
+set_u_kerr2
+    Location: MetricMath.py
+    
+    Summary: Generates an initial trajectory for a particle given some set of initial information.
+    
+    Inputs:
+        mass (float): The mass of the central body. Can be given in kg, g, or gravitational units.       
+        a (float): Dimensionless spin of the central body. Can be any number between -1 and 1, where negative values correspond to prograde orbits.
+        cons (list of floats, length 3): Fundamental constants for the orbiting body. If provided, is given second highest priority for determining initial state. Use of 'pos' input is optional. Defaults to False.
+            energy per unit mass: Can be given in J/kg, erg/g, or gravitational units.
+            azimuthal angular momentum per unit mass: Can be given in N*m*s/kg, dyn*cm*s/g, or gravitational units.
+            Carter constant per unit mass: Can be given in kg*m4/s2, g*cm4/s2, or gravitational units.
+        velorient (list of floats, length 3): Tetrad 3-velocity of the orbiting body. If provided, is given third highest priority for determining initial state. Use of 'pos' input is optional. Defaults to False.
+            beta: Magnitude of tetrad velocity. Can be given in m/s, cm/s, or gravitational units.
+            eta: Azimuthal angle of trajectory in degrees. 0 is radially outwards, 90 degrees is prograde, 180 degrees is radially inwards, 270 degrees is retrograde. Accepts negative values.
+            xi: Altitude angle of trajectory in degrees. 0 degrees is parallel to the central body's angular momentum vector, 90 degrees is perpendicular, 180 degrees is antiparallel. Accepts negative values.
+        vel4 (list of floats, length 4): Tetrad 4-velocity of the orbiting body. If provided, is given fourth highest priority for determining initial state. Use of 'pos' input is required. Defaults to False.
+            temporal component: speed of light times Lorentz factor. Can be given in m/s, cm/s, or gravitational units.
+            radial component: Can be given in m/s, cm/s, or gravitational units.
+            theta compenent: Can be given in radians/s, or gravitational units.
+            phi compenent: Can be given in radians/s, or gravitational units.
+        params (list of floats, length 3): Orbital characteristics for the orbiting body. If provided, is given lowest priority for determining initial state. Defaults to False.
+            semimajor axis: Semimajor axis of orbit, point where effective potential is lowest. Can be given in m, cm, or gravitational units.
+            eccentricity: Modified eccentricity of orbit. 0 is a perfectly circular orbit, 1 makes the minimum radius equal to the marginally bound radius of the central body.
+            inclination: Inclination of orbit in radians. 0 is a perfectly equatorial orbit, (+/-) pi/2 is a polar orbit launched in the (upward/downward) direction, values between (+/-) pi/2 and (+/-) 3*pi/2 are retrograde.
+        pos (list of floats, length 4): Time and position of orbiting body in spherical coordinates. Defaults to False.
+            time: Coordinate time. Can be given in seconds or gravitational units.
+            radius: Radial distance. Can be given in m, cm, or gravitational units.
+            theta: Angular displacement from the 'north pole' of the central body in radians.
+            phi: Angular displacement from the positive x-axis of the central body in radians.
+        units (string): Determines what units the program will output results in. Defaults to "grav".
+            Currently accepted units:
+                "grav": Gravitational units. G = c = M = 1.
+                "mks": Standard SI units. G = 6.67*10^-11 m^3/kg*s^2, c = 3*10^8 m/s, M is given.
+                "cgs": cgs units. G = 6.67*10^-8 cm^3/g*s^2, c = 3*10^10 cm/s, M is given.
+    
+    Process:
+        Adjust constants G, c, M based on units variable.
+        Constant Conditional: Activates if cons variable is provided in the proper format.
+            Position Conditional: Activates if pos variable is provided in the proper format.
+                Use the recalc_state function to calculate the new state.
+            Else:
+                Use cons to set the pos variable to [0, r0, pi/2, 0], where r0 is the semimajor axis of the associated orbit.
+                Use the recalc_state function to calculate initial state of orbiting particle.
+        Velorient Alternate Conditional: Activates if the velorient variable is provided in the proper format.
+            Determine the Lorentz factor based on the orbiting body's velocity
+            Position False Conditional: Activates if pos variable is NOT provided in the proper format.
+                Use velorient to set the pos variable to [0, r, pi/2, 0], where r is an approximation of the radius associated with a circular orbit with the same angular velocity.
+            Use position and kerr function to determine local metric
+            Use inverse Kerr metric to calculate initial state of the orbiting particle.
+        Vel4 Alternate Conditional: Activates if the vel4 AND pos variables are provided in the proper format.
+            Use inverse Kerr metric to calculate initial state of the orbiting particle.
+        Params Alternate Conditional: Activates if params variable is provided in the proper format.
+            Use leastsquaresparam function to calculate initial state of orbiting particle.
+        Else:
+            Generate plunge-directed orbit for orbiting particle.
+        
+    Outputs:
+        new (numpy array of floats, length 8): [proper time, radius, theta, phi, c*Lorentz factor, radial velocity, theta velocity, phi velocity]
+        
+recalc_state
+    Location: MetricMath.py
+    
+    Summary: Generates a trajectory for a particle given its initial state and orbital constants.
+    
+    Inputs:
+        constants (list of floats, length 3): Fundamental constants for the orbiting body.
+            energy per unit mass: Can be given in J/kg, erg/g, or gravitational units.
+            azimuthal angular momentum per unit mass: Can be given in N*m*s/kg, dyn*cm*s/g, or gravitational units.
+            Carter constant per unit mass: Can be given in kg*m4/s2, g*cm4/s2, or gravitational units.
+        state (list of floats, length 8 OR length 4): [proper time, radius, theta, phi, c*Lorentz factor, radial velocity, theta velocity, phi velocity] OR [proper time, radius, theta, phi]
+        mass (float): The mass of the central body. Can be given in kg, g, or gravitational units.
+        a (float): Dimensionless spin of the central body. Can be any number between -1 and 1, where negative values correspond to prograde orbits.
+    
+    Process:
+        Use constants and position to determine particle's 'position' in the radial and inclination effective potentials
+        Calculate the appropriate velocities given position and potential.
+        Velocity Conditional: Activates if state does NOT include initial velocity values.
+            Set radial velocity to be inward, set theta velocity to be positive (towards the south pole)
+        Else:
+            Set radial and theta velocity to be in the same direction as the given velocities.
+        Define the final state
+    
+    Outputs:
+        new_state (list of floats, length 8): [proper time, radius, theta, phi, c*Lorentz factor, radial velocity, theta velocity, phi velocity]
+        
+ kerr
+     Location: MetricMath.py
+     
+     Summary: Generates local metric and Christoffel connection terms for a given system.
+     
+     Inputs:
+         state (list of floats, length 8 OR length 4): [proper time, radius, theta, phi, c*Lorentz factor, radial velocity, theta velocity, phi velocity] OR [proper time, radius, theta, phi]
+         mass (float): The mass of the central body. Can be given in kg, g, or gravitational units.
+         a (float): Dimensionless spin of the central body. Can be any number between -1 and 1, where negative values correspond to prograde orbits.
+     
+     Process:
+         Use the given position, mass, and dimensionless spin to generate local Kerr metric and Christoffel connection terms in Boyer-Lindquist coordinates.
+     
+     Outputs: 
+         results (tuple, length 2):
+             metric (list, length 4x4): Local Kerr Metric for the particle.
+             chris (dict, length 32): Non-degenerate Christoffel connection terms.
+        
+leastsquaresparam
+    Location: least_squares.py
+    
+    Inputs:
+        r0 (float): Semimajor axis of desired orbit, point where effective potential is lowest. Can be given in m, cm, or gravitational units.
+        e (float): Modified eccentricity of orbit. 0 is a perfectly circular orbit, 1 makes the minimum radius equal to the marginally bound radius of the central body.
+        i (float): Inclination of orbit in radians. 0 is a perfectly equatorial orbit, (+/-) pi/2 is a polar orbit launched in the (upward/downward) direction, values between (+/-) pi/2 and (+/-) 3*pi/2 are retrograde.
+        a (float): Dimensionless spin of the central body. Can be any number between -1 and 1, where negative values correspond to prograde orbits.
+        showme (bool): Determines whether or not to show plots from running getparams function. Defaults to False.
+    
+    Process:
+        Determine direction of particle motion (prograde vs retrograde) based on provided inclination.
+        Generate initial position of particle as in the equatorial plane, initial Cartesian velocity of particle as not-quite-circular
+        Use kerr function to generate local metric.
+        Use getparams function to generate 
+    
+    Outputs:

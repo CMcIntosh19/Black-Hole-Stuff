@@ -8,6 +8,7 @@ Created on Thu Oct 13 00:09:16 2022
 import numpy as np
 import MetricMath as mm
 import matplotlib.pyplot as plt
+import sympy as sp
 import warnings
 from random import uniform
 
@@ -193,6 +194,124 @@ def l_locator(ene, a, dec):
         val = (B*C)**2 - 4*A*(C**3) - 4*(B**3)*D - 27*((A*D)**2) + 18*A*B*C*D
     return low, high
 
+def l_locator2(energy, a):
+    err = 10**(-12)
+    lz, cart, mass = 4.0, 0.0, 1.0
+    coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+    coeff2 = np.array([4*(energy**2 - 1), 3*2*mass, 2*((a**2)*(energy**2 - 1) - lz**2 - cart), 2*mass*((a*energy - lz)**2 + cart)])
+    
+    r0 = np.max(np.roots(coeff2))
+    Rval = np.sum(coeff*np.array([r0**4, r0**3, r0**2, r0, 1.0]))
+    Rvalst = []
+    lastBest = (10000.0, 4.0)
+    while Rval < 0.0 or Rval > err:
+        if (Rval > 0.0) and (Rval < lastBest[0]):
+            lastBest = (Rval, lz)
+        Rvalst.append(Rval)
+        lz += Rval*max(1.0/(2*r0*(lz*r0 + mass*(a*energy - lz))),  10**(-15) )
+        coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+        coeff2 = np.array([4*(energy**2 - 1), 3*2*mass, 2*((a**2)*(energy**2 - 1) - lz**2 - cart), 2*mass*((a*energy - lz)**2 + cart)])
+        while True in np.iscomplex(np.roots(coeff2)):
+            lz = lz/2.0
+            coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+            coeff2 = np.array([4*(energy**2 - 1), 3*2*mass, 2*((a**2)*(energy**2 - 1) - lz**2 - cart), 2*mass*((a*energy - lz)**2 + cart)])
+        r0 = np.max(np.roots(coeff2))
+        Rval = np.sum(coeff*np.array([r0**4, r0**3, r0**2, r0, 1.0]))
+        #print(r0, Rval, lz)
+        if Rvalst.count(Rval) >= 10:
+            break
+    if Rval < 0.0:
+        lz = lastBest[1]
+    circL = lz
+    #print("yo")
+    
+    
+    rL = np.sort(np.roots(coeff2))[-2]
+    Rval = np.sum(coeff*np.array([rL**4, rL**3, rL**2, rL, 1.0]))
+    Rvalst = []
+    lastBest = (10000.0, 4.0)
+    #print(np.sort(np.roots(coeff2)))
+    while Rval < 0.0 or Rval > err:
+        if (Rval > 0.0) and (Rval < lastBest[0]):
+            lastBest = (Rval, lz)
+        Rvalst.append(Rval)
+        lz += 1.5*Rval*max(1.0/(2*rL*(lz*rL + mass*(a*energy - lz))),  10**(-15) )
+        coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+        coeff2 = np.array([4*(energy**2 - 1), 3*2*mass, 2*((a**2)*(energy**2 - 1) - lz**2 - cart), 2*mass*((a*energy - lz)**2 + cart)])
+        rL = np.sort(np.roots(coeff2))[-2]
+        Rval = np.sum(coeff*np.array([rL**4, rL**3, rL**2, rL, 1.0]))
+        #print(rL, Rval, lz)
+        if Rvalst.count(Rval) >= 10:
+            break
+    if Rval < 0.0:
+        lz = lastBest[1]
+    critL = lz
+    
+    return critL, circL
+
+def l_locator3(energy, a, inc=np.pi/2):
+    #inc goes from pi/2 (equatorial) to 0.0 (polar)
+    if inc == np.pi/2:
+        return l_locator2(energy, a), (0.0, 0.0)
+    mass, err = 1.0, 10**(-10)
+    trueLmag = 4.0
+    cart, lz =  (trueLmag*np.sin(inc))**2, trueLmag*np.cos(inc)
+    print(cart, lz)
+    coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+    coeff2 = np.array([4*(energy**2 - 1), 3*2*mass, 2*((a**2)*(energy**2 - 1) - lz**2 - cart), 2*mass*((a*energy - lz)**2 + cart)])
+    
+    r0 = np.max(np.roots(coeff2))
+    Rval = np.sum(coeff*np.array([r0**4, r0**3, r0**2, r0, 1.0]))
+    Rvalst = []
+    lastBest = (10000.0, lz, cart)
+    while Rval < 0.0 or Rval > err:
+        if (Rval > 0.0) and (Rval < lastBest[0]):
+            lastBest = (Rval, lz, cart)
+        Rvalst.append(Rval)
+        A = (cart/(lz**2))*(-(r0**2 - 2*mass*r0 + a**2))
+        B = (-2*r0*(lz*r0 + mass*(a*energy - lz)) + 2*(cart/lz)*(-(r0**2 - 2*mass*r0 + a**2)))
+        C = Rval*0.95
+        dlz = (-B - np.sqrt(B**2 - 4*A*C))/(2*A)
+        dcart = cart*(2*(dlz/lz) + (dlz/lz)**2)
+        lz += dlz
+        cart += dcart
+        coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+        coeff2 = np.array([4*(energy**2 - 1), 3*2*mass, 2*((a**2)*(energy**2 - 1) - lz**2 - cart), 2*mass*((a*energy - lz)**2 + cart)])
+        r0 = np.max(np.roots(coeff2))
+        Rval = np.sum(coeff*np.array([r0**4, r0**3, r0**2, r0, 1.0]))
+        print(Rval)
+        if Rvalst.count(Rval) >= 10:
+            break
+    if Rval < 0.0:
+        lz, cart = lastBest[1], lastBest[2]
+    circL, circC = lz, cart
+    
+    rL = np.sort(np.roots(coeff2))[-2]
+    Rval = np.sum(coeff*np.array([rL**4, rL**3, rL**2, rL, 1.0]))
+    Rvalst = []
+    lastBest = (10000.0, lz, cart)
+    while Rval < 0.0 or Rval > err:
+        if (Rval > 0.0) and (Rval < lastBest[0]):
+            lastBest = (Rval, lz, cart)
+        Rvalst.append(Rval)
+        A = (cart/(lz**2))*(-(rL**2 - 2*mass*rL + a**2))
+        B = (-2*rL*(lz*rL + mass*(a*energy - lz)) + 2*(cart/lz)*(-(rL**2 - 2*mass*rL + a**2)))
+        C = Rval
+        dlz = (-B - np.sqrt(B**2 - 4*A*C))/(2*A)
+        dcart = cart*(2*(dlz/lz) + (dlz/lz)**2)
+        lz += dlz
+        cart += dcart
+        coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+        coeff2 = np.array([4*(energy**2 - 1), 3*2*mass, 2*((a**2)*(energy**2 - 1) - lz**2 - cart), 2*mass*((a*energy - lz)**2 + cart)])
+        rL = np.sort(np.roots(coeff2))[-2]
+        Rval = np.sum(coeff*np.array([rL**4, rL**3, rL**2, rL, 1.0]))
+        if Rvalst.count(Rval) >= 10:
+            break
+    if Rval < 0.0:
+        lz, cart = lastBest[1], lastBest[2]
+    critL, critC = lz, cart
+    return (critL, circL), (critC, circC)
+
 def getparams(vx, vy, vz, tet_mat, metric, r0, e0, i0, a, showme = False):
     warnings.filterwarnings("ignore")
 
@@ -308,6 +427,7 @@ def leastsquaresparam(r0, e, i, a, showme=False):
         eps = 10**(-5)
         tryvel = vel + delvel
         velguess = getparams(*tryvel, tetrad_matrix, metric, r0, e, icor1, a)
+        #print(velguess)
         flip = 0
         while True in np.iscomplex(velguess) and flip < 15:
             delvel *= 0.5
@@ -396,3 +516,63 @@ for i in range(len(enlist)):
         o = test["pos"][-1,2]/10
         things[i, l] = a, b, o
 '''
+
+def schmidtparam(r0, e, i, a, pro=True):
+    p = r0*(1 - (e**2))  #p is semi-latus rectum 
+    rp, ra = p/(1 + e), p/(1 - e)
+    z = np.cos(i)
+    
+    def rfuncs(r):
+        tri = r**2 - 2*r + a**2
+        f = r**4 + (a**2)*(r*(r + 2) + tri*(z**2))
+        g = 2*a*r
+        h = r*(r - 2) + tri*(z**2)/(1 - z**2)
+        d = (r**2 + (a*z)**2)*tri
+        return f, g, h, d
+    def r_funcs(r):
+        f_ = 4*(r**3) + 2*(a**2)*((1 + z**2)*r + (1 - z**2))
+        g_ = 2*a
+        h_ = 2*(r - 1)/(1 - z**2)
+        d_ = 2*(2*r - 3)*(r**2) + 2*(a**2)*((1 + z**2)*r - z**2)
+        return f_, g_, h_, d_   
+    
+    if e == 0.0:
+        f1, g1, h1, d1 = rfuncs(p)
+        f2, g2, h2, d2 = r_funcs(p)
+    else:
+        f1, g1, h1, d1 = rfuncs(rp)
+        f2, g2, h2, d2 = rfuncs(ra)
+    
+    def newC(E, L, a, z):
+        return (z**2)*((a**2)*(1 - E**2) + (L**2)/(1 - z**2))
+    
+    x, y = sp.symbols("x y", real=True)
+
+    eq1 = sp.Eq(f1*(x**2) - 2*g1*x*y - h1*(y**2), d1)
+    eq2 = sp.Eq(f2*(x**2) - 2*g2*x*y - h2*(y**2), d2)
+
+    symsols = sp.solve([eq1, eq2])
+    print(symsols)
+
+    full_sols = []
+    for thing in symsols:
+        ene, lel = np.array([thing[x], thing[y]]).astype(float)
+        if ene > 0.0: 
+            full_sols.append([ene, lel, newC(ene, lel, a, z)])
+
+    if np.product(np.sign(full_sols[0])) == (-1)**(pro-1.0):
+        del full_sols[1]
+    else:
+        del full_sols[0]
+        
+    E, L, C = full_sols[0]
+    print(E, L, C)
+    r = sp.Symbol('r', real=True, positive=True)
+    rt = sp.solve(4*(E**2 - 1)*(r**3) + 6*(r**2) + 2*((a**2)*(E**2 - 1) - L**2 - C)*(r) + 2*((a*E - L)**2) + C, 0)
+
+    print(rt)
+    if rp >= rt[1]:
+        return full_sols[0]
+    else:
+        return [0.99, 0.0, 0.0]
+    
