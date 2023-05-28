@@ -1957,10 +1957,14 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   dTau_change = [dTau]                                                #create dTau tracker
   metric = mm.kerr(all_states[0], mass, a)[0]                                      #initial metric
 
-  initE = -np.matmul(all_states[0][4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
-  initLz = np.matmul(all_states[0][4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
-  initQ = np.matmul(np.matmul(mm.kill_tensor(all_states[0], mass, a), all_states[0][4:]), all_states[0][4:])    #initial Carter constant Q
-  initC = initQ - (a*initE - initLz)**2                                          #initial adjusted Carter constant                      
+  if np.shape(cons) == (3,):
+      initE, initLz, initC = cons
+      initQ = initC + (a*initE - initLz)**2
+  else:
+      initE = -np.matmul(all_states[0][4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
+      initLz = np.matmul(all_states[0][4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
+      initQ = np.matmul(np.matmul(mm.kill_tensor(all_states[0], mass, a), all_states[0][4:]), all_states[0][4:])    #initial Carter constant Q
+      initC = initQ - (a*initE - initLz)**2                                          #initial adjusted Carter constant                      
   constants = [ np.array([initE,      #energy   
                           initLz,      #angular momentum (axial)
                           initC]) ]    #Carter constant (C)
@@ -1978,7 +1982,11 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   issues = []
   checker = []
   orbitside = np.sign(all_states[0][1] - con_derv[0][2])
-  orbitCount = -0.5
+  #print(constants)
+  r = con_derv[0][2]
+  #print(r, pro, a)
+  #print(((r**(3/2) + pro*a)**(-1)), np.sqrt(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2)))))
+  orbitCount = all_states[-1][0]/(2*np.pi/(((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2))))))
   tracktime = [all_states[0][0]]
   stop = False
   #Main Loop
@@ -2015,19 +2023,51 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
         old_dTau, dTau = dTau, min(0.95 * dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
         first = False
 
+      metric = mm.kerr(new_step, mass, a)[0]
+      newE = -np.matmul(new_step[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
+      newLz = np.matmul(new_step[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
+      newQ = np.matmul(np.matmul(mm.kill_tensor(new_step, mass, a), new_step[4:]), new_step[4:])    #new Carter constant Q
+      newC = newQ - (a*newE - newLz)**2   
+      
+      #if np.linalg.norm(constants[-1] - np.array([newE, newLz, newC])) > err_target:
+          #print(i, "YOU FOOL", np.linalg.norm(constants[-1] - np.array([newE, newLz, newC])))
+
       #constant modifying section
       #Whenever you pass from one side of r0 to the other, mess with the effective potential.
+      #print("yo?")
+      #print(new_step)
       if ( np.sign(new_step[1] - r0) != orbitside ):  # or (flip)):  #(new_step[0] - con_derv[-1][10]) > np.pi*(r0**(3/2) + a) or
+          #print("pop")
+          testTau = old_dTau
+          '''
+          while ( np.abs(new_step[1] - r0) > 10**(-8)): #Changes the previous step so it lands exactly on r0, or close enough to not matter
+              #print("fix")
+              testTau = testTau*(np.abs(state[1] - r0)/np.abs(state[1] - new_step[1]))
+              new_step = mm.gen_RK(mm.ck5, mm.kerr, state, testTau, mass, a)
+              #print(i, testTau, (np.abs(state[1] - r0)/np.abs(state[1] - new_step[1])))
+          '''
+          #new_step = mm.recalc_state(constants[-1], new_step, mass, a)
+          #This bit refits the new_step to match E,L,C
+          #Turned off now, not sure how much it actually helps?
+          
           update = True
-          orbitside = np.sign(new_step[1] - r0)
+          orbitside *= -1
           orbitCount += 0.5
+          #print(orbitCount)
           if mu != 0.0:
               condate = True
               con_derv.append([i, *mm.peters_integrate3(constants[-1], a, mu, all_states, con_derv[-1][0], i), new_step[0]])
               dir1 = new_step[5]
-              new_step = mm.new_recalc_state3(con_derv[-1][1], new_step, mu, mass, a)                           #Change the velocity so it actually makes sense with those constants
+              if "new" not in label:
+                  new_step = mm.new_recalc_state4(con_derv[-1][1], new_step, mu, mass, a)                           #Change the velocity so it actually makes sense with those constants
+              else:
+                  new_step, ch_cons = mm.new_recalc_state5(constants[-1], con_derv[-1][1], new_step, mu, mass, a) 
+                  constants.append(ch_cons)
+                  qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2 )
+                  tracktime.append(new_step[0])
               test = mm.check_interval(mm.kerr, new_step, mass, a)
               if abs(test+1)>(err_target):
+                  print(test, "woo")
                   print("Error on PN Update")
                   print("Index:", i)
                   print(new_step)
@@ -2065,12 +2105,23 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
           break
       
       #Update stuff!
-      if update == True:
+      if (update == True) and ("new" not in label):
+         #print("Constant Change!")
          metric = mm.kerr(new_step, mass, a)[0]
          newE = -np.matmul(new_step[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
          newLz = np.matmul(new_step[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
          newQ = np.matmul(np.matmul(mm.kill_tensor(new_step, mass, a), new_step[4:]), new_step[4:])    #new Carter constant Q
-         newC = newQ - (a*newE - newLz)**2                                                             #initial adjusted Carter constant                      
+         newC = newQ - (a*newE - newLz)**2                                                             #initial adjusted Carter constant  
+         #print(newE, newLz, newC, "FROM MAIN")
+         coeff = np.array([newE**2 - 1, 2*mass, (a**2)*(newE**2 - 1) - newLz**2 - newC, 2*mass*((a*newE - newLz)**2 + newC), -newC*(a**2)])
+         coeff2 = np.array([4*(newE**2 - 1), 3*2*mass, 2*((a**2)*(newE**2 - 1) - newLz**2 - newC), 2*mass*((a*newE - newLz)**2 + newC)])
+         #print(coeff2)
+         ro = np.max(np.roots(coeff2))
+         #if np.sum(coeff*np.array([ro**4, ro**3, ro**2, ro, 1.0])) < 0.0:
+             #print(metric)
+             #print("Bad Constants??", np.sum(coeff*np.array([ro**4, ro**3, ro**2, ro, 1.0])))
+             #print(newE, newLz, newC)
+             #print("Bad Constants??", new_step[0], newE, newLz, newC, np.sum(coeff*np.array([ro**4, ro**3, ro**2, ro, 1.0])))
          constants.append([newE, newLz, newC])
          qarter.append(newQ)
          if condate == False:
@@ -2114,12 +2165,14 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   else:
       G, M, c = 1.0, 1.0, 1.0
       
-  constants = np.array([entry*np.array([c**2, G*M/c, ((G*M)/c)**2]) for entry in np.array(constants)], dtype=np.float64)
-  false_constants = np.array([entry*np.array([c**2, G*M/c, G*M/c, G*M/c]) for entry in np.array(false_constants)])
-  qarter = np.array([entry * ((G*M)/c)**2 for entry in qarter])
+  constants = np.array([entry*np.array([c**2, G/(M*c), (G/(M*c))**2]) for entry in np.array(constants)], dtype=np.float64)
+  false_constants = np.array([entry*np.array([c**2, G/(M*c), G/(M*c), G/(M*c)]) for entry in np.array(false_constants)])
+  qarter = np.array([entry * (G/(M*c))**2 for entry in qarter])
   interval = np.array(interval)
   dTau_change = np.array([entry * (G*M)/(c**3) for entry in dTau_change])
+  print(all_states[0])
   all_states = np.array([entry*np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*M), (c**3)/(G*M)]) for entry in np.array(all_states)]) 
+  print(all_states[0])
   tracktime = np.array([entry * (G*M)/(c**3) for entry in tracktime])
   con_derv = np.array([entry * np.array([1, np.array([(c**5)/(G*M), c**2, c**2, c**2]), G*M/(c**2), 1.0, c/np.sqrt(G), 1/M, 1.0, G*M/(c**2), G*M/(c**2), 1, G*M/(c**3)]) for entry in con_derv])
   
@@ -2167,17 +2220,16 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
            "stop": stop}
   return final
 
-
 def clean_continue2(data, endflag=False, label=False, verbose=False):   
     inputs = np.copy(data["inputs"])
     posf, velf = data["raw"][-1,:4], data["raw"][-1,4:]
     if endflag == False:
         terms = inputs[3].split(" ")
-        inputs[3] = " ".join(terms[0], terms[1], str(2*eval(terms[2])))
+        inputs[3] = " ".join([terms[0], terms[1], str(2*eval(terms[2]))])
     else:
         inputs[3] = endflag
     inputs[5] = inputs[5] + " extend" if label==False else label 
-    new_data = clean_inspiral(*inputs[:6], pos=posf, veltrue=velf, verbose=verbose)
+    new_data = clean_inspiral2(*inputs[:6], pos=posf, veltrue=velf, units=inputs[-1], verbose=verbose)
     final = {"name": data["name"],
              "raw": np.concatenate((data["raw"][:-1], new_data["raw"])),
              "inputs": inputs,
