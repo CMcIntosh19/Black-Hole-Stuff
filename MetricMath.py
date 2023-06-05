@@ -7,6 +7,7 @@ import numpy as np
 from scipy import optimize
 import scipy.interpolate as spi
 import least_squares as ls
+import sympy as sp
 
 g = 1
 #whenever present, mass is usually set equal to 1
@@ -573,6 +574,13 @@ def gr_diff_eq(solution, state, *args):
                 if index in chris.keys():
                     u -= chris[index] * state[j + 4] * state[k + 4]
         d_state[4+i] = u                                                            #assign derivatives of velocity
+        '''
+        if abs(u) > 0.002:
+            print(u)
+            print("this maybe??", 4+i)
+            print(chris)
+            return False
+        '''
     return d_state                                                                #return derivative of state
 
 rk4 = {"label": "Standard RK4",
@@ -1263,6 +1271,9 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
     #turns = np.sort(quartic_solver(coeff))
     flats = cubic_solver(coeff2)
     turns = np.sort(np.roots(coeff))
+    r = sp.Symbol('r', real=True, positive=True)
+    turns = list(sp.roots((energy**2 - 1)*(r**4) + 2.0*mass*(r**3) + ((a**2)*(energy**2 - 1) - lz**2 - cart)*(r**2) + (2*mass*((a*energy - lz)**2) + 2*mass*cart)*4 -cart*(a**2), r).keys())
+    #print(turns)
     #flats = np.roots(coeff2)
     r0 = np.max(flats)
     rc = (1 + np.sqrt(1 + a))**2
@@ -1276,9 +1287,16 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
       if this < 0.0:
           compErr = True
       #turns = np.real(turns)  
-    y, q = cart/(lz**2), a/mass
+    try:
+        y = cart/(lz**2 + 0.1)
+    except:
+        y = 9999999
+    #print("is good?")
+    q = a/mass
     outer_turn, inner_turn = turns[-1], turns[-2]
-    e = (outer_turn - inner_turn)/(outer_turn + inner_turn - 2*rc)
+    #print(outer_turn, inner_turn)
+    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+    #print(e)
     v = np.sqrt(mass/r0)
     dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
     if (ind2 - ind1) > 2:
@@ -1299,6 +1317,7 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
                 dldt[i] += np.sum(dt2[:,(i+1)%3,j]*dt3[:,(i+2)%3, j]*div)
                 dldt[i] -= np.sum(dt2[:,(i-1)%3,j]*dt3[:,(i-2)%3, j]*div)
 
+    #print("should be")
     dedt = (-1/5)*dedt
     dlxdt, dlydt, dlzdt = (-2/5)*dldt
     theta = states[0][2]

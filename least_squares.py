@@ -517,9 +517,14 @@ for i in range(len(enlist)):
         things[i, l] = a, b, o
 '''
 
-def schmidtparam(r0, e, i, a, pro=True):
+def schmidtparam(r0, e, i, a):
     p = r0*(1 - (e**2))  #p is semi-latus rectum 
     rp, ra = p/(1 + e), p/(1 - e)
+    polar = False
+    j = i
+    if i == 0.0 or i == np.pi:
+        polar = True
+        i = np.pi/4
     z = np.cos(i)
     
     def rfuncs(r):
@@ -552,7 +557,7 @@ def schmidtparam(r0, e, i, a, pro=True):
     eq2 = sp.Eq(f2*(x**2) - 2*g2*x*y - h2*(y**2), d2)
 
     symsols = sp.solve([eq1, eq2])
-    print(symsols)
+    #print(symsols)
 
     full_sols = []
     for thing in symsols:
@@ -560,19 +565,24 @@ def schmidtparam(r0, e, i, a, pro=True):
         if ene > 0.0: 
             full_sols.append([ene, lel, newC(ene, lel, a, z)])
 
-    if np.product(np.sign(full_sols[0])) == (-1)**(pro-1.0):
+    if np.product(np.sign(full_sols[0])) == np.sign(np.sin(i)):
         del full_sols[1]
     else:
         del full_sols[0]
         
     E, L, C = full_sols[0]
-    print(E, L, C)
+    if polar == True:
+        L, C = 0.0, C/z**2
+    #print(E, L, C)
     r = sp.Symbol('r', real=True, positive=True)
-    rt = sp.solve(4*(E**2 - 1)*(r**3) + 6*(r**2) + 2*((a**2)*(E**2 - 1) - L**2 - C)*(r) + 2*((a*E - L)**2) + C, 0)
+    rt = list(sp.roots(4*(E**2 - 1)*(r**3) + 6*(r**2) + 2*((a**2)*(E**2 - 1) - L**2 - C)*(r) + 2*((a*E - L)**2) + C, r).keys())
 
-    print(rt)
+    #print(list(rt.keys()))
     if rp >= rt[1]:
-        return full_sols[0]
+        return [E, L, C]
     else:
-        return [0.99, 0.0, 0.0]
+        print("This is a plunge orbit - cycling to find critical eccentricity for given r0, i, a.")
+        fix = schmidtparam(r0, e*0.99999, j, a)
+        print("Attempt: e =", e*0.99999)
+        return [fix[0], fix[1], fix[2]]
     

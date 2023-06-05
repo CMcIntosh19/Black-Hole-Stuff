@@ -1981,7 +1981,8 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   rmin = all_states[0][1]
   issues = []
   checker = []
-  orbitside = np.sign(all_states[0][1] - con_derv[0][2])
+  orbitside = min(np.sign(all_states[0][1] - con_derv[0][2]), -1)
+  print(con_derv[0][2])
   #print(constants)
   r = con_derv[0][2]
   #print(r, pro, a)
@@ -2009,17 +2010,18 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
       #  break
         
       #Runge-Kutta update using geodesic
-      while (err_calc >= err_target) or (first == True):
+      old_dTau = dTau
+      skip = False
+      while ((err_calc >= err_target) or (first == True)) and (skip == False):
         step_check = mm.gen_RK(mm.ck4, mm.kerr, state, dTau, mass, a)
         new_step = mm.gen_RK(mm.ck5, mm.kerr, state, dTau, mass, a) 
-        mod_step = np.append(step_check[0:6], mm.fix_sin(step_check[6])*mm.fix_cos(step_check[7]))
-        mod_new = np.append(new_step[0:6], mm.fix_sin(new_step[6])*mm.fix_cos(new_step[7]))
-        mod_state = np.append(state[0:6], mm.fix_sin(state[6])*mm.fix_cos(state[7]))
+        mod_step = np.append(step_check[0:6], np.sign(step_check[6])*np.sign(step_check[7])*(step_check[6]**2 + (np.cos(step_check[2])*step_check[7])**2)**0.5)
+        mod_new = np.append(new_step[0:6], np.sign(new_step[6])*np.sign(new_step[7])*(new_step[6]**2 + (np.cos(new_step[2])*new_step[7])**2)**0.5)
+        mod_state = np.append(state[0:6], np.sign(state[6])*np.sign(state[7])*(state[6]**2 + (np.cos(state[2])*state[7])**2)**0.5)
         mod_pre = mod_step - mod_new
         mod_pre[:4] = mod_pre[:4]/np.linalg.norm(mod_state[:4]) 
         mod_pre[4:] = mod_pre[4:]/np.linalg.norm(mod_state[4:])
         err_calc = np.linalg.norm(mod_pre)
-        #print(err_calc)
         old_dTau, dTau = dTau, min(0.95 * dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
         first = False
 
@@ -2036,8 +2038,12 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
       #Whenever you pass from one side of r0 to the other, mess with the effective potential.
       #print("yo?")
       #print(new_step)
+      #print("dude", i)
       if ( np.sign(new_step[1] - r0) != orbitside ):  # or (flip)):  #(new_step[0] - con_derv[-1][10]) > np.pi*(r0**(3/2) + a) or
           #print("pop")
+          #print(all_states[-5:])
+          #print(new_step)
+          #print("party time", i, r0, np.sign(new_step[1] - r0), orbitside)
           testTau = old_dTau
           '''
           while ( np.abs(new_step[1] - r0) > 10**(-8)): #Changes the previous step so it lands exactly on r0, or close enough to not matter
@@ -2170,9 +2176,9 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   qarter = np.array([entry * (G/(M*c))**2 for entry in qarter])
   interval = np.array(interval)
   dTau_change = np.array([entry * (G*M)/(c**3) for entry in dTau_change])
-  print(all_states[0])
+  #print(all_states[0])
   all_states = np.array([entry*np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*M), (c**3)/(G*M)]) for entry in np.array(all_states)]) 
-  print(all_states[0])
+  #print(all_states[0])
   tracktime = np.array([entry * (G*M)/(c**3) for entry in tracktime])
   con_derv = np.array([entry * np.array([1, np.array([(c**5)/(G*M), c**2, c**2, c**2]), G*M/(c**2), 1.0, c/np.sqrt(G), 1/M, 1.0, G*M/(c**2), G*M/(c**2), 1, G*M/(c**3)]) for entry in con_derv])
   
