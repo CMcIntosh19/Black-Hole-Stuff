@@ -357,11 +357,7 @@ def ani_thing3(data, name, threeD=True):
     
 
 def potentplotter(E, L, C, a, rbounds=[-1, -1]):
-    if -1 in rbounds:
-        p = 1/(1 - E**2)
-        rbounds = np.linspace(49.99999, 50.00001, num=100)
-    else:
-        rbounds = np.linspace(rbounds[0], rbounds[1], num=100)
+    
     thetbounds = np.linspace(0.0, 2*np.pi, num=180)
     #tri, sig = rbounds**2 - 2*rbounds + a**2, rbounds**2 + a**2
     
@@ -375,6 +371,11 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
     rx, rn, blah, blee = np.roots([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -(a**2)*C])
     r0, bloh, bluh = np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)])
     ecc = (rx - rn)/(rx + rn)
+    if -1 in rbounds:
+        p = 1/(1 - E**2)
+        rbounds = np.linspace(rn*0.95, rx*1.05, num=100)
+    else:
+        rbounds = np.linspace(rbounds[0], rbounds[1], num=100)
     print(rx, rn, r0, ecc)
     print(r0/(1-ecc), r0/(1+ecc))
     fig1, ax1 = plt.subplots()

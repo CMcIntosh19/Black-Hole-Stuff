@@ -1987,7 +1987,7 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   r = con_derv[0][2]
   #print(r, pro, a)
   #print(((r**(3/2) + pro*a)**(-1)), np.sqrt(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2)))))
-  orbitCount = all_states[-1][0]/(2*np.pi/(((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2))))))
+  orbitCount = all_states[-1][0]/(2*np.pi/(((r**(3/2) + pro*a)**(-1))*(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2))))**(0.5)))
   tracktime = [all_states[0][0]]
   stop = False
   #Main Loop

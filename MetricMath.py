@@ -1272,10 +1272,12 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
     flats = cubic_solver(coeff2)
     turns = np.sort(np.roots(coeff))
     r = sp.Symbol('r', real=True, positive=True)
-    turns = list(sp.roots((energy**2 - 1)*(r**4) + 2.0*mass*(r**3) + ((a**2)*(energy**2 - 1) - lz**2 - cart)*(r**2) + (2*mass*((a*energy - lz)**2) + 2*mass*cart)*4 -cart*(a**2), r).keys())
-    #print(turns)
-    #flats = np.roots(coeff2)
-    r0 = np.max(flats)
+    turns = list(sp.roots((energy**2 - 1)*(r**4) + 2.0*mass*(r**3) + ((a**2)*(energy**2 - 1) - lz**2 - cart)*(r**2) + (2*mass*((a*energy - lz)**2) + 2*mass*cart)*r -cart*(a**2), r).keys())
+    flats = list(sp.roots(4*(energy**2 - 1)*(r**3) + 3*2.0*mass*(r**2) + 2*((a**2)*(energy**2 - 1) - lz**2 - cart)*r + (2*mass*((a*energy - lz)**2) + 2*mass*cart), r).keys())
+    T = sp.Symbol('T', real=True, positive=True)  #this is COSINE of theta
+    theturns = list(sp.roots(cart - (cart + (a**2)*(1 - energy**2) + lz**2)*(T**2) + (a**2)*(1 - energy**2)*(T**4), T))
+    
+    r0 = sp.re(flats[-1])
     rc = (1 + np.sqrt(1 + a))**2
     if (True in np.iscomplex(turns)):
       #compErr = True
@@ -1297,7 +1299,7 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
     #print(outer_turn, inner_turn)
     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
     #print(e)
-    v = np.sqrt(mass/r0)
+    v = (mass/r0)**0.5
     dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
     if (ind2 - ind1) > 2:
         states = np.array(states)
@@ -1667,6 +1669,7 @@ def new_recalc_state5(cons, con_derv, state, mu, mass, a):
     dE, dLx, dLy, dLz = con_derv[:4]
     dL_vec = -np.linalg.norm([dLx, dLy, dLz])
     
+    '''
     # Step 4
     t, r, theta, phi, vel4 = *state[:4], state[4:]
     sint, cost = fix_sin(theta), fix_cos(theta)
@@ -1679,14 +1682,16 @@ def new_recalc_state5(cons, con_derv, state, mu, mass, a):
     vel3cart = vel4cart[1:4]
     pos3cart = np.array([r*sint*cosp, r*sint*sinp, r*cost])
     L_vec = np.linalg.norm(np.cross(pos3cart, vel3cart))
+    '''
 
     # Step 5
-    E, Lphi = E0 + dE, Lphi0 + (dL_vec/L_vec)*(Lphi0)
+    #E, Lphi = E0 + dE, Lphi0 + (dL_vec/L_vec)*(Lphi0)
+    E, Lphi = E0 + dE, Lphi0 + dL_vec
     
     # Step 6
     C = z2*((a**2)*(1 - E**2) + (Lphi**2)/(1 - z2))
+    #print(E, Lphi, C, "yo")
 
-    
     # Step 7
     new_state = recalc_state([E, Lphi, C], state, mass, a)
 

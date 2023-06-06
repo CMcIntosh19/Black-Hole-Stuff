@@ -565,6 +565,8 @@ def schmidtparam(r0, e, i, a):
         if ene > 0.0: 
             full_sols.append([ene, lel, newC(ene, lel, a, z)])
 
+    if full_sols == []:
+        return False
     if np.product(np.sign(full_sols[0])) == np.sign(np.sin(i)):
         del full_sols[1]
     else:
@@ -577,12 +579,18 @@ def schmidtparam(r0, e, i, a):
     r = sp.Symbol('r', real=True, positive=True)
     rt = list(sp.roots(4*(E**2 - 1)*(r**3) + 6*(r**2) + 2*((a**2)*(E**2 - 1) - L**2 - C)*(r) + 2*((a*E - L)**2) + C, r).keys())
 
-    #print(list(rt.keys()))
+    #print(rt)
     if rp >= rt[1]:
+        #print(r0, e, j)
         return [E, L, C]
     else:
-        print("This is a plunge orbit - cycling to find critical eccentricity for given r0, i, a.")
-        fix = schmidtparam(r0, e*0.99999, j, a)
-        print("Attempt: e =", e*0.99999)
+        #print("This is a plunge orbit - cycling to find critical eccentricity for given r0, i, a.")
+        newe = 1 - (2*r0*(1-e) + rt[1])/(3*r0)
+        print("Plunge orbit - new attempt with e =", newe)
+        if (e - newe)/e > 10**(-17):
+            fix = schmidtparam(r0, newe, j, a)
+        else:
+            print("tryhard")
+            fix = schmidtparam(r0, newe*0.99, j, a)
         return [fix[0], fix[1], fix[2]]
     
