@@ -7,7 +7,7 @@ import numpy as np
 from scipy import optimize
 import scipy.interpolate as spi
 import least_squares as ls
-import sympy as sp
+#import sympy as sp
 
 g = 1
 #whenever present, mass is usually set equal to 1
@@ -407,12 +407,6 @@ def set_u_kerr(state, mass, a, timelike, eta, xi, special=False):
     return new
 
 def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, pos=False, units="grav"):
-    if units == "mks BLAM":
-        G, M, c = 6.67*(10**-11), mass, 3*(10**8)
-    elif units == "cgs BLAM":
-        G, M, c = 6.67*(10**-8), mass, 3*(10**10)
-    else:
-        G, M, c = 1.0, 1.0, 1.0
     mass = 1.0
     if np.shape(cons) == (3,):
         print("Calculating initial velocity from constants E,L,C")
@@ -423,7 +417,7 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
         #print(cons)
         #print(" ")
         if np.shape(pos) == (4,):
-            pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
+            #pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
             new = recalc_state(cons, pos, mass, a)
         else:
             E, L, C = cons
@@ -437,7 +431,7 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
             new = recalc_state(cons, pos, mass, a)
     elif (np.shape(velorient) == (3,)):
         print("Calculating intial velocity from tetrad velocity and orientation")
-        velorient = list(np.array(velorient) / np.array([c, 1.0, 1.0]))
+        #velorient = list(np.array(velorient) / np.array([c, 1.0, 1.0]))
         beta, eta, xi = velorient
         #eta is radial angle - 0 degrees is radially outwards, 90 degrees is no radial component
         #xi is up/down - 0 degrees is along L vector, 90 degrees is no up/down component
@@ -450,9 +444,9 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
         if np.shape(pos) != (4,):
             r, theta = (1/beta*np.sin(eta)*np.sin(xi))**2, np.pi/2
             pos = [0.0, r, theta, 0.0]
-            pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
+            #pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
         else:
-            pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
+            #pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
             r, theta = pos[1], pos[2]
             
         #metric, chris = kerr([0.0, r, theta, 0.0], mass, a)
@@ -472,8 +466,8 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
         new = np.array([[*pos, *new]])
     elif (np.shape(vel4) == (4,)) and np.shape(pos) == (4,):
         print("Calculating initial velocity from tetrad component velocities")
-        vel4 = list(np.array(vel4) / np.array([1.0, c, (c**3)/(G*M), (c**3)/(G*M)]))
-        pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
+        #vel4 = list(np.array(vel4) / np.array([1.0, c, (c**3)/(G*M), (c**3)/(G*M)]))
+        #pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
         r, theta = pos[1], pos[2]
         metric, chris = kerr(pos, mass, a)
         #various defined values that make math easier
@@ -495,10 +489,10 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
         tilde = np.array([gamma, gamma*beta*fix_cos(eta), -gamma*beta*fix_sin(eta)*fix_cos(xi), gamma*beta*fix_sin(eta)*fix_sin(xi)])
         new = np.matmul(tetrad_matrix, tilde)
     elif np.shape(params) == (3,):
-        params = list(np.array(params) / np.array([(G*M)/(c**2), 1.0, 1.0]))
+        #params = list(np.array(params) / np.array([(G*M)/(c**2), 1.0, 1.0]))
         print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
         new, newpams = ls.leastsquaresparam(*params, a)
-        newpams = newpams * np.array([(G*M)/(c**2), 1.0, 1.0])
+        #newpams = newpams * np.array([(G*M)/(c**2), 1.0, 1.0])
         print("Actual parameters:")
         print(newpams[0], newpams[1], newpams[2])
         print(new)
@@ -574,13 +568,11 @@ def gr_diff_eq(solution, state, *args):
                 if index in chris.keys():
                     u -= chris[index] * state[j + 4] * state[k + 4]
         d_state[4+i] = u                                                            #assign derivatives of velocity
-        '''
         if abs(u) > 0.002:
             print(u)
             print("this maybe??", 4+i)
             print(chris)
             return False
-        '''
     return d_state                                                                #return derivative of state
 
 rk4 = {"label": "Standard RK4",
@@ -1269,15 +1261,16 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
         return np.array([r1, r2, r3, r4])
     
     #turns = np.sort(quartic_solver(coeff))
-    flats = cubic_solver(coeff2)
+    flats = np.sort(cubic_solver(coeff2))
     turns = np.sort(np.roots(coeff))
-    r = sp.Symbol('r', real=True, positive=True)
-    turns = list(sp.roots((energy**2 - 1)*(r**4) + 2.0*mass*(r**3) + ((a**2)*(energy**2 - 1) - lz**2 - cart)*(r**2) + (2*mass*((a*energy - lz)**2) + 2*mass*cart)*r -cart*(a**2), r).keys())
-    flats = list(sp.roots(4*(energy**2 - 1)*(r**3) + 3*2.0*mass*(r**2) + 2*((a**2)*(energy**2 - 1) - lz**2 - cart)*r + (2*mass*((a*energy - lz)**2) + 2*mass*cart), r).keys())
-    T = sp.Symbol('T', real=True, positive=True)  #this is COSINE of theta
-    theturns = list(sp.roots(cart - (cart + (a**2)*(1 - energy**2) + lz**2)*(T**2) + (a**2)*(1 - energy**2)*(T**4), T))
+    #r = sp.Symbol('r', real=True, positive=True)
+    #turns = list(sp.roots((energy**2 - 1)*(r**4) + 2.0*mass*(r**3) + ((a**2)*(energy**2 - 1) - lz**2 - cart)*(r**2) + (2*mass*((a*energy - lz)**2) + 2*mass*cart)*r -cart*(a**2), r).keys())
+    #flats = list(sp.roots(4*(energy**2 - 1)*(r**3) + 3*2.0*mass*(r**2) + 2*((a**2)*(energy**2 - 1) - lz**2 - cart)*r + (2*mass*((a*energy - lz)**2) + 2*mass*cart), r).keys())
+    #T = sp.Symbol('T', real=True, positive=True)  #this is COSINE of theta
+    #theturns = list(sp.roots(cart - (cart + (a**2)*(1 - energy**2) + lz**2)*(T**2) + (a**2)*(1 - energy**2)*(T**4), T))
     
-    r0 = sp.re(flats[-1])
+    
+    r0 = flats[-1]
     rc = (1 + np.sqrt(1 + a))**2
     if (True in np.iscomplex(turns)):
       #compErr = True
@@ -1295,6 +1288,7 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
         y = 9999999
     #print("is good?")
     q = a/mass
+    #print(turns, "turns")
     outer_turn, inner_turn = turns[-1], turns[-2]
     #print(outer_turn, inner_turn)
     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
@@ -1658,12 +1652,7 @@ def new_recalc_state5(cons, con_derv, state, mu, mass, a):
         z2 = C0/(Lphi0**2 + C0)
     else:
         A = (a**2)*(1 - E0**2)
-        z2pl = ((A + Lphi0**2 + C0) + ((A + Lphi0**2 + C0)**2 - 4*A*C0)**(1/2))/(2*A)
-        z2mn = ((A + Lphi0**2 + C0) - ((A + Lphi0**2 + C0)**2 - 4*A*C0)**(1/2))/(2*A)
-        if z2pl > 1.0:
-            z2 = z2mn
-        else:
-            z2 = z2pl
+        z2 = ((A + Lphi0**2 + C0) - ((A + Lphi0**2 + C0)**2 - 4*A*C0)**(1/2))/(2*A)
             
     # Step 3
     dE, dLx, dLy, dLz = con_derv[:4]

@@ -2171,9 +2171,9 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   else:
       G, M, c = 1.0, 1.0, 1.0
       
-  constants = np.array([entry*np.array([c**2, G/(M*c), (G/(M*c))**2]) for entry in np.array(constants)], dtype=np.float64)
-  false_constants = np.array([entry*np.array([c**2, G/(M*c), G/(M*c), G/(M*c)]) for entry in np.array(false_constants)])
-  qarter = np.array([entry * (G/(M*c))**2 for entry in qarter])
+  constants = np.array(constants) #np.array([entry*np.array([c**2, G/c, (G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
+  false_constants = np.array(false_constants) #np.array([entry*np.array([c**2, G/(M*c), G/(M*c), G/(M*c)]) for entry in np.array(false_constants)])
+  qarter = np.array(qarter) #np.array([entry * (G/c)**2 for entry in qarter])
   interval = np.array(interval)
   dTau_change = np.array([entry * (G*M)/(c**3) for entry in dTau_change])
   #print(all_states[0])

@@ -159,57 +159,57 @@ def physplots(datalist, merge=False, start=0, end=-1, fit=True, leg=True):
     max_time = 0
     min_time = 10**(30)
     for data in datalist:
-        try:
-            to1 = get_index(data["time"], start)
-            #print(to1)
-            if end == -1:
-                tf1 = get_index(data["time"], data["time"][-1])
-            else: 
-                tf1 = get_index(data["time"], end)
-                
-            to2 = get_index(data["tracktime"], start)
-            if end == -1:
-                tf2 = get_index(data["tracktime"], data["tracktime"][-1])
-            else: 
-                tf2 = get_index(data["tracktime"], end)
+
+        to1 = get_index(data["time"], start)
+        #print(to1)
+        if end == -1:
+            tf1 = get_index(data["time"], data["time"][-1])
+        else: 
+            tf1 = get_index(data["time"], end)
             
-            min_time = min(data["time"][to1], min_time)
-            max_time = max(data["time"][tf1], max_time)
-            
-            ax_list1[0].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 0], label=data["name"])
-            ax_list1[0].set_title('Radius vs Time')
-            ax_list1[1].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 1], label=data["name"])
-            ax_list1[1].set_title('Theta vs Time')
-            ax_list1[2].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 2], label=data["name"])
-            ax_list1[2].set_title('Phi vs Time')
-            
-            ax_list1a[0].plot(data["time"][to1:tf1], data["Lx_momentum"][to1:tf1], label=data["name"])
-            ax_list1a[0].set_title('Psuedo Lx vs Time')
-            ax_list1a[1].plot(data["time"][to1:tf1], data["Ly_momentum"][to1:tf1], label=data["name"])
-            ax_list1a[1].set_title('Psuedo Ly vs Time')
-            ax_list1a[2].plot(data["time"][to1:tf1], data["Lz_momentum"][to1:tf1], label=data["name"])
-            ax_list1a[2].set_title('Psuedo Lz vs Time')
-            elapse_min = min(elapse_min, min(data["pos"][to1:tf1, 2]))
-            elapse_max = max(elapse_max, max(data["pos"][to1:tf1, 2]))
-            #print(elapse_min, elapse_max)
-    
-            ax_list2[0].plot(data["tracktime"][to2:tf2], data["energy"][to2:tf2], label=data["name"])
-            ax_list2[0].set_title('Energy vs Time')
-            ax_list2[1].plot(data["tracktime"][to2:tf2], data["phi_momentum"][to2:tf2], label=data["name"])
-            ax_list2[1].set_title('L_phi vs Time')
-            ax_list2[2].plot(data["tracktime"][to2:tf2], data["carter"][to2:tf2], label=data["name"])
-            ax_list2[2].set_title('Carter(C) vs Time')
-            ax_list2[3].plot(data["tracktime"][to2:tf2], data["e"][to2:tf2], label=data["name"])
-            ax_list2[3].set_title('Eccentricity vs Time')
-            if fit == True:
-                b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["energy"][to2:tf2], 1)
-                ax_list2[0].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-                b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["phi_momentum"][to2:tf2], 1)
-                ax_list2[1].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-                b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["carter"][to2:tf2], 1)
-                ax_list2[2].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-        except:
-            print("Orbit labelled " + data["name"] + " did a bad")
+        to2 = get_index(data["tracktime"], start)
+        if end == -1:
+            tf2 = get_index(data["tracktime"], data["tracktime"][-1])
+        else: 
+            tf2 = get_index(data["tracktime"], end)
+        
+        min_time = min(data["time"][to1], min_time)
+        max_time = max(data["time"][tf1], max_time)
+        
+        ax_list1[0].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 0], label=data["name"])
+        ax_list1[0].set_title('Radius vs Time')
+        ax_list1[1].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 1], label=data["name"])
+        ax_list1[1].set_title('Theta vs Time')
+        ax_list1[2].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 2], label=data["name"])
+        ax_list1[2].set_title('Phi vs Time')
+        
+        ax_list1a[0].plot(data["time"][to1:tf1], data["Lx_momentum"][to1:tf1], label=data["name"])
+        ax_list1a[0].set_title('Psuedo Lx vs Time')
+        ax_list1a[1].plot(data["time"][to1:tf1], data["Ly_momentum"][to1:tf1], label=data["name"])
+        ax_list1a[1].set_title('Psuedo Ly vs Time')
+        ax_list1a[2].plot(data["time"][to1:tf1], data["Lz_momentum"][to1:tf1], label=data["name"])
+        ax_list1a[2].set_title('Psuedo Lz vs Time')
+        elapse_min = min(elapse_min, min(data["pos"][to1:tf1, 2]))
+        elapse_max = max(elapse_max, max(data["pos"][to1:tf1, 2]))
+        #print(elapse_min, elapse_max)
+
+        ax_list2[0].plot(data["tracktime"][to2:tf2], data["energy"][to2:tf2], label=data["name"])
+        ax_list2[0].set_title('Energy vs Time')
+        ax_list2[1].plot(data["tracktime"][to2:tf2], data["phi_momentum"][to2:tf2], label=data["name"])
+        ax_list2[1].set_title('L_phi vs Time')
+        ax_list2[2].plot(data["tracktime"][to2:tf2], data["carter"][to2:tf2], label=data["name"])
+        ax_list2[2].set_title('Carter(C) vs Time')
+        ax_list2[3].plot(data["tracktime"][to2:tf2], data["e"][to2:tf2], label=data["name"])
+        ax_list2[3].set_title('Eccentricity vs Time')
+        if fit == True:
+            b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["energy"][to2:tf2], 1)
+            ax_list2[0].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
+            b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["phi_momentum"][to2:tf2], 1)
+            ax_list2[1].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
+            b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["carter"][to2:tf2], 1)
+            ax_list2[2].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
+            b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), np.float64(data["e"][to2:tf2]), 1)
+            ax_list2[3].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
 
     step = max(1, int((elapse_max - elapse_min)//(20*np.pi)))
     all_lines = np.arange(elapse_min, elapse_max, step*2*np.pi)
