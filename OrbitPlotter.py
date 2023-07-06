@@ -192,24 +192,27 @@ def physplots(datalist, merge=False, start=0, end=-1, fit=True, leg=True):
         elapse_min = min(elapse_min, min(data["pos"][to1:tf1, 2]))
         elapse_max = max(elapse_max, max(data["pos"][to1:tf1, 2]))
         #print(elapse_min, elapse_max)
-
-        ax_list2[0].plot(data["tracktime"][to2:tf2], data["energy"][to2:tf2], label=data["name"])
-        ax_list2[0].set_title('Energy vs Time')
-        ax_list2[1].plot(data["tracktime"][to2:tf2], data["phi_momentum"][to2:tf2], label=data["name"])
-        ax_list2[1].set_title('L_phi vs Time')
-        ax_list2[2].plot(data["tracktime"][to2:tf2], data["carter"][to2:tf2], label=data["name"])
-        ax_list2[2].set_title('Carter(C) vs Time')
-        ax_list2[3].plot(data["tracktime"][to2:tf2], data["e"][to2:tf2], label=data["name"])
-        ax_list2[3].set_title('Eccentricity vs Time')
-        if fit == True:
-            b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["energy"][to2:tf2], 1)
-            ax_list2[0].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-            b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["phi_momentum"][to2:tf2], 1)
-            ax_list2[1].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-            b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["carter"][to2:tf2], 1)
-            ax_list2[2].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
-            b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), np.float64(data["e"][to2:tf2]), 1)
-            ax_list2[3].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
+        
+        try:
+            ax_list2[0].plot(data["tracktime"][to2:tf2], data["energy"][to2:tf2], label=data["name"])
+            ax_list2[0].set_title('Energy vs Time')
+            ax_list2[1].plot(data["tracktime"][to2:tf2], data["phi_momentum"][to2:tf2], label=data["name"])
+            ax_list2[1].set_title('L_phi vs Time')
+            ax_list2[2].plot(data["tracktime"][to2:tf2], data["carter"][to2:tf2], label=data["name"])
+            ax_list2[2].set_title('Carter(C) vs Time')
+            ax_list2[3].plot(data["tracktime"][to2:tf2], data["e"][to2:tf2], label=data["name"])
+            ax_list2[3].set_title('Eccentricity vs Time')
+            if fit == True:
+                b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["energy"][to2:tf2], 1)
+                ax_list2[0].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
+                b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["phi_momentum"][to2:tf2], 1)
+                ax_list2[1].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
+                b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), data["carter"][to2:tf2], 1)
+                ax_list2[2].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
+                b, m = np.polynomial.polynomial.polyfit(list(data["tracktime"][to2:tf2]), np.float64(data["e"][to2:tf2]), 1)
+                ax_list2[3].plot(data["tracktime"][to2:tf2], b + m * data["tracktime"][to2:tf2], '-', label= str(m))
+        except:
+            pass
 
     step = max(1, int((elapse_max - elapse_min)//(20*np.pi)))
     all_lines = np.arange(elapse_min, elapse_max, step*2*np.pi)
@@ -364,10 +367,6 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
     R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
     T = lambda t: C - ((1 - E**2)*(a**2) + (L**2)/(np.sin(t)**2))*(np.cos(t)**2)
         
-    print(R(50.0))
-    print(R(49.9999999))
-    print(R(50.0000001))
-    print(T(np.pi/2))
     rx, rn, blah, blee = np.roots([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -(a**2)*C])
     r0, bloh, bluh = np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)])
     ecc = (rx - rn)/(rx + rn)
@@ -379,9 +378,9 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
     print(rx, rn, r0, ecc)
     print(r0/(1-ecc), r0/(1+ecc))
     fig1, ax1 = plt.subplots()
-    fig2, ax2 = plt.subplots()
+    #fig2, ax2 = plt.subplots()
     ax1.plot(rbounds, rbounds*0.0)
-    ax1.plot(rbounds, (E**2 - R(rbounds)/(rbounds**2 + a**2))**(1/2) - E)
+    ax1.plot(rbounds, R(rbounds))
     #ax2.plot(thetbounds, thetbounds*0.0)
     #ax2.plot(thetbounds, T(thetbounds))
 

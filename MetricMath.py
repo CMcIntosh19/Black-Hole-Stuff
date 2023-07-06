@@ -8,6 +8,7 @@ from scipy import optimize
 import scipy.interpolate as spi
 import least_squares as ls
 #import sympy as sp
+import time as tm
 
 g = 1
 #whenever present, mass is usually set equal to 1
@@ -426,9 +427,11 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
             #print(Rdco)
             flats = np.roots(Rdco)
             print(flats)
+            print(flats[0])
             pos = [0.0, flats[0], np.pi/2, 0.0]
             #pos = list(np.array(pos) / np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0]))
             new = recalc_state(cons, pos, mass, a)
+            print(new)
     elif (np.shape(velorient) == (3,)):
         print("Calculating intial velocity from tetrad velocity and orientation")
         #velorient = list(np.array(velorient) / np.array([c, 1.0, 1.0]))
@@ -491,10 +494,11 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
     elif np.shape(params) == (3,):
         #params = list(np.array(params) / np.array([(G*M)/(c**2), 1.0, 1.0]))
         print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
-        new, newpams = ls.leastsquaresparam(*params, a)
-        #newpams = newpams * np.array([(G*M)/(c**2), 1.0, 1.0])
-        print("Actual parameters:")
-        print(newpams[0], newpams[1], newpams[2])
+        cons = ls.schmidtparam(*params, a)
+        if cons == False:
+            print("Non-viable parameters")
+        pos = [0.0, params[0], np.pi/2, 0.0]
+        new = recalc_state(cons, pos, mass, a)
         print(new)
     else:
         print("Insufficent information provided, begone")
@@ -567,12 +571,14 @@ def gr_diff_eq(solution, state, *args):
                 index = str(i) + str(j) + str(k)
                 if index in chris.keys():
                     u -= chris[index] * state[j + 4] * state[k + 4]
-        d_state[4+i] = u                                                            #assign derivatives of velocity
+        d_state[4+i] = u 
+        '''                                                           #assign derivatives of velocity
         if abs(u) > 0.002:
             print(u)
             print("this maybe??", 4+i)
             print(chris)
             return False
+        '''
     return d_state                                                                #return derivative of state
 
 rk4 = {"label": "Standard RK4",
@@ -1019,13 +1025,11 @@ def recalc_state(constants, state, mass, a):
 #interpolate function takes calculated orbit and recalculates values for regular time intervals
 def interpolate(data, time):
   data = np.array(data)
-  #print(data[0] )
-  new_time = np.linspace(time[0], time[-1], max(len(time), int(time[-1] - time[0])))
-  #new_time = np.linspace(time[0], time[-1], min(len(time), 10**5))
+  new_time = np.linspace(time[0], time[-1], min(10**6, max(len(time), int(time[-1] - time[0]))))
   r_poly = spi.CubicSpline(time, data[:,0])
   theta_poly = spi.CubicSpline(time, data[:,1])
   phi_poly = spi.CubicSpline(time, data[:,2])
-  new_data = np.array([[r_poly(i), theta_poly(i), phi_poly(i)] for i in new_time])
+  new_data = np.transpose(np.array([r_poly(new_time), theta_poly(new_time), phi_poly(new_time)]))
   return new_data, new_time
 
 #sphr2quad function finds the quadrupole moment of a specific position in spherical coordinates
@@ -1047,9 +1051,10 @@ def matrix_derive(data, time, degree):
   for i in range(3):
     for j in range(3):
       polys[i][j] = spi.CubicSpline(time, data[:,i,j])
-  new_data = np.array([[[polys[0][0](i, degree), polys[0][1](i, degree), polys[0][2](i, degree)],
-                        [polys[1][0](i, degree), polys[1][1](i, degree), polys[1][2](i, degree)],
-                        [polys[2][0](i, degree), polys[2][1](i, degree), polys[2][2](i, degree)]] for i in time])
+  #print("who's the slowest")
+  new_data = np.transpose(np.array([[polys[0][0](time, degree), polys[0][1](time, degree), polys[0][2](time, degree)],
+                                    [polys[1][0](time, degree), polys[1][1](time, degree), polys[1][2](time, degree)],
+                                    [polys[2][0](time, degree), polys[2][1](time, degree), polys[2][2](time, degree)]]))
   return new_data
 
 #gwaves function calculates gravitational wave data based on 
@@ -1070,16 +1075,29 @@ def full_transform(data, distance):    #defunctish??
   return waves, int_time
 
 #sphr2quad function finds the quadrupole moment of a specific position in spherical coordinates
-def ortholize(pos, mu):
-  x = pos[0] * np.sin(pos[1]) * np.cos(pos[2])
-  y = pos[0] * np.sin(pos[1]) * np.sin(pos[2])
-  z = pos[0] * np.cos(pos[1])
+def big_ortholize(pos_list, mu):
+    x = pos_list[:,0] * np.sin(pos_list[:,1]) * np.cos(pos_list[:,2])
+    y = pos_list[:,0] * np.sin(pos_list[:,1]) * np.sin(pos_list[:,2])
+    z = pos_list[:,0] * np.cos(pos_list[:,1]) 
+    
+    qmom = np.transpose(np.array([[3*x*x - pos_list[:, 0]**2,       3*x*y,                     3*x*z              ],
+                                  [      3*y*x,               3*y*y - pos_list[:, 0]**2,       3*y*z              ],
+                                  [      3*z*x,                     3*z*y,               3*z*z - pos_list[:, 0]**2]]))
+    qmom = qmom*mu
+    return qmom
 
-  qmom = np.array([[3*x*x - pos[0]**2,       3*x*y,             3*x*z      ],
-                   [      3*y*x,       3*y*y - pos[0]**2,       3*y*z      ],
-                   [      3*z*x,             3*z*y,       3*z*z - pos[0]**2]], dtype=np.float64)
-  qmom = qmom*mu
-  return qmom
+#Experimenting!! Only use this with mks units, not cgs or geo
+def trace_ortholize(pos_list, mu):
+    x = pos_list[:,0] * np.sin(pos_list[:,1]) * np.cos(pos_list[:,2])
+    y = pos_list[:,0] * np.sin(pos_list[:,1]) * np.sin(pos_list[:,2])
+    z = pos_list[:,0] * np.cos(pos_list[:,1]) 
+    
+    qmom = np.transpose(np.array([[x*x, x*y, x*z],
+                                  [y*x, y*y, y*z],
+                                  [z*x, z*y, z*z]]))
+    c = 3*(10**8)
+    qmom = qmom*mu
+    return qmom
 
 def peters_integrate(constants, a, mu, states, ind1, ind2):
     compErr = False
@@ -1199,8 +1217,6 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
     def quad(a, b, c):
         sol1 = (-b + (b**2 - 4*a*c)**(0.5))/(2*a)
         sol2 = (-b - (b**2 - 4*a*c)**(0.5))/(2*a)
-        #if sol1 == np.sqrt(-1):
-        #    print("WHY")
         return sol1, sol2
 
     #cubic part
@@ -1219,25 +1235,14 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
     #quartic part
     def quartic_solver(coeffs):
         a3, a2, a1, a0 = coeffs[1]/coeffs[0], coeffs[2]/coeffs[0], coeffs[3]/coeffs[0], coeffs[4]/coeffs[0]
-        #print(a3, a2, a1, a0, "coeffs!")
         a, b, c, d = 1.0, -a2, a1*a3 - 4*a0, -(a1**2 + a0*a3*a3 - 4*a0*a2)
-        #print(a, b, c, d, "lil nums!")
         A = -(b*b*b)/(27*a*a*a) + (b*c)/(6*a*a) - d/(2*a)
         B = c/(3*a) - (b*b)/(9*a*a)
         C = b/(3*a)
-        #print(A, B, C, "nums!")
         u1 = (A + (A*A + B*B*B)**0.5)**(1.0/3.0) + (A - (A*A + B*B*B)**0.5)**(1.0/3.0) - C
-        #print(u1, "u1!")
         sols = cubic_solver([1.0, -a2, a1*a3 - 4*a0, -(a1*a1 + a0*a3*a3 - 4*a0*a2)])
         sols = np.where(np.imag(sols) < 10**(-14), np.real(sols), sols)
-        #print(sols, "is there a real boy here?")
         u2 = sols[np.where(np.iscomplex(sols) == False)[0][0]]
-        #print(u2, "it's this guy!")
-    
-        #print(1.0, 0.5*a3 - (0.25*a3*a3 + u1 -a2)**0.5, 0.5*u1 - (0.25*u1*u1 - a0)**0.5)
-        #print(1.0, 0.5*a3 + (0.25*a3*a3 + u1 -a2)**0.5, 0.5*u1 + (0.25*u1*u1 - a0)**0.5)
-        #print(1.0, 0.5*a3 - (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 - (0.25*u2*u2 - a0)**0.5)
-        #print(1.0, 0.5*a3 + (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 + (0.25*u2*u2 - a0)**0.5)
         roots = [*quad(1.0, 0.5*a3 - (0.25*a3*a3 + u1 -a2)**0.5, 0.5*u1 - (0.25*u1*u1 - a0)**0.5),
                  *quad(1.0, 0.5*a3 + (0.25*a3*a3 + u1 -a2)**0.5, 0.5*u1 + (0.25*u1*u1 - a0)**0.5)]
         roots = np.where(np.imag(roots) < 10**(-14), np.real(roots), roots)
@@ -1247,63 +1252,34 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
         roots3 = [*np.roots([1.0, 0.5*a3 - (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 - (0.25*u2*u2 - a0)**0.5]),
                   *np.roots([1.0, 0.5*a3 + (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 + (0.25*u2*u2 - a0)**0.5])]
         roots3 = np.where(np.imag(roots) < 10**(-14), np.real(roots), roots)
-        #x0, y0, z0 = 1.0, 0.5*a3 - (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 - (0.25*u2*u2 - a0)**0.5
-        #x1, y1, z1 = 1.0, 0.5*a3 + (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 + (0.25*u2*u2 - a0)**0.5
         r1, r2 = quad(1.0, 0.5*a3 - (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 - (0.25*u2*u2 - a0)**0.5)
         r3, r4 = quad(1.0, 0.5*a3 + (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 + (0.25*u2*u2 - a0)**0.5)
-        #print(quad(1.0, 0.5*a3 - (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 - (0.25*u2*u2 - a0)**0.5), "maybe dumb?")
-        #print([*quad(1.0, 0.5*a3 - (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 - (0.25*u2*u2 - a0)**0.5),
-        #          *quad(1.0, 0.5*a3 + (0.25*a3*a3 + u2 -a2)**0.5, 0.5*u2 + (0.25*u2*u2 - a0)**0.5)], "no way")
-        #print(roots, "old")
-        #print(roots2, "new")
-        #print(roots3, "cheat")
-        #print(r1, r2, r3, r4)
         return np.array([r1, r2, r3, r4])
     
-    #turns = np.sort(quartic_solver(coeff))
     flats = np.sort(cubic_solver(coeff2))
     turns = np.sort(np.roots(coeff))
-    #r = sp.Symbol('r', real=True, positive=True)
-    #turns = list(sp.roots((energy**2 - 1)*(r**4) + 2.0*mass*(r**3) + ((a**2)*(energy**2 - 1) - lz**2 - cart)*(r**2) + (2*mass*((a*energy - lz)**2) + 2*mass*cart)*r -cart*(a**2), r).keys())
-    #flats = list(sp.roots(4*(energy**2 - 1)*(r**3) + 3*2.0*mass*(r**2) + 2*((a**2)*(energy**2 - 1) - lz**2 - cart)*r + (2*mass*((a*energy - lz)**2) + 2*mass*cart), r).keys())
-    #T = sp.Symbol('T', real=True, positive=True)  #this is COSINE of theta
-    #theturns = list(sp.roots(cart - (cart + (a**2)*(1 - energy**2) + lz**2)*(T**2) + (a**2)*(1 - energy**2)*(T**4), T))
-    
     
     r0 = flats[-1]
     rc = (1 + np.sqrt(1 + a))**2
     if (True in np.iscomplex(turns)):
-      #compErr = True
-      #print("DAMN")
-      #print(turns)
-      #print("is it though?? this should be >= 0")
       this = np.sum(np.array([r0**4, r0**3, r0**2, r0, 1.0])*coeff)
-      #print(this)
       if this < 0.0:
           compErr = True
-      #turns = np.real(turns)  
     try:
         y = cart/(lz**2 + 0.1)
     except:
         y = 9999999
-    #print("is good?")
     q = a/mass
-    #print(turns, "turns")
     outer_turn, inner_turn = turns[-1], turns[-2]
-    #print(outer_turn, inner_turn)
     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
-    #print(e)
     v = (mass/r0)**0.5
     dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
     if (ind2 - ind1) > 2:
         states = np.array(states)
         sphere, time = states[ind1:ind2][:,1:4], states[ind1:ind2][:,0]
-        #print(sphere)
-        #print(time)
-        #print( np.diff(time))
         int_sphere, int_time = interpolate(sphere, time)
         div = int_time[1]-int_time[0]
-        quad = np.array([ortholize(pos, mu) for pos in int_sphere])
+        quad = big_ortholize(int_sphere, mu)
         dt2 = matrix_derive(quad, int_time, 2)
         dt3 = matrix_derive(quad, int_time, 3)
 
@@ -1319,6 +1295,72 @@ def peters_integrate3(constants, a, mu, states, ind1, ind2):
     theta = states[0][2]
     dcdt = 2*((fix_sin(theta)**(-2))*(lz - a*energy*(fix_sin(theta)**(2)))*(dlzdt - a*dedt*(fix_sin(theta)**(2))) + (a*energy - lz)*(a*dedt - dlzdt))
     return (np.array([dedt, dlxdt, dlydt, dlzdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
+
+def peters_integrate4(constants, a, mu, states, ind1, ind2):
+    compErr = False
+    mass = 1
+    energy, lz, cart = constants[0], constants[1], constants[2]
+    coeff = np.array([energy**2 - 1, 2.0*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2) + 2*mass*cart, -cart*(a**2)])
+    coeff2 = np.array([(energy**2 - 1)*4, (2.0*mass)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*mass*((a*energy - lz)**2) + 2*mass*cart])
+
+    #cubic part
+    def cubic_solver(coeffs):
+        a0, a1, a2 = coeffs[3]/coeffs[0], coeffs[2]/coeffs[0], coeffs[1]/coeffs[0]
+        q = (1/3)*a1 - (1/9)*(a2**2)
+        r = (1/6)*(a1*a2 - 3*a0) - (1/27)*(a2**3)
+        s1, s2 = (r + np.sqrt(q**3 + r**2 + 0j))**(1/3),  (r - np.sqrt(q**3 + r**2 + 0j))**(1/3)
+        roots = [(s1 + s2) - a2/3, 
+                 -0.5*(s1 + s2) - a2/3 + 0.5*((-3)**(1/2))*(s1 - s2),
+                 -0.5*(s1 + s2) - a2/3 - 0.5*((-3)**(1/2))*(s1 - s2)]
+        # get rid of tiny imaginary bits. For a 10^6 solar mass BH, 10**(-10) distance units is ~15cm
+        roots = np.where(np.imag(roots) < 10**(-10), np.real(roots), roots)
+        return roots
+    
+    flats = np.sort(cubic_solver(coeff2))
+    turns = np.sort(np.roots(coeff))
+    
+    r0 = flats[-1]
+    if (True in np.iscomplex(turns)):
+      this = np.sum(np.array([r0**4, r0**3, r0**2, r0, 1.0])*coeff)
+      print("this is", this)
+      if this < -(10**(-10)):
+          compErr = True
+    try:
+        y = cart/(lz**2 + 0.1)
+    except:
+        y = 9999999
+    q = a/mass
+    print("turns are", turns)
+    outer_turn, inner_turn = turns[-1], turns[-2]
+    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+    print("so e is", e)
+    v = (mass/r0)**0.5
+    dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
+    if (ind2 - ind1) > 2:
+        states = np.array(states)
+        sphere, time = states[ind1:ind2, 1:4], states[ind1:ind2, 0]
+        int_sphere, int_time = interpolate(sphere, time)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize(int_sphere, mu)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = quad - (1/3)*np.einsum('i, jk -> ijk', np.einsum('ijj -> i', quad), delta)
+        dt2 = matrix_derive(coolquad, int_time, 2)
+        dt3 = matrix_derive(coolquad, int_time, 3)
+        levciv = np.array([[[0, 0, 0],   #Levi-civita tensor
+                            [0, 0, 1],
+                            [0, -1, 0]],
+                           [[0, 0, -1],
+                            [0, 0, 0],
+                            [1, 0, 0]],
+                           [[0, 1, 0],
+                            [-1, 0, 0],
+                            [0, 0, 0]]])
+        dedt = (-1/5)*np.einsum('ijk,ijk ->i', dt3, dt3)
+        dldt = (-2/5)*np.einsum("ijk, ljm, lkm -> li", levciv, dt2, dt3)
+        dE = np.sum(dedt*div)
+        dLx, dLy, dLz = np.sum(dldt*div, axis=0)
+    return (np.array([dE, dLx, dLy, dLz]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
+
 
 def new_recalc_state(constants, state, mass, a):
   energy, lmom, cart = constants[0], constants[1], constants[2]
@@ -1656,6 +1698,7 @@ def new_recalc_state5(cons, con_derv, state, mu, mass, a):
             
     # Step 3
     dE, dLx, dLy, dLz = con_derv[:4]
+    #print(dE, dLx, dLy, dLz, "JEY MAN WHAT'S UP")
     dL_vec = -np.linalg.norm([dLx, dLy, dLz])
     
     '''
@@ -1683,5 +1726,5 @@ def new_recalc_state5(cons, con_derv, state, mu, mass, a):
 
     # Step 7
     new_state = recalc_state([E, Lphi, C], state, mass, a)
-
+    #print(E - E0, Lphi - Lphi0, C - C0, "FOR REAL WHAT'S UP RIGHT NOW")
     return new_state, [E, Lphi, C]

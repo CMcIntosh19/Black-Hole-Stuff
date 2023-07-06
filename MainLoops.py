@@ -1981,7 +1981,9 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   rmin = all_states[0][1]
   issues = []
   checker = []
-  orbitside = min(np.sign(all_states[0][1] - con_derv[0][2]), -1)
+  orbitside = np.sign(all_states[0][1] - con_derv[0][2])
+  if orbitside == 0:
+      orbitside = -1
   print(con_derv[0][2])
   #print(constants)
   r = con_derv[0][2]
@@ -2039,7 +2041,14 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
       #print("yo?")
       #print(new_step)
       #print("dude", i)
-      if ( np.sign(new_step[1] - r0) != orbitside ):  # or (flip)):  #(new_step[0] - con_derv[-1][10]) > np.pi*(r0**(3/2) + a) or
+      if ( np.sign(new_step[1] - r0) != orbitside) or ((new_step[3] - all_states[con_derv[-1][0]][3] > np.pi) and (np.std([state[1] for state in all_states[con_derv[-1][0]:]]) < 0.01*np.mean([state[1] for state in all_states[con_derv[-1][0]:]]))):
+          '''
+          print( np.sign(new_step[1] - r0) != orbitside)
+          print(new_step[1])
+          print(r0)
+          print(new_step[3] - all_states[con_derv[-1][0]][3] > np.pi)
+          print(np.std([state[1] for state in all_states[con_derv[-1][0]:]]) < 0.01*np.mean([state[1] for state in all_states[con_derv[-1][0]:]]))
+          '''
           #print("pop")
           #print(all_states[-5:])
           #print(new_step)
@@ -2057,12 +2066,16 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
           #Turned off now, not sure how much it actually helps?
           
           update = True
-          orbitside *= -1
+          if ( np.sign(new_step[1] - r0) != orbitside):
+              orbitside *= -1
           orbitCount += 0.5
           #print(orbitCount)
-          if mu != 0.0:
+          if mu != 0.0 and i - con_derv[-1][0] > 2:
               condate = True
-              con_derv.append([i, *mm.peters_integrate3(constants[-1], a, mu, all_states, con_derv[-1][0], i), new_step[0]])
+              #print(all_states)
+              #print(con_derv[-1][0], i)
+              #print(mm.peters_integrate4(constants[-1], a, mu, all_states, con_derv[-1][0], i))
+              con_derv.append([i, *mm.peters_integrate4(constants[-1], a, mu, all_states, con_derv[-1][0], i), new_step[0]])
               dir1 = new_step[5]
               if "new" not in label:
                   new_step = mm.new_recalc_state4(con_derv[-1][1], new_step, mu, mass, a)                           #Change the velocity so it actually makes sense with those constants
@@ -2171,12 +2184,13 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   else:
       G, M, c = 1.0, 1.0, 1.0
       
-  constants = np.array(constants) #np.array([entry*np.array([c**2, G/c, (G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
+  constants = np.array([entry*np.array([M*(c**2), M*M*G/c, (M*M*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
   false_constants = np.array(false_constants) #np.array([entry*np.array([c**2, G/(M*c), G/(M*c), G/(M*c)]) for entry in np.array(false_constants)])
   qarter = np.array(qarter) #np.array([entry * (G/c)**2 for entry in qarter])
   interval = np.array(interval)
   dTau_change = np.array([entry * (G*M)/(c**3) for entry in dTau_change])
   #print(all_states[0])
+  print((G*M)/(c**3), "TIME MULTIPLIER GO")
   all_states = np.array([entry*np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*M), (c**3)/(G*M)]) for entry in np.array(all_states)]) 
   #print(all_states[0])
   tracktime = np.array([entry * (G*M)/(c**3) for entry in tracktime])
