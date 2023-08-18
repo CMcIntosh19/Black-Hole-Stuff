@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import sympy as sp
 import warnings
 from random import uniform
+from scipy.optimize import curve_fit
 
 def getEnergy(state, a):
     metric, chris = mm.kerr(state, 1, a)
@@ -517,7 +518,7 @@ for i in range(len(enlist)):
         things[i, l] = a, b, o
 '''
 
-def schmidtparam(r0, e, i, a):
+def schmidtparam(r0, e, i, a, inner=False):
     p = r0*(1 - (e**2))  #p is semi-latus rectum 
     rp, ra = p/(1 + e), p/(1 - e)
     polar = False
@@ -549,14 +550,20 @@ def schmidtparam(r0, e, i, a):
         f2, g2, h2, d2 = rfuncs(ra)
     
     def newC(E, L, a, z):
+        #print(z)
+        #print((a**2)*(1 - E**2))
+        #print((L**2))
+        #print((z**2)*((a**2)*(1 - E**2) + (L**2)/(1 - z**2)), "dehsu")
         return (z**2)*((a**2)*(1 - E**2) + (L**2)/(1 - z**2))
     
     x, y = sp.symbols("x y", real=True)
+    #print(x, y)
 
     eq1 = sp.Eq(f1*(x**2) - 2*g1*x*y - h1*(y**2), d1)
     eq2 = sp.Eq(f2*(x**2) - 2*g2*x*y - h2*(y**2), d2)
 
     symsols = sp.solve([eq1, eq2])
+    #print(x,y)
     #print(symsols)
 
     full_sols = []
@@ -565,32 +572,272 @@ def schmidtparam(r0, e, i, a):
         if ene > 0.0: 
             full_sols.append([ene, lel, newC(ene, lel, a, z)])
 
-    if full_sols == []:
-        return False
-    if np.product(np.sign(full_sols[0])) == np.sign(np.sin(i)):
-        del full_sols[1]
-    else:
-        del full_sols[0]
-        
+    if full_sols == [] or True not in (np.array([sol[0] for sol in full_sols]) < 1.0):
+        print("Non-viable solution: Newtonian approx")
+        full_sols =  [[(1 - (1 - e**2)/p)**0.5, ((1 - z**2)*p)**(0.5), p*(z**2)]]
+        print(full_sols)
+    #print(full_sols)
+    for solution in full_sols:
+        if (np.product(np.sign(solution)) == np.sign(np.sin(i))) and solution[0] <= 1.0:
+            full_sols = [solution]
+            break
     E, L, C = full_sols[0]
+    if E >= 1.0:
+        print("wtf")
+        print(full_sols)
+        return False
     if polar == True:
         L, C = 0.0, C/z**2
     #print(E, L, C)
-    r = sp.Symbol('r', real=True, positive=True)
-    rt = list(sp.roots(4*(E**2 - 1)*(r**3) + 6*(r**2) + 2*((a**2)*(E**2 - 1) - L**2 - C)*(r) + 2*((a*E - L)**2) + C, r).keys())
+    coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+    coeff2 = np.polyder(coeff)
+    turns = np.roots(coeff)
+    flats = np.roots(coeff2)
+    ro = max(flats)
+    while np.polyval(coeff, ro) < -1e-12:
+        E += 10**(-16)
+        coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+        coeff2 = np.polyder(coeff)
+        turns = np.roots(coeff)
+        flats = np.roots(coeff2)
+        ro = max(flats)
+        print("uh", np.polyval(coeff, ro), E)
+    turns = np.sort(turns)
+    #print([E, L, C])
+    #print(turns, "this?")#
+    #print(rp)
+    if abs(rp - turns[-2])/rp <= 1e-5:
+        '''
+        if abs(L) < 10**(-20):
+            L = 0.0
+        if C < 10**(-20):
+            C = 0.0
+        #print([E, L, C])
+        '''
+        return [E, L, C]
+    elif e == 0:
+        print("ISSO?")
+        return schmidtparam(r0*1e6, 1 - 1e-6, j, a)
+    elif True==False:
+        print("yo?", e)
+        print([E, L, C])
+        if inner == True:
+            return False
+        else:
+            print("This is a plunge orbit - cycling to find critical eccentricity for given r0, i, a.")
+        if e == 0.0:
+            newe = 0.01
+        else:
+            newe = e*0.99
+        crit = schmidtparam(r0, newe, j, a, inner=True)
+        while crit == False:
+            #print("hello?")
+            newe *= 0.99
+            crit = schmidtparam(r0, newe, j, a, inner=True)
+        '''
+        vals = np.transpose(np.array([[newe, *crit],
+                                      [newe*0.95, *schmidtparam(r0, newe*0.95, j, a, inner=True)],
+                                      [newe*0.94, *schmidtparam(r0, newe*0.94, j, a, inner=True)],
+                                      [newe*0.93, *schmidtparam(r0, newe*0.93, j, a, inner=True)],
+                                      [newe*0.92, *schmidtparam(r0, newe*0.92, j, a, inner=True)],
+                                      [newe*0.91, *schmidtparam(r0, newe*0.91, j, a, inner=True)],
+                                      [newe*0.90, *schmidtparam(r0, newe*0.90, j, a, inner=True)],
+                                      [newe*0.88, *schmidtparam(r0, newe*0.88, j, a, inner=True)],
+                                      [newe*0.86, *schmidtparam(r0, newe*0.86, j, a, inner=True)],
+                                      [newe*0.84, *schmidtparam(r0, newe*0.84, j, a, inner=True)],
+                                      [newe*0.82, *schmidtparam(r0, newe*0.82, j, a, inner=True)]]))
+        '''
+        #print(newe)
+        #print(np.linspace(newe/2.0, newe))
+        vals = np.transpose(np.array([[ecc, *schmidtparam(r0, ecc, j, a, inner=True)] for ecc in np.linspace(newe/2.0, newe)]))
+        Efit, Lfit, Cfit = np.polyfit(vals[0], np.log(vals[1]), 1), np.polyfit(vals[0], np.log(vals[2]), 1), np.polyfit(vals[0], np.log(vals[3]), 1)
+        E, L, C = np.e**np.polyval(Efit, e), np.e**np.polyval(Lfit, e), np.e**np.polyval(Cfit, e)
+        
+        
+        
+        def func(x, a, b, c):
+            return a * np.exp(-b * x) + c
+        
+        def funce(x, a, b, c):
+            return a * np.exp(b * x) + c
+        
+        def func4(x, a, b, c, d, e):
+            return a*(x**4) + b*(x**3) + c*(x**2) + d*x + e
 
-    #print(rt)
-    if rp >= rt[1]:
-        #print(r0, e, j)
+        poptE, pcovE = curve_fit(funce, vals[0], vals[1], maxfev=10000)
+        poptL, pcovL = curve_fit(func, vals[0], vals[2], maxfev=10000)
+        poptC, pcovC = curve_fit(func, vals[0], vals[3], maxfev=10000)
+        
+        poptE4, pcovE4 = curve_fit(func4, vals[0], vals[1], maxfev=5000)
+        poptL4, pcovL4 = curve_fit(func4, vals[0], vals[2], maxfev=5000)
+        poptC4, pcovC4 = curve_fit(func4, vals[0], vals[3], maxfev=5000)
+        
+        #ax_list[0].plot(x, yn, 'ko', label="Original Noised Data")
+        
+        #ax_list[2].legend()
+
+        E, L, C = funce(e, *poptE), func(e, *poptL), func(e, *poptC)
+        #E1, L1, C1 = funce(0.9, *poptE), func(0.9, *poptL), func(0.9, *poptC)
+        E4, L4, C4 = func4(e, *poptE4), func4(e, *poptL4), func4(e, *poptC4)
+        
+        fig, ax_list = plt.subplots(1,3)
+        ax_list[0].plot(vals[0], funce(vals[0], *poptE), 'r-')
+        ax_list[1].plot(vals[0], func(vals[0], *poptL), 'r-')
+        ax_list[2].plot(vals[0], func(vals[0], *poptC), 'r-')
+        ax_list[0].scatter([*vals[0]], [*vals[1]])
+        ax_list[1].scatter([*vals[0]], [*vals[2]])
+        ax_list[2].scatter([*vals[0]], [*vals[3]])
+        ax_list[0].plot(np.array([*vals[0], e]), funce(np.array([*vals[0], e]), *poptE))
+        ax_list[1].plot(np.array([*vals[0], e]), func(np.array([*vals[0], e]), *poptL))
+        ax_list[2].plot(np.array([*vals[0], e]), func(np.array([*vals[0], e]), *poptC))
+        plt.show()
+        '''
+        #ax_list[0].plot([e, *vals[0]], np.e**np.polyval(Efit, [e, *vals[0]]))
+        #ax_list[1].plot([e, *vals[0]], np.e**np.polyval(Lfit, [e, *vals[0]]))
+        #ax_list[2].plot([e, *vals[0]], np.e**np.polyval(Cfit, [e, *vals[0]]))
+        
+        
+        ax_list[0].plot(vals[0], func4(vals[0], *poptE4))
+        ax_list[1].plot(vals[0], func4(vals[0], *poptL4))
+        ax_list[2].plot(vals[0], func4(vals[0], *poptC4))
+        
+        
+        plt.show()
+        
+        print(Efit)
+        print(Lfit)
+        print(Cfit)
+        print(vals)
+        print(poptE)
+        print(poptL)
+        print(poptC)
+        print(E4, L4, C4)
+        '''
+        return [E4, L4, C4]
+    
+def schmidtparam2(r0, e, i, a, inner=False):
+    p = r0*(1 - (e**2))  #p is semi-latus rectum 
+    rp, ra = p/(1 + e), p/(1 - e)
+    polar = False
+    j = i
+    if i == 0.0 or i == np.pi:
+        polar = True
+        i = np.pi/4
+    z = np.cos(i)
+    
+    def rfuncs(r):
+        tri = r**2 - 2*r + a**2
+        f = r**4 + (a**2)*(r*(r + 2) + tri*(z**2))
+        g = 2*a*r
+        h = r*(r - 2) + tri*(z**2)/(1 - z**2)
+        d = (r**2 + (a*z)**2)*tri
+        return f, g, h, d
+    def r_funcs(r):
+        f_ = 4*(r**3) + 2*(a**2)*((1 + z**2)*r + (1 - z**2))
+        g_ = 2*a
+        h_ = 2*(r - 1)/(1 - z**2)
+        d_ = 2*(2*r - 3)*(r**2) + 2*(a**2)*((1 + z**2)*r - z**2)
+        return f_, g_, h_, d_   
+    
+    if e == 0.0:
+        f1, g1, h1, d1 = rfuncs(p)
+        f2, g2, h2, d2 = r_funcs(p)
+    else:
+        f1, g1, h1, d1 = rfuncs(rp)
+        f2, g2, h2, d2 = rfuncs(ra)
+    
+    def newC(E, L, a, z):
+        #print(z)
+        #print((a**2)*(1 - E**2))
+        #print((L**2))
+        #print((z**2)*((a**2)*(1 - E**2) + (L**2)/(1 - z**2)), "dehsu")
+        return (z**2)*((a**2)*(1 - E**2) + (L**2)/(1 - z**2))
+    
+    x, y = sp.symbols("x y", real=True)
+    #print(x, y)
+
+    eq1 = sp.Eq(f1*(x**2) - 2*g1*x*y - h1*(y**2), d1)
+    eq2 = sp.Eq(f2*(x**2) - 2*g2*x*y - h2*(y**2), d2)
+
+    symsols = sp.solve([eq1, eq2])
+    #print(x,y)
+    #print(symsols)
+
+    full_sols = []
+    for thing in symsols:
+        ene, lel = np.array([thing[x], thing[y]]).astype(float)
+        if ene > 0.0: 
+            full_sols.append([ene, lel, newC(ene, lel, a, z)])
+
+    if full_sols == [] or True not in (np.array([sol[0] for sol in full_sols]) < 1.0):
+        print("Non-viable solution: Newtonian approx")
+        full_sols =  [[(1 - (1 - e**2)/p)**0.5, ((1 - z**2)*p)**(0.5), p*(z**2)]]
+        print(full_sols)
+
+    for solution in full_sols:
+        if (np.product(np.sign(solution)) == np.sign(np.sin(i))):
+            E, L, C = solution
+            break
+
+    if polar == True:
+        L, C = 0.0, C/z**2
+    #print(E, L, C)
+    coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+    coeff2 = np.polyder(coeff)
+    turns = np.roots(coeff)
+    flats = np.roots(coeff2)
+    ro = max(flats)
+    while np.polyval(coeff, ro) < -1e-12:
+        E += 10**(-16)
+        coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+        coeff2 = np.polyder(coeff)
+        turns = np.roots(coeff)
+        flats = np.roots(coeff2)
+        ro = max(flats)
+        print("uh", np.polyval(coeff, ro), E)
+    turns = np.sort(turns)
+    
+    r02, e2 = (turns[-1] + turns[-2])/2.0, (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+    r_err, e_err = ((r0 - r02)/r0)*100, ((e2 - e)/(2-e))*100
+    r_err *= np.sign(r_err)
+    e_err *= np.sign(e_err)
+    print(r_err, e_err)
+    print([E, L, C])
+    if r_err < 1e-6 and e_err < 1e-6:
         return [E, L, C]
     else:
-        #print("This is a plunge orbit - cycling to find critical eccentricity for given r0, i, a.")
-        newe = 1 - (2*r0*(1-e) + rt[1])/(3*r0)
-        print("Plunge orbit - new attempt with e =", newe)
-        if (e - newe)/e > 10**(-17):
-            fix = schmidtparam(r0, newe, j, a)
+        print("non_viable")
+        def r__funcs(r):
+            f__ = 12*(r**2) + 2*a*(1 + z**2)
+            g__ = 0.0
+            h__ = 2/(1 - z**2)
+            d__ = 4*(r - 1)*(r + 3) + 2*(a**2)*(1 + z**2)
+            return f__, g__, h__, d__  
+        
+        if False not in np.isreal([r_err, e_err]):
+            f1, g1, h1, d1 = r_funcs(rp)
+            print("pause plunge")
         else:
-            print("tryhard")
-            fix = schmidtparam(r0, newe*0.99, j, a)
-        return [fix[0], fix[1], fix[2]]
+            f1, g1, h1, d1 = r__funcs(rp)
+            print("charge plunge")
+        f2, g2, h2, d2 = rfuncs(ra)
+        
+        eq1 = sp.Eq(f1*(x**2) - 2*g1*x*y - h1*(y**2), d1)
+        eq2 = sp.Eq(f2*(x**2) - 2*g2*x*y - h2*(y**2), d2)
+
+        symsols = sp.solve([eq1, eq2])
+        
+        full_sols = []
+        for thing in symsols:
+            ene, lel = np.array([thing[x], thing[y]]).astype(float)
+            if ene > 0.0: 
+                full_sols.append([ene, lel, newC(ene, lel, a, z)])
+        
+        for solution in full_sols:
+            if (np.product(np.sign(solution)) == np.sign(np.sin(i))):
+                E, L, C = solution
+                break     
+        return [E, L, C]
+        
+        
     

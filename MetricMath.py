@@ -7,8 +7,7 @@ import numpy as np
 from scipy import optimize
 import scipy.interpolate as spi
 import least_squares as ls
-#import sympy as sp
-import time as tm
+import matplotlib.pyplot as plt
 
 g = 1
 #whenever present, mass is usually set equal to 1
@@ -93,7 +92,11 @@ def mink(state, mass):
               [0,    0,   1,    0],
               [0,    0,   0,    1]]
     chris = {}
-    return (metric, chris)
+    chris_tens = np.zeros((4,4,4))
+    for ind in chris.keys():
+        i, j, k = int(ind[0]), int(ind[1]), int(ind[2])
+        chris_tens[i, j, k] = chris[ind]
+    return (metric, chris_tens)
 
 # schwarz function computes the metric and christoffel connection terms for a given state
 # specific to schwarzchild orbit and may be phased out once kerr is complete
@@ -135,7 +138,11 @@ def schwarz(state, mass):
              "323": fix_cos(theta) / fix_sin(theta),
              "331": 1 / r,
              "332": fix_cos(theta) / fix_sin(theta)}
-    return (metric, chris)
+    chris_tens = np.zeros((4,4,4))
+    for ind in chris.keys():
+        i, j, k = int(ind[0]), int(ind[1]), int(ind[2])
+        chris_tens[i, j, k] = chris[ind]
+    return (metric, chris_tens)
 
 # set_u function normalizes a given initial state to maintain a proper
 # spacetime interval: -1 for timelike paths, 0 for null
@@ -227,6 +234,7 @@ def kerr(state, mass, a):
     sine, cosi = np.sin(theta), np.cos(theta)
     #various defined values that make math easier
     rho2, tri = r**2 + (a*cosi)**2, r**2 - s*r + a**2
+    #print(r, theta, s, sine, cosi, rho2, tri, a)
     al2, w = (rho2*tri)/(rho2*tri + 2*mass*r*(a**2 + r**2)), (2*mass*r*a)/(rho2*tri + 2*mass*r*(a**2 + r**2))
     wu2 = ((rho2*tri + 2*mass*r*(a**2 + r**2))/(rho2))*sine**2
     bigA = (r**2 + a**2)**2 - tri*(a*sine)**2
@@ -266,7 +274,11 @@ def kerr(state, mass, a):
              "323": ((cosi/sine)/(rho2**2))*((rho2**2) + s*r*((a*sine)**2)),
              "331": (2*r*(rho2**2) + s*(((a**2)*sine*cosi)**2 - (r**2)*(rho2 + r**2 + a**2)))/(2*tri*(rho2**2)), #=313
              "332": ((cosi/sine)/(rho2**2))*((rho2**2) + s*r*((a*sine)**2))} #=323
-    return (metric, chris)
+    chris_tens = np.zeros((4,4,4))
+    for ind in chris.keys():
+        i, j, k = int(ind[0]), int(ind[1]), int(ind[2])
+        chris_tens[i, j, k] = chris[ind]
+    return (metric, chris_tens)
 
 #check_interval function returns the spacetime interval of a given state
 #should be -1 for timelike orbits (or 0 for null), otherwise something is wrong
@@ -295,11 +307,7 @@ def check_interval(solution, state, *args):
 
     '''
     metric, chris = solution(state, *args)
-    interval = 0
-    for u in range(4):
-        for v in range(4):
-            interval += metric[u][v] * state[4+u] * state[4+v]
-    #print(interval, "woo")
+    interval = np.einsum("ij,i,j -> ", metric, state[4:], state[4:])
     return interval
 
 def set_u_kerr(state, mass, a, timelike, eta, xi, special=False):
@@ -494,16 +502,17 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
     elif np.shape(params) == (3,):
         #params = list(np.array(params) / np.array([(G*M)/(c**2), 1.0, 1.0]))
         print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
-        cons = ls.schmidtparam(*params, a)
+        cons = ls.schmidtparam2(*params, a)
         if cons == False:
             print("Non-viable parameters")
-        pos = [0.0, params[0], np.pi/2, 0.0]
+        if np.shape(pos) != (4,):
+            pos = [0.0, params[0], np.pi/2, 0.0]
         new = recalc_state(cons, pos, mass, a)
-        print(new)
+        #print(new)
     else:
         print("Insufficent information provided, begone")
         new = np.array([0.0, 2000000.0, np.pi/2, 0.0, 7.088812050083354, -0.99, 0.0, 0.0])
-    return new
+    return new, cons
         
 # kill_tensor function defines the Kerr killing tensor for a given state and spin parameter
 def kill_tensor(state, mass, a):
@@ -561,24 +570,11 @@ def gr_diff_eq(solution, state, *args):
 
     '''
 
-    d_state = np.array([0,0,0,0,0,0,0,0], dtype=float)                                         #create empty array to be the derivative of the state
+    d_state = np.zeros((8), dtype=float)                                         #create empty array to be the derivative of the state
+    #print("hey", d_state)
     d_state[0:4] = state[4:]                                                      #derivative of position is velocity
     metric, chris = solution(state, *args)
-    for i in range(4):
-        u = 0                                                                       #Last four entries are velocities
-        for j in range(4):
-            for k in range(4):                                                        #loop through indices to retrieve each Christoffel symbol
-                index = str(i) + str(j) + str(k)
-                if index in chris.keys():
-                    u -= chris[index] * state[j + 4] * state[k + 4]
-        d_state[4+i] = u 
-        '''                                                           #assign derivatives of velocity
-        if abs(u) > 0.002:
-            print(u)
-            print("this maybe??", 4+i)
-            print(chris)
-            return False
-        '''
+    d_state[4:] = -np.einsum("ijk, j, k -> i", chris, state[4:], state[4:])
     return d_state                                                                #return derivative of state
 
 rk4 = {"label": "Standard RK4",
@@ -984,16 +980,17 @@ def constant_derivatives_long5(constants, mass, a, mu):
   #print(dedt, dldt)
   return (np.array([dedt, dldt, dcdt]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
 
-def recalc_state(constants, state, mass, a):
+def recalc_state(constants, state, mass, a, yell=False):
   energy, lmom, cart = constants[0], constants[1], constants[2]
   rad, theta = state[1], state[2]
   sig, tri = rad**2 + (a**2)*(fix_cos(theta)**2), rad**2 - 2*mass*rad + a**2
 
   p_r = energy*(rad**2 + a**2) - a*lmom
   r_r = (p_r)**2 - tri*(rad**2 + (a*energy - lmom)**2 + cart)
-  #print(r_r)
   the_the = cart - (cart + (a**2)*(1 - energy**2) + lmom**2)*(fix_cos(theta)**2) + (a**2)*(1 - energy**2)*(fix_cos(theta)**4)
-
+  #if yell == True:
+      #print(r_r)
+  
   tlam = -a*(a*energy*(np.sin(theta)**2) - lmom) + ((rad**2 + a**2)/tri)*p_r
   rlam_2 = r_r
   rlam = np.sqrt(abs(rlam_2))
@@ -1010,7 +1007,7 @@ def recalc_state(constants, state, mass, a):
   #sign correction and initialization
   if (len(state) != 8):
     rtau = abs(rtau) * -1
-    thetau = abs(thetau) 
+    thetau = abs(thetau) * -1
     new_state = np.zeros(8)
     new_state[:4] = state[:4]
   else:
@@ -1019,18 +1016,26 @@ def recalc_state(constants, state, mass, a):
     new_state = np.copy(state)
 
   new_state[4:] = np.array([ttau, rtau, thetau, phitau])
+  #print(check_interval(kerr, new_state, mass, a))
   return new_state
 
 
 #interpolate function takes calculated orbit and recalculates values for regular time intervals
 def interpolate(data, time):
   data = np.array(data)
-  new_time = np.linspace(time[0], time[-1], min(10**6, max(len(time), int(time[-1] - time[0]))))
-  r_poly = spi.CubicSpline(time, data[:,0])
-  theta_poly = spi.CubicSpline(time, data[:,1])
-  phi_poly = spi.CubicSpline(time, data[:,2])
-  new_data = np.transpose(np.array([r_poly(new_time), theta_poly(new_time), phi_poly(new_time)]))
-  return new_data, new_time
+  new_time = np.linspace(time[0], time[-1], max(len(time), int(time[-1] - time[0])))
+  try:
+      r_poly = spi.CubicSpline(time, data[:,0])
+      theta_poly = spi.CubicSpline(time, data[:,1])
+      phi_poly = spi.CubicSpline(time, data[:,2])
+      new_data = np.transpose(np.array([r_poly(new_time), theta_poly(new_time), phi_poly(new_time)]))
+      return new_data, new_time
+  except ValueError:
+      fig1, ax1 = plt.subplots()
+      fig2, ax2 = plt.subplots()
+      ax1.plot(time)
+      ax2.plot(time)
+      return False
 
 #sphr2quad function finds the quadrupole moment of a specific position in spherical coordinates
 def sphr2quad(pos):
@@ -1095,8 +1100,8 @@ def trace_ortholize(pos_list, mu):
     qmom = np.transpose(np.array([[x*x, x*y, x*z],
                                   [y*x, y*y, y*z],
                                   [z*x, z*y, z*z]]))
-    c = 3*(10**8)
-    qmom = qmom*mu
+    #c = 3*(10**8)
+    #qmom = qmom*mu
     return qmom
 
 def peters_integrate(constants, a, mu, states, ind1, ind2):
@@ -1317,12 +1322,15 @@ def peters_integrate4(constants, a, mu, states, ind1, ind2):
         return roots
     
     flats = np.sort(cubic_solver(coeff2))
+    #print(constants)
+    #print(coeff)
     turns = np.sort(np.roots(coeff))
     
     r0 = flats[-1]
     if (True in np.iscomplex(turns)):
-      this = np.sum(np.array([r0**4, r0**3, r0**2, r0, 1.0])*coeff)
-      print("this is", this)
+      this = np.imag(np.sum(np.array([r0**4, r0**3, r0**2, r0, 1.0])*coeff))
+      #print("this is", this)
+      #print(turns)
       if this < -(10**(-10)):
           compErr = True
     try:
@@ -1330,10 +1338,15 @@ def peters_integrate4(constants, a, mu, states, ind1, ind2):
     except:
         y = 9999999
     q = a/mass
-    print("turns are", turns)
+    #print("turns are", turns)
     outer_turn, inner_turn = turns[-1], turns[-2]
     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
-    print("so e is", e)
+    if np.iscomplex(e):
+        print("complex e!")
+    #print(outer_turn, inner_turn)
+    #print(e)
+    #print(r0)
+    #print("so e is", e)
     v = (mass/r0)**0.5
     dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
     if (ind2 - ind1) > 2:
@@ -1357,9 +1370,44 @@ def peters_integrate4(constants, a, mu, states, ind1, ind2):
                             [0, 0, 0]]])
         dedt = (-1/5)*np.einsum('ijk,ijk ->i', dt3, dt3)
         dldt = (-2/5)*np.einsum("ijk, ljm, lkm -> li", levciv, dt2, dt3)
-        dE = np.sum(dedt*div)
-        dLx, dLy, dLz = np.sum(dldt*div, axis=0)
+        dE = np.sum(dedt*div)*mu
+        dLx, dLy, dLz = np.sum(dldt*div, axis=0)*mu
+        #print(energy, dE, "hello!")
     return (np.array([dE, dLx, dLy, dLz]), r0, y, v, q, e, outer_turn, inner_turn, compErr)
+
+def peters_integrate5(states, a, mu, ind1, ind2):
+    dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
+    if (ind2 - ind1) > 2:
+        states = np.array(states)
+        sphere, time = states[ind1:ind2, 1:4], states[ind1:ind2, 0]
+        int_sphere, int_time = interpolate(sphere, time)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize(int_sphere, mu)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = quad - (1/3)*np.einsum('i, jk -> ijk', np.einsum('ijj -> i', quad), delta)
+        dt2 = matrix_derive(coolquad, int_time, 2)
+        dt3 = matrix_derive(coolquad, int_time, 3)
+        levciv = np.array([[[0, 0, 0],   #Levi-civita tensor
+                            [0, 0, 1],
+                            [0, -1, 0]],
+                           [[0, 0, -1],
+                            [0, 0, 0],
+                            [1, 0, 0]],
+                           [[0, 1, 0],
+                            [-1, 0, 0],
+                            [0, 0, 0]]])
+        dedt = (-1/5)*np.einsum('ijk,ijk ->i', dt3, dt3)
+        dldt = (-2/5)*np.einsum("ijk, ljm, lkm -> li", levciv, dt2, dt3)
+        dE = np.sum(dedt*div)*mu
+        #print(dE)
+        #print(np.mean(dt2), np.mean(dt3))
+        dLx, dLy, dLz = np.sum(dldt*div, axis=0)*mu
+        #print(dE, "hello!")
+        #print(int_time[-1] - int_time[0])
+        #print(div)
+        #print(dE)
+        #print(time[0])
+    return np.array([dE, dLx, dLy, dLz])
 
 
 def new_recalc_state(constants, state, mass, a):
@@ -1724,7 +1772,105 @@ def new_recalc_state5(cons, con_derv, state, mu, mass, a):
     C = z2*((a**2)*(1 - E**2) + (Lphi**2)/(1 - z2))
     #print(E, Lphi, C, "yo")
 
+    energy, lz, cart = E, Lphi, C
+    coeff2 = np.array([(energy**2 - 1)*4, (2.0*mass)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*mass*((a*energy - lz)**2) + 2*mass*cart])
+
+    def cubic_solver(coeffs):
+        a0, a1, a2 = coeffs[3]/coeffs[0], coeffs[2]/coeffs[0], coeffs[1]/coeffs[0]
+        q = (1/3)*a1 - (1/9)*(a2**2)
+        r = (1/6)*(a1*a2 - 3*a0) - (1/27)*(a2**3)
+        s1, s2 = (r + np.sqrt(q**3 + r**2 + 0j))**(1/3),  (r - np.sqrt(q**3 + r**2 + 0j))**(1/3)
+        roots = [(s1 + s2) - a2/3, 
+                 -0.5*(s1 + s2) - a2/3 + 0.5*((-3)**(1/2))*(s1 - s2),
+                 -0.5*(s1 + s2) - a2/3 - 0.5*((-3)**(1/2))*(s1 - s2)]
+        # get rid of tiny imaginary bits. For a 10^6 solar mass BH, 10**(-10) distance units is ~15cm
+        roots = np.where(np.imag(roots) < 10**(-10), np.real(roots), roots)
+        return roots
+    
+    flats = np.sort(cubic_solver(coeff2))
+    r0 = flats[-1]
+    this = ((r0**2 + a**2)*E - a*Lphi)**2 - (r0**2 - 2*r0 + a**2)*(r0**2 + (Lphi - a*E)**2 + C)
+    if this < 0.0:
+        #print("bad coeff!")
+        #print(r0)
+        #print(E, "old E")
+        #A, B, D = (r0**2 + a**2) - (r0**2 - 2*r0 + a**2)*(a**2), -4*a*Lphi*r0, (a**2)*(Lphi**2) - (r0**2 - 2*r0 + a**2)*(r0**2 + Lphi**2 + C) - this
+        #testE = (-B - (B**2 - 4*A*D))/(2*A)
+        #print(testE, "same E?")
+        #E += (-this)*((2*r0*((r0**3 + r0*(a**2) + 2*(a**2))*E - 2*Lphi*a))**(-1))
+        E = (4*a*Lphi*r0 + ((4*a*Lphi*r0)**2 - 4*(r0**4 + 2*r0*(a**2))*((a*Lphi)**2 - (r0**2 - 2*r0 + a**2)*(r0**2 + Lphi**2 + C)))**(0.5))/(2*(r0**4 + 2*r0*(a**2)))
+        this = ((r0**2 + a**2)*E - a*Lphi)**2 - (r0**2 - 2*r0 + a**2)*(r0**2 + (Lphi - a*E)**2 + C)
+        #print(((r0**2 + a**2)*E - a*Lphi)**2 - (r0**2 - 2*r0 + a**2)*(r0**2 + (Lphi - a*E)**2 + C))
+        print(this)
     # Step 7
     new_state = recalc_state([E, Lphi, C], state, mass, a)
     #print(E - E0, Lphi - Lphi0, C - C0, "FOR REAL WHAT'S UP RIGHT NOW")
     return new_state, [E, Lphi, C]
+
+def new_recalc_state6(cons, con_derv, state, mu, mass, a):
+    # Step 1
+    E0, L0, C0 = cons
+    #state_false = recalc_state([E0, Lphi0, C0], state, mass, a)
+
+    # Step 2
+    if a == 0:
+        z2 = C0/(L0**2 + C0)
+    else:
+        A = (a**2)*(1 - E0**2)
+        z2 = ((A + L0**2 + C0) - ((A + L0**2 + C0)**2 - 4*A*C0)**(1/2))/(2*A)
+            
+    #print("z2", z2)
+    # Step 3
+    dE, dLx, dLy, dLz = con_derv[:4]
+    #print(dE, dLx, dLy, dLz, "JEY MAN WHAT'S UP")
+    dL_vec = -np.linalg.norm([dLx, dLy, dLz])
+    
+    '''
+    # Step 4
+    t, r, theta, phi, vel4 = *state[:4], state[4:]
+    sint, cost = fix_sin(theta), fix_cos(theta)
+    sinp, cosp = fix_sin(phi), fix_cos(phi)
+    sph2cart = np.array([[1.0, 0.0,       0.0,         0.0    ],
+                         [0.0, sint*cosp, r*cost*cosp, -r*sinp],
+                         [0.0, sint*sinp, r*cost*sinp, r*cosp ],
+                         [0.0, cost,      -r*sint,     0.0    ]])
+    vel4cart = np.matmul(sph2cart, vel4)
+    vel3cart = vel4cart[1:4]
+    pos3cart = np.array([r*sint*cosp, r*sint*sinp, r*cost])
+    L_vec = np.linalg.norm(np.cross(pos3cart, vel3cart))
+    '''
+
+    # Step 5
+    #E, Lphi = E0 + dE, Lphi0 + (dL_vec/L_vec)*(Lphi0)
+    E, L = E0 + dE, L0 + dLz*np.sign(L0) #make sure L0 is going towards 0, not becoming increasingly negative if retrograde
+    
+    # Step 6
+    #print("a", a)
+    #print("thing", (L**2)/(1- z2))
+    C = z2*((a**2)*(1 - E**2) + (L**2)/(1 - z2))
+    #print(E, Lphi, C, "yo")
+    potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
+    turns = np.roots(potent)
+    test = max(np.roots(np.polyder(potent)))
+    #turns = np.roots([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
+    while (np.polyval(potent, test) < 0.0):
+        #print(np.polyval(potent, test), test)
+        dR = -np.polyval(potent, test)
+        #print(np.polyval(np.array([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)]), test))
+        #print(turns)
+        #print("WHY WOULD YOU DO THIS")
+        #print(E, dR*(( 2*test*((test**3 + (a**2)*test + 2*(a**2))*E - 2*L*a))**(-1)), 10**(-16))
+        E += max(dR*(( 2*test*((test**3 + (a**2)*test + 2*(a**2))*E - 2*L*a))**(-1)), 10**(-16))
+        potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
+        #turns = np.roots(potent)
+        test = max(np.roots(np.polyder(potent)))
+        #print(E, "yuh?")
+    #print("_____________________________")
+    
+    # Step 7
+    new_state = recalc_state([E, L, C], state, mass, a, yell=True)
+   # print(state[4:])
+    #print(new_state[4:])
+    #print(state[4:] - new_state[4:])
+    #print(E - E0, Lphi - Lphi0, C - C0, "FOR REAL WHAT'S UP RIGHT NOW")
+    return new_state, [E, L, C]

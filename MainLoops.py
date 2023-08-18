@@ -1940,7 +1940,8 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   
   inputs = [mass, a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, units]          #Grab initial input in case you want to run the continue function
   all_states = [[np.zeros(8)]]                                                  #Grab that initial state         
-  err_calc = 1                                                                  #initialize calculated error
+  err_calc = 1 
+  err_calc2 = 1                                                                 #initialize calculated error
   i = 0                                                                         #initialize step counter
   
   if (np.shape(veltrue) == (4,)) and (np.shape(pos) == (4,)):
@@ -1992,7 +1993,18 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
   orbitCount = all_states[-1][0]/(2*np.pi/(((r**(3/2) + pro*a)**(-1))*(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2))))**(0.5)))
   tracktime = [all_states[0][0]]
   stop = False
+  
+  def sph2cartconv(state):
+      cart_pos = np.array([state[0], state[1]*np.sin(state[2])*np.cos(state[3]), state[1]*np.sin(state[2])*np.sin(state[3]), state[1]*np.cos(state[2])])
+      r, cost, sint, cosp, sinp = state[1], np.cos(state[2]), np.sin(state[2]), np.cos(state[3]), np.sin(state[3])
+      sph2cart = np.array([[sint*cosp, r*cost*cosp, -r*sint*sinp],
+                           [sint*sinp, r*cost*sinp, r*sint*cosp ],
+                           [cost,      -r*sint,     0           ]])
+      cart_vel = np.array([state[4], *np.dot(sph2cart, state[5:])])
+      return cart_pos, cart_vel
+  
   #Main Loop
+  print(constants[0], all_states[0], mass, a)
   while (not(eval(newflag)) and i < 10**7):
     try:
       update = False
@@ -2014,6 +2026,7 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
       #Runge-Kutta update using geodesic
       old_dTau = dTau
       skip = False
+      #print("new step")
       while ((err_calc >= err_target) or (first == True)) and (skip == False):
         step_check = mm.gen_RK(mm.ck4, mm.kerr, state, dTau, mass, a)
         new_step = mm.gen_RK(mm.ck5, mm.kerr, state, dTau, mass, a) 
@@ -2024,9 +2037,25 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
         mod_pre[:4] = mod_pre[:4]/np.linalg.norm(mod_state[:4]) 
         mod_pre[4:] = mod_pre[4:]/np.linalg.norm(mod_state[4:])
         err_calc = np.linalg.norm(mod_pre)
-        old_dTau, dTau = dTau, min(0.95 * dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
+        '''
+        #print(mod_step)
+        #print(mod_new)
+        #print(mod_pre)
+        #print(err_calc)
+        cart_step_pos, cart_step_vel = sph2cartconv(step_check)
+        cart_new_pos,  cart_new_vel  = sph2cartconv(new_step)
+        err_calc_pos = 1 - (np.dot(cart_step_pos, cart_new_pos) / (np.linalg.norm(cart_step_pos)*np.linalg.norm(cart_new_pos)))
+        err_calc_vel = 1 - (np.dot(cart_step_vel, cart_new_vel) / (np.linalg.norm(cart_step_vel)*np.linalg.norm(cart_new_vel)))
+        err_calc2 = (err_calc_pos**2 + err_calc_vel**2)**0.5
+        #print(err_calc2, new_step[0] - state[0])
+        #print(" ")
+        #3.141592653589793
+        #6.283185307179586
+        '''
+        old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
         first = False
-
+      #print(" ")
+      #print(new_step[2]/np.pi, new_step[0] - state[0])
       metric = mm.kerr(new_step, mass, a)[0]
       newE = -np.matmul(new_step[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
       newLz = np.matmul(new_step[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
@@ -2041,7 +2070,17 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
       #print("yo?")
       #print(new_step)
       #print("dude", i)
-      if ( np.sign(new_step[1] - r0) != orbitside) or ((new_step[3] - all_states[con_derv[-1][0]][3] > np.pi) and (np.std([state[1] for state in all_states[con_derv[-1][0]:]]) < 0.01*np.mean([state[1] for state in all_states[con_derv[-1][0]:]]))):
+      #print("Y", mm.check_interval(mm.kerr, new_step, mass, a))
+      if abs(mm.check_interval(mm.kerr, new_step, mass, a)+1)>(err_target):
+          #print("bad?")
+          #print(new_step)
+          hold = mm.recalc_state(constants[-1], new_step, mass, a)
+          #print(hold)
+          #print(new_step - hold)
+          check = mm.check_interval(mm.kerr, hold, mass, a)
+          #print("old", mm.check_interval(mm.kerr, new_step, mass, a)+1)
+          #print("new", check+1)
+      if ( np.sign(new_step[1] - r0) != orbitside) or ((new_step[3] - all_states[con_derv[-1][0]][3] > np.pi*(3/2)) and (np.std([state[1] for state in all_states[con_derv[-1][0]:]]) < 0.01*np.mean([state[1] for state in all_states[con_derv[-1][0]:]]))):
           '''
           print( np.sign(new_step[1] - r0) != orbitside)
           print(new_step[1])
@@ -2070,6 +2109,7 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
               orbitside *= -1
           orbitCount += 0.5
           #print(orbitCount)
+          #print("X", mm.check_interval(mm.kerr, new_step, mass, a))
           if mu != 0.0 and i - con_derv[-1][0] > 2:
               condate = True
               #print(all_states)
@@ -2085,12 +2125,18 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
                   qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2 )
                   tracktime.append(new_step[0])
               test = mm.check_interval(mm.kerr, new_step, mass, a)
+              #print("O", test)
+              print("___________________________________")
+              #print(ch_cons, new_step, mass, a)
               if abs(test+1)>(err_target):
-                  print(test, "woo")
+                  #print(test, "woo")
+        
                   print("Error on PN Update")
+                  '''
                   print("Index:", i)
                   print(new_step)
                   print("Previous constants", constants[-1])
+                  '''
                   loop2 = True
                   #break
               if dir1 != new_step[5]:
@@ -2116,7 +2162,9 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
         trial += 1
         new_step = int_steps[checks.index(min(checks))]
         if (abs(test+1)<=(err_target)) and (int_steps[checks.index(min(checks))][4] > 0):
+          #print("X", test)
           print("fixed!")
+          #print(new_step - og_new_step)
           loop2 = False
         if trial >= 10:
           print("giving up!", trial, test)
@@ -2183,14 +2231,12 @@ def clean_inspiral2(mass, a, mu, endflag, err_target, label, cons=False, velorie
       G, c = 6.67*(10**-8),  3*(10**10)
   else:
       G, M, c = 1.0, 1.0, 1.0
-      
-  constants = np.array([entry*np.array([M*(c**2), M*M*G/c, (M*M*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
+  print(len(issues), len(all_states))
+  constants = np.array([entry*np.array([M*mu*(c**2), M*M*mu*G/c, (M*M*mu*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
   false_constants = np.array(false_constants) #np.array([entry*np.array([c**2, G/(M*c), G/(M*c), G/(M*c)]) for entry in np.array(false_constants)])
   qarter = np.array(qarter) #np.array([entry * (G/c)**2 for entry in qarter])
   interval = np.array(interval)
   dTau_change = np.array([entry * (G*M)/(c**3) for entry in dTau_change])
-  #print(all_states[0])
-  print((G*M)/(c**3), "TIME MULTIPLIER GO")
   all_states = np.array([entry*np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*M), (c**3)/(G*M)]) for entry in np.array(all_states)]) 
   #print(all_states[0])
   tracktime = np.array([entry * (G*M)/(c**3) for entry in tracktime])
@@ -2282,6 +2328,773 @@ def clean_continue2(data, endflag=False, label=False, verbose=False):
              "stop": data["stop"]}
     return final
 
+def clean_inspiral2b(mass, a, mu, endflag, err_target, label, cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
+  #basically the same as schwarz, except references to schwarz changed to kerr
+  
+  termdict = {"time": "all_states[i][0]",
+              "phi_orbit": "abs(all_states[i][3]/(2*np.pi))",
+              "rad_orbit": "orbitCount"}
+  
+  try:
+      terms = endflag.split(" ")
+      newflag = termdict[terms[0]] + terms[1] + terms[2]
+  except:
+      print("Endflag should be a valid variable name, comparison operator, and numerical value, all separated by spaces")
+      return 0
+  
+  inputs = [mass, a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, units]          #Grab initial input in case you want to run the continue function
+  all_states = [[np.zeros(8)]]                                                  #Grab that initial state         
+  err_calc = 1 
+  err_calc2 = 1                                                                 #initialize calculated error
+  i = 0                                                                         #initialize step counter
+  
+  if (np.shape(veltrue) == (4,)) and (np.shape(pos) == (4,)):
+      all_states[0] = [*pos, *veltrue]
+  else:
+      print("Normalizing initial state")
+      all_states[0] = mm.set_u_kerr2(mass, a, cons, velorient, vel4, params, pos, units)      #normalize initial state so it's actually physical
+  pro = np.sign(all_states[0][7])
+  M = mass
+  mass = 1.0
+
+  interval = [mm.check_interval(mm.kerr, all_states[0], mass, a)]           #create interval tracker
+  dTau = 0.1
+  dTau_change = [dTau]                                                #create dTau tracker
+  metric = mm.kerr(all_states[0], mass, a)[0]                                      #initial metric
+
+  if np.shape(cons) == (3,):
+      initE, initLz, initC = cons
+      initQ = initC + (a*initE - initLz)**2
+  else:
+      initE = -np.matmul(all_states[0][4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
+      initLz = np.matmul(all_states[0][4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
+      initQ = np.matmul(np.matmul(mm.kill_tensor(all_states[0], mass, a), all_states[0][4:]), all_states[0][4:])    #initial Carter constant Q
+      initC = initQ - (a*initE - initLz)**2                                          #initial adjusted Carter constant                      
+  constants = [ np.array([initE,      #energy   
+                          initLz,      #angular momentum (axial)
+                          initC]) ]    #Carter constant (C)
+  qarter = [initQ]           #Carter constant (Q)
+  
+  false_constants = [np.array([getEnergy(all_states[0], mass, a), *getLs(all_states[0], mu)])]  #Cartesian approximation of L vector
+
+  con_derv = [[0, *mm.peters_integrate3(constants[0], a, mu, all_states, 0, 0), 0.0]]    
+  #contains: [[index, np.array([dedt, dlxdt, dlydt, dlzdt]),      r0,         y,   v,            q,   e,   outer_turn, inner_turn, compErr, timestamp]]
+             #[1,     np.array([(c**5)/(G*M), c**2, c**2, c**2]), G*M/(c**2), 1.0, c/np.sqrt(G), 1/M, 1.0, G*M/(c**2), G*M/(c**2), 1      , G*M/(c**3)] 
+  
+  compErr = 0
+  milestone = 0
+  rmin = all_states[0][1]
+  issues = []
+  checker = []
+  orbitside = np.sign(all_states[0][1] - con_derv[0][2])
+  if orbitside == 0:
+      orbitside = -1
+  print(con_derv[0][2])
+  r = con_derv[0][2]
+  orbitCount = all_states[-1][0]/(2*np.pi/(((r**(3/2) + pro*a)**(-1))*(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2))))**(0.5)))
+  tracktime = [all_states[0][0]]
+  stop = False
+  
+  def sph2cartconv(state):
+      cart_pos = np.array([state[0], state[1]*np.sin(state[2])*np.cos(state[3]), state[1]*np.sin(state[2])*np.sin(state[3]), state[1]*np.cos(state[2])])
+      r, cost, sint, cosp, sinp = state[1], np.cos(state[2]), np.sin(state[2]), np.cos(state[3]), np.sin(state[3])
+      sph2cart = np.array([[sint*cosp, r*cost*cosp, -r*sint*sinp],
+                           [sint*sinp, r*cost*sinp, r*sint*cosp ],
+                           [cost,      -r*sint,     0           ]])
+      cart_vel = np.array([state[4], *np.dot(sph2cart, state[5:])])
+      return cart_pos, cart_vel
+  
+  def viable_cons(constants, state, mass, a):
+      energy, lz, cart = constants
+      coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+      coeff2 = np.array([(energy**2 - 1)*4, (2.0*mass)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*mass*((a*energy - lz)**2) + 2*mass*cart])
+      r0 = max(np.roots(coeff2))
+      potential_min = np.polyval(coeff, r0)
+      return potential_min, r0
+    
+  #Main Loop
+  print(constants[0], all_states[0], mass, a)
+  while (not(eval(newflag)) and i < 10**7):
+    try:
+      update = False
+      condate = False
+      first = True
+      loop2 = False
+
+      #Grab the current state
+      state = all_states[i]  
+      r0 = con_derv[-1][2]   
+      #print("r0=",r0)
+
+      #Break if you fall inside event horizon, or if you get really far away (orbit is unbound)
+      if (state[1] <= (1 + np.sqrt(1 - a**2))*1.0001) :
+        break
+      #elif (state[1] >= (1 + np.sqrt(1 - a**2))*(10**6)):    #Currently based on event horizon, might change it to be based on r0
+      #  break
+        
+      #Runge-Kutta update using geodesic
+      old_dTau = dTau
+      skip = False
+      #print("new step")
+      while ((err_calc >= err_target) or (first == True)) and (skip == False):
+        step_check = mm.gen_RK(mm.ck4, mm.kerr, state, dTau, mass, a)
+        new_step = mm.gen_RK(mm.ck5, mm.kerr, state, dTau, mass, a) 
+        mod_step = np.append(step_check[0:6], np.sign(step_check[6])*np.sign(step_check[7])*(step_check[6]**2 + (np.cos(step_check[2])*step_check[7])**2)**0.5)
+        mod_new = np.append(new_step[0:6], np.sign(new_step[6])*np.sign(new_step[7])*(new_step[6]**2 + (np.cos(new_step[2])*new_step[7])**2)**0.5)
+        mod_state = np.append(state[0:6], np.sign(state[6])*np.sign(state[7])*(state[6]**2 + (np.cos(state[2])*state[7])**2)**0.5)
+        mod_pre = mod_step - mod_new
+        mod_pre[:4] = mod_pre[:4]/np.linalg.norm(mod_state[:4]) 
+        mod_pre[4:] = mod_pre[4:]/np.linalg.norm(mod_state[4:])
+        err_calc = np.linalg.norm(mod_pre)
+        old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
+        first = False
+
+      metric = mm.kerr(new_step, mass, a)[0]
+      newE = -np.matmul(new_step[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
+      newLz = np.matmul(new_step[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
+      newQ = np.matmul(np.matmul(mm.kill_tensor(new_step, mass, a), new_step[4:]), new_step[4:])    #new Carter constant Q
+      newC = newQ - (a*newE - newLz)**2   
+      
+      #if np.linalg.norm(constants[-1] - np.array([newE, newLz, newC])) > err_target:
+          #print(i, "YOU FOOL", np.linalg.norm(constants[-1] - np.array([newE, newLz, newC])))
+
+      #constant modifying section
+      #Whenever you pass from one side of r0 to the other, mess with the effective potential.
+      if ( np.sign(new_step[1] - r0) != orbitside) or ((new_step[3] - all_states[con_derv[-1][0]][3] > np.pi*(3/2)) and (np.std([state[1] for state in all_states[con_derv[-1][0]:]]) < 0.01*np.mean([state[1] for state in all_states[con_derv[-1][0]:]]))):
+          testTau = old_dTau
+          update = True
+          if ( np.sign(new_step[1] - r0) != orbitside):
+              orbitside *= -1
+          orbitCount += 0.5
+          if mu != 0.0 and i - con_derv[-1][0] > 2:
+              condate = True
+              con_derv.append([i, *mm.peters_integrate4(constants[-1], a, mu, all_states, con_derv[-1][0], i), new_step[0]])
+              dir1 = new_step[5]
+              if "new" in label:
+                  print("new")
+                  new_step, ch_cons = mm.new_recalc_state5(constants[-1], con_derv[-1][1], new_step, mu, mass, a) 
+                  constants.append(ch_cons)
+                  qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2 )
+                  tracktime.append(new_step[0])
+              elif "kachow" in label:
+                  print("kachow")
+                  new_step, ch_cons = mm.new_recalc_state6(constants[-1], con_derv[-1][1], new_step, mu, mass, a) 
+                  pot_min = viable_cons(ch_cons, new_step, mass, a)
+                  if pot_min[0] < -err_target:
+                      print("please?")
+                      Lphi, Cart, ro = *ch_cons[1:], pot_min[1]
+                      ch_cons[0] = (4*a*Lphi*r0 + ((4*a*Lphi*ro)**2 - 4*(ro**4 + 2*ro*(a**2))*((a*Lphi)**2 - (ro**2 - 2*ro + a**2)*(ro**2 + Lphi**2 + Cart)))**(0.5))/(2*(ro**4 + 2*ro*(a**2)))
+                      #new_step = mm.recalc_state(ch_cons, new_step, mass, a)
+                  constants.append(ch_cons)
+                  qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2 )
+                  tracktime.append(new_step[0])
+              else:
+                  print("neither")
+                  new_step = mm.new_recalc_state4(con_derv[-1][1], new_step, mu, mass, a)                           #Change the velocity so it actually makes sense with those constants
+                  
+              test = mm.check_interval(mm.kerr, new_step, mass, a)
+              #print("O", test)
+              print("___________________________________")
+              #print(ch_cons, new_step, mass, a)
+              if abs(test+1)>(err_target):
+                  #print(test, "woo")
+        
+                  print("Error on PN Update")
+                  '''
+                  print("Index:", i)
+                  print(new_step)
+                  print("Previous constants", constants[-1])
+                  '''
+                  loop2 = True
+                  #break
+              if dir1 != new_step[5]:
+                  checker.append([dir1, new_step[5], con_derv[-1][1]  ])
+      #Initializing for the next step
+      #Updates the constants based on the calculated derivatives, then updates the state velocities based on the new constants.
+      #Only happens the step before the derivatives are recalculated.
+      
+      #new interval thing
+      trial = 0
+      og_new_step = np.copy(new_step)
+      while loop2 == True:
+        ut, up = new_step[4], new_step[7]
+        err = mm.check_interval(mm.kerr, new_step, mass, a)
+        metric = mm.kerr(new_step, mass, a)[0]
+        gtt, gtp = metric[0][0], metric[0][3]
+        disc = np.sqrt(ut**2 + ((gtp/gtt)**2)*(up**2) + 2*(gtp/gtt)*ut*up - (1.0 + err)/gtt)
+        int_steps = [np.copy(new_step), np.copy(new_step)]
+        int_steps[0][4] += -ut - (gtp/gtt)*up + disc
+        int_steps[1][4] += -ut - (gtp/gtt)*up - disc
+        checks = [(mm.check_interval(mm.kerr, int_steps[0], mass, a)+1)**2, (mm.check_interval(mm.kerr, int_steps[1], mass, a)+1)**2]
+        test = mm.check_interval(mm.kerr, int_steps[checks.index(min(checks))], mass, a)
+        trial += 1
+        new_step = int_steps[checks.index(min(checks))]
+        if (abs(test+1)<=(err_target)) and (int_steps[checks.index(min(checks))][4] > 0):
+          #print("X", test)
+          print("fixed!")
+          #print(new_step - og_new_step)
+          loop2 = False
+        if trial >= 10:
+          print("giving up!", trial, test)
+          new_step = np.copy(og_new_step)
+          break
+      
+      #Update stuff!
+      if (update == True) and ("new" not in label) and ("kachow" not in label):
+         #print("Constant Change!")
+         metric = mm.kerr(new_step, mass, a)[0]
+         newE = -np.matmul(new_step[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
+         newLz = np.matmul(new_step[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
+         newQ = np.matmul(np.matmul(mm.kill_tensor(new_step, mass, a), new_step[4:]), new_step[4:])    #new Carter constant Q
+         newC = newQ - (a*newE - newLz)**2                                                             #initial adjusted Carter constant  
+         #print(newE, newLz, newC, "FROM MAIN")
+         coeff = np.array([newE**2 - 1, 2*mass, (a**2)*(newE**2 - 1) - newLz**2 - newC, 2*mass*((a*newE - newLz)**2 + newC), -newC*(a**2)])
+         coeff2 = np.array([4*(newE**2 - 1), 3*2*mass, 2*((a**2)*(newE**2 - 1) - newLz**2 - newC), 2*mass*((a*newE - newLz)**2 + newC)])
+         #print(coeff2)
+         ro = np.max(np.roots(coeff2))
+         #if np.sum(coeff*np.array([ro**4, ro**3, ro**2, ro, 1.0])) < 0.0:
+             #print(metric)
+             #print("Bad Constants??", np.sum(coeff*np.array([ro**4, ro**3, ro**2, ro, 1.0])))
+             #print(newE, newLz, newC)
+             #print("Bad Constants??", new_step[0], newE, newLz, newC, np.sum(coeff*np.array([ro**4, ro**3, ro**2, ro, 1.0])))
+         constants.append([newE, newLz, newC])
+         qarter.append(newQ)
+         if condate == False:
+             con_derv.append([i, *con_derv[-1][1:10], new_step[0]])
+             
+         tracktime.append(new_step[0])
+         
+      if con_derv[-1][9] == True:
+         compErr += 1
+         issues.append((i, new_step[0]))
+         
+      interval.append(mm.check_interval(mm.kerr, new_step, mass, a))
+      false_constants.append([getEnergy(new_step, mass, a), *getLs(new_step, mu)])
+      dTau_change.append(old_dTau)
+      all_states.append(new_step )    #update position and velocity
+      i += 1
+
+      progress = max(1 - abs(eval(terms[2]) - eval(termdict[terms[0]]))/eval(terms[2]), i/(10**7) ) * 100
+      if verbose == True:
+          if (progress >= milestone):
+            print("Program has completed " + str(round(progress, 4)) + "% of maximum run: Index = " + str(i))
+            milestone = int(progress) + 1
+
+    #Lets you end the program before the established end without breaking anything
+    except KeyboardInterrupt:
+      print("Ending program")
+      stop = True
+      cap = len(all_states) - 1
+      all_states = all_states[:cap]
+      interval = interval[:cap]
+      dTau_change = dTau_change[:cap]
+      constants = constants[:cap]
+      qarter = qarter[:cap]
+      break
+  
+  #unit conversion stuff
+  if units == "mks":
+      G, c = 6.67*(10**-11), 3*(10**8)
+  elif units == "cgs":
+      G, c = 6.67*(10**-8),  3*(10**10)
+  else:
+      G, M, c = 1.0, 1.0, 1.0
+  print(len(issues), len(all_states))
+  constants = np.array([entry*np.array([M*mu*(c**2), M*M*mu*G/c, (M*M*mu*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
+  false_constants = np.array(false_constants) #np.array([entry*np.array([c**2, G/(M*c), G/(M*c), G/(M*c)]) for entry in np.array(false_constants)])
+  qarter = np.array(qarter) #np.array([entry * (G/c)**2 for entry in qarter])
+  interval = np.array(interval)
+  dTau_change = np.array([entry * (G*M)/(c**3) for entry in dTau_change])
+  all_states = np.array([entry*np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*M), (c**3)/(G*M)]) for entry in np.array(all_states)]) 
+  #print(all_states[0])
+  tracktime = np.array([entry * (G*M)/(c**3) for entry in tracktime])
+  con_derv = np.array([entry * np.array([1, np.array([(c**5)/(G*M), c**2, c**2, c**2]), G*M/(c**2), 1.0, c/np.sqrt(G), 1/M, 1.0, G*M/(c**2), G*M/(c**2), 1, G*M/(c**3)]) for entry in con_derv])
+  
+  r = all_states[0][1]
+  ind = argrelmin(all_states[:,1])[0]
+  omega, otime = np.diff(all_states[:,2][ind]) - 2*np.pi, np.diff(all_states[:,0][ind])
+  
+  if verbose == True:
+      print("There were " + str(compErr) + " issues with complex roots/turning points.")
+      for i in issues:
+        print("Complex value at index " + str(i[0]) + ", t = " + str(i[1]))
+      #print("Here's some data!")
+      #print(checker)
+  final = {"name": label,
+           "raw": all_states,
+           "inputs": inputs,
+           "pos": all_states[:,1:4],
+           "all_vel": all_states[:,4:], 
+           "time": all_states[:,0],
+           "interval": interval,
+           "vel": (np.square(all_states[:,5]) + np.square(all_states[:,1]) * (np.square(all_states[:,6]) + np.square(all_states[:,7])))**(0.5),
+           "dTau_change": dTau_change,
+           "energy": constants[:, 0],
+           "phi_momentum": constants[:, 1],
+           "carter": constants[:, 2],
+           "qarter":qarter,
+           "energy2": false_constants[:, 0],
+           "Lx_momentum": false_constants[:, 1],
+           "Ly_momentum": false_constants[:, 2],
+           "Lz_momentum": false_constants[:, 3],
+           "spin": a,
+           "freqs": np.array([((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2)))),
+                              ((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - pro*(4*a*(r**(-3/2))) + (3*((a/r)**(2)))),
+                              ((r**(3/2) + pro*a)**(-1))]) * (c**3)/(G*M),
+           "r0": con_derv[:,2],
+           "y": con_derv[:,3],
+           "v": con_derv[:,4],
+           "q": con_derv[:,5],
+           "e": con_derv[:,6],
+           "ot": con_derv[:,7],
+           "it": con_derv[:,8],
+           "tracktime": tracktime,
+           "omegadot": omega/otime,
+           "otime": all_states[:,0][ind][1:],
+           "stop": stop}
+  return final
+
+def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
+  #basically the same as schwarz, except references to schwarz changed to kerr
+  
+  def sph2cartconv(state):
+      cart_pos = np.array([state[0], state[1]*np.sin(state[2])*np.cos(state[3]), state[1]*np.sin(state[2])*np.sin(state[3]), state[1]*np.cos(state[2])])
+      r, cost, sint, cosp, sinp = state[1], np.cos(state[2]), np.sin(state[2]), np.cos(state[3]), np.sin(state[3])
+      sph2cart = np.array([[sint*cosp, r*cost*cosp, -r*sint*sinp],
+                           [sint*sinp, r*cost*sinp, r*sint*cosp ],
+                           [cost,      -r*sint,     0           ]])
+      cart_vel = np.array([state[4], *np.dot(sph2cart, state[5:])])
+      return cart_pos, cart_vel
+  
+  def viable_cons(constants, state, mass, a):
+      energy, lz, cart = constants
+      coeff = np.array([energy**2 - 1, 2*mass, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*mass*((a*energy - lz)**2 + cart), -cart*(a**2)])
+      coeff2 = np.array([(energy**2 - 1)*4, (2.0*mass)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*mass*((a*energy - lz)**2) + 2*mass*cart])
+      r0 = max(np.roots(coeff2))
+      potential_min = np.polyval(coeff, r0)
+      return potential_min, r0
+  
+  termdict = {"time": "all_states[i][0]",
+              "phi_orbit": "abs(all_states[i][3]/(2*np.pi))",
+              "rad_orbit": "orbitCount"}
+  
+  try:
+      terms = endflag.split(" ")
+      newflag = termdict[terms[0]] + terms[1] + terms[2]
+  except:
+      print("Endflag should be a valid variable name, comparison operator, and numerical value, all separated by spaces")
+      return 0
+  
+  inputs = [mass, a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, units]          #Grab initial input in case you want to run the continue function
+  all_states = [[np.zeros(8)]]                                                  #Grab that initial state         
+  err_calc = 1 
+  err_calc2 = 1                                                                 #initialize calculated error
+  i = 0                                                                         #initialize step counter
+  
+  if (np.shape(veltrue) == (4,)) and (np.shape(pos) == (4,)):
+      all_states[0] = [*pos, *veltrue]
+  else:
+      print("Normalizing initial state")
+      all_states[0], cons = mm.set_u_kerr2(mass, a, cons, velorient, vel4, params, pos, units)      #normalize initial state so it's actually physical
+  #print(all_states, "a")
+  pro = np.sign(all_states[0][7])
+  M = mass
+  mass = 1.0
+
+  interval = [mm.check_interval(mm.kerr, all_states[0], mass, a)]           #create interval tracker
+  metric = mm.kerr(all_states[0], mass, a)[0]                                      #initial metric
+
+  if np.shape(cons) == (3,):
+      initE, initLz, initC = cons
+      print(cons)
+      initQ = initC + (a*initE - initLz)**2
+      pot_min = viable_cons([initE, initLz, initC], all_states[0], mass, a)
+      '''
+      if pot_min[0] < -1e-10:
+          print(cons)
+          print([initE, initLz, initC])
+          print(pot_min[0])
+          print("WHAT")
+          return False
+      '''
+  else:
+      initE = -np.matmul(all_states[0][4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
+      initLz = np.matmul(all_states[0][4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
+      initQ = np.matmul(np.matmul(mm.kill_tensor(all_states[0], mass, a), all_states[0][4:]), all_states[0][4:])    #initial Carter constant Q
+      initC = initQ - (a*initE - initLz)**2                                          #initial adjusted Carter constant 
+      pot_min = viable_cons([initE, initLz, initC], all_states[0], mass, a)
+      if pot_min[0] < 0.0:
+          print("RAGH")
+          return False
+              
+  coeff = np.array([initE**2 - 1, 2.0*mass, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*mass*((a*initE - initLz)**2) + 2*mass*initC, -initC*(a**2)])
+  coeff2 = np.array([(initE**2 - 1)*4, (2.0*mass)*3, ((a**2)*(initE**2 - 1) - initLz**2 - initC)*2, 2*mass*((a*initE - initLz)**2) + 2*mass*initC])
+  r0, inner_turn, outer_turn = np.sort(np.roots(coeff2))[-1], *np.sort(np.real(np.roots(coeff)))[-2:]
+  e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+  tracker = [[r0, e, inner_turn, outer_turn, all_states[0][0], 0]]
+  if True in np.iscomplex(tracker[0]):
+      #this = ((r0**2 + a**2)*initE - a*initLz)**2 - (r0**2 - 2*r0 + a**2)*(r0**2 + (initLz - a*initE)**2 + initC)
+      #initE += (-this)*((2*r0*((r0**3 + r0*(a**2) + 2*(a**2))*initE - 2*initLz*a))**(-1))
+      initE = (4*a*initLz*r0 + ((4*a*initLz*r0)**2 - 4*(r0**4 + 2*r0*(a**2))*((a*initLz)**2 - (r0**2 - 2*r0 + a**2)*(r0**2 + initLz**2 + initC)))**(0.5))/(2*(r0**4 + 2*r0*(a**2)))
+      
+      coeff = np.array([initE**2 - 1, 2.0*mass, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*mass*((a*initE - initLz)**2) + 2*mass*initC, -initC*(a**2)])
+      coeff2 = np.array([(initE**2 - 1)*4, (2.0*mass)*3, ((a**2)*(initE**2 - 1) - initLz**2 - initC)*2, 2*mass*((a*initE - initLz)**2) + 2*mass*initC])
+      r0, inner_turn, outer_turn = np.sort(np.roots(coeff2))[-1], *np.sort(np.roots(coeff))[-2:]
+      e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+      tracker = [[r0, e, inner_turn, outer_turn, all_states[0][0], 0]]
+  constants = [ np.array([initE,      #energy   
+                          initLz,      #angular momentum (axial)
+                          initC]) ]    #Carter constant (C)
+  qarter = [initQ]           #Carter constant (Q)
+  
+  false_constants = [np.array([getEnergy(all_states[0], mass, a), *getLs(all_states[0], mu)])]  #Cartesian approximation of L vector
+
+  #con_derv = [[0, *mm.peters_integrate5(all_states, a, mu, all_states, 0, 0), 0.0]]    
+  #contains: [[index, np.array([dedt, dlxdt, dlydt, dlzdt]),      r0,         y,   v,            q,   e,   outer_turn, inner_turn, compErr, timestamp]]
+             #[1,     np.array([(c**5)/(G*M), c**2, c**2, c**2]), G*M/(c**2), 1.0, c/np.sqrt(G), 1/M, 1.0, G*M/(c**2), G*M/(c**2), 1      , G*M/(c**3)] 
+             
+  tracker = [[r0, e, inner_turn, outer_turn, all_states[0][0], 0]]
+  #r0, eccentricity, turning points, timestamp, index
+  
+  compErr = 0
+  milestone = 0
+  rmin = all_states[0][1]
+  issues = []
+  #checker = []
+  orbitside = np.sign(all_states[0][1] - r0)
+  if orbitside == 0:
+      orbitside = -1
+
+  orbitCount = all_states[-1][0]/(2*np.pi/(((r0**(3/2) + pro*a)**(-1))*(1 - (6/r0) + pro*(8*a*(r0**(-3/2))) - (3*((a/r0)**(2))))**(0.5)))
+  stop = False
+
+  if label == "default":
+      A = (a**2)*(1 - initE**2)
+      z2 = ((A + initLz**2 + initC) - ((A + initLz**2 + initC)**2 - 4*A*initC)**(1/2))/(2*A)
+      inc = np.arccos(np.sqrt(z2))/np.pi
+      label = "r" + str(r0) + "e" + str(e) + "zU+03C0" + str(inc) + "mu" + str(mu) + "a" + str(a)
+
+  #Main Loop
+  #print(constants[0], all_states[0], mass, a)
+  dTau = np.abs(np.real((inner_turn/200)**(2)))
+  dTau_change = [dTau]                                                #create dTau tracker
+  borken = 0
+  while (not(eval(newflag)) and i < 10**7):
+    try:
+      update = False
+      condate = False
+      first = True
+      loop2 = False
+      thunk = False
+
+      #Grab the current state
+      state = all_states[i]  
+      r0 = tracker[-1][0]   
+      #print("r0=",r0)
+
+      #Break if you fall inside event horizon, or if you get really far away (orbit is unbound)
+      if (state[1] <= (1 + np.sqrt(1 - a**2))*1.0001) :
+        break
+      #elif (state[1] >= (1 + np.sqrt(1 - a**2))*(10**6)):    #Currently based on event horizon, might change it to be based on r0
+      #  break
+        
+      #Runge-Kutta update using geodesic
+      old_dTau = dTau
+      skip = False
+      #print("new step")
+      while ((err_calc >= err_target) or (first == True)) and (skip == False) :
+        new_step = mm.gen_RK(mm.ck4, mm.kerr, state, dTau, mass, a)
+        step_check = mm.gen_RK(mm.ck5, mm.kerr, state, dTau, mass, a) 
+        mod_step = np.append(step_check[0:6], np.sign(step_check[6])*np.sign(step_check[7])*(step_check[6]**2 + (np.cos(step_check[2])*step_check[7])**2)**0.5)
+        mod_new = np.append(new_step[0:6], np.sign(new_step[6])*np.sign(new_step[7])*(new_step[6]**2 + (np.cos(new_step[2])*new_step[7])**2)**0.5)
+        mod_state = np.append(state[0:6], np.sign(state[6])*np.sign(state[7])*(state[6]**2 + (np.cos(state[2])*state[7])**2)**0.5)
+        mod_pre = mod_step - mod_new
+        mod_pre[:4] = mod_pre[:4]/np.linalg.norm(mod_state[:4]) 
+        mod_pre[4:] = mod_pre[4:]/np.linalg.norm(mod_state[4:])
+        err_calc = np.linalg.norm(mod_pre)
+        #err_calc = np.linalg.norm(new_step - step_check)
+        err_calc = 1 - np.dot(new_step, step_check)/np.dot(new_step, new_step)
+        #print(err_calc)
+        old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
+        first = False
+      #print(new_step[4:], old_dTau, i)
+      #print("-")
+      #print(new_step)
+      if new_step[4] < 0.0:
+          print("why??", i)
+          thunk = True
+          print(new_step)
+
+      metric = mm.kerr(new_step, mass, a)[0]
+      #newE = -np.matmul(new_step[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
+      #newLz = np.matmul(new_step[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
+      #newQ = np.matmul(np.matmul(mm.kill_tensor(new_step, mass, a), new_step[4:]), new_step[4:])    #new Carter constant Q
+      #newC = newQ - (a*newE - newLz)**2   
+      #'''
+      test = mm.check_interval(mm.kerr, new_step, mass, a)
+      if thunk == True:
+          print(test)
+      if abs(test+1)>(err_target):
+          #print(test+1)
+          #print(new_step)
+          #print(new_step, "hey")
+          borken = borken + 1
+          #print(borken, i+1, borken/(i+1))
+          #print("Error on PN Update")
+          '''
+          #print("Index:", i)
+          #print(new_step)
+          #print("Previous constants", constants[-1])
+      #'''
+          bad_int = True
+          trial = 0
+          og_new_step = np.copy(new_step)
+          while bad_int == True:
+            if "blee" in label:
+                t, r, theta, phi = new_step[:4]
+                sine, cosi = np.sin(theta), np.cos(theta)
+                rs, sig = 2, r**2 + (a**2)*np.cos(theta)
+                delta = r**2 + a**2 - r*rs
+                err = mm.check_interval(mm.kerr, new_step, mass, a) + 1
+                jumpscale = 0.5
+                while abs(err) > 10**(-15) and trial <25:
+                    #print(err)
+                    old_err = err
+                    ut, ur, uth, uphi = new_step[4:]
+                    grad = np.array([-(2/sig)*((sig-r*rs)*ut + a*r*rs*uphi*(sine**2)),
+                                    2*sig*ur/delta,
+                                    2*sig*uth,
+                                    (2*(sine**2)/sig)*((r**2)*sig*uphi - a*r*rs*ut + (a**2)*(r*    rs*uphi*(sine**2) - sig*uphi))])
+                    thing = np.copy(new_step)
+                    #for i in range(8):
+                        #print(new_step[i] - thing[i])
+                    new_step[4:] += -jumpscale*err*grad
+                    err = mm.check_interval(mm.kerr, new_step, mass, a) + 1
+                    #print(err)
+                    #print("---")
+                    trial += 1
+                    if abs(err/old_err) >= 1:
+                        #print("big overshoot")
+                        new_step = thing
+                        trial -= 1
+                        jumpscale *= 0.1
+                    elif np.sign(err/old_err) == -1:
+                        #print("small overshoot")
+                        jumpscale *= 0.5
+                    else:
+                        jumpscale *= 1.5
+                test = mm.check_interval(mm.kerr, new_step, mass, a)
+                final_ut = new_step[4]
+            else:
+                ut, up = new_step[4], new_step[7]
+                err = mm.check_interval(mm.kerr, new_step, mass, a)
+                metric = mm.kerr(new_step, mass, a)[0]
+                gtt, gtp = metric[0][0], metric[0][3]
+                A = gtt
+                B = (2*gtt*ut + 2*gtp*up)
+                C = -1 - err
+                int_steps = [np.copy(new_step), np.copy(new_step), np.copy(new_step), np.copy(new_step)]
+                #print(A)
+                #print(B)
+                #print(C)
+                #print(B**2 - 4*A*C)
+                #print("ya")
+                for num1 in range(4): 
+                    try:
+                        int_steps[num1][4] += ((-1)**(np.arange(4)//2))*((-B + ((-1)**(np.arange(4)%2))*np.sqrt(B**2 - 4*A*C))/(2*A))
+                    except:
+                        pass
+                checks = [(mm.check_interval(mm.kerr, int_steps[0], mass, a)+1)**2,
+                          (mm.check_interval(mm.kerr, int_steps[1], mass, a)+1)**2,
+                          (mm.check_interval(mm.kerr, int_steps[2], mass, a)+1)**2,
+                          (mm.check_interval(mm.kerr, int_steps[3], mass, a)+1)**2]
+                test = mm.check_interval(mm.kerr, int_steps[checks.index(min(checks))], mass, a)
+                trial += 1
+                new_step = int_steps[checks.index(min(checks))]
+                final_ut = int_steps[checks.index(min(checks))][4]
+            if (abs(test+1)<=(err_target)) and (final_ut > 0):
+              
+              #print("fixed!---")
+              #'''
+              #if trial <=3:
+              #    print("first!")
+      #'''
+              bad_int = False
+            elif trial >= 10:
+              #print("giving up!", trial, test+1, final_ut)
+              if abs(mm.check_interval(mm.kerr, new_step, mass, a) + 1) >= abs(mm.check_interval(mm.kerr, og_new_step, mass, a) + 1) or new_step[4] < 0.0:
+                  new_step = np.copy(og_new_step)
+                  #print("fix!", mm.check_interval(mm.kerr, new_step, mass, a))
+              break
+      if thunk == True:
+          print(new_step)
+      if new_step[4] < 0.0:
+          print("you realize this isn't better??")
+      #'''
+      #constant modifying section
+      #Whenever you pass from one side of r0 to the other, mess with the effective potential.
+      if ( np.sign(new_step[1] - r0) != orbitside) or ((new_step[3] - all_states[tracker[-1][-1]][3] > np.pi*(3/2)) and (np.std([state[1] for state in all_states[tracker[-1][-1]:]]) < 0.01*np.mean([state[1] for state in all_states[tracker[-1][-1]:]]))):
+      #if (np.sign(new_step[5]) != np.sign(all_states[-1][5])):
+          if (i - tracker[-1][-1] > 2):
+              #print("HEY")
+              #print( np.sign(new_step[1] - r0) != orbitside)
+              #print(new_step[3] - all_states[tracker[-1][-1]][3] > np.pi*(3/2))
+              #print(np.std([state[1] for state in all_states[tracker[-1][-1]:]]) < 0.01*np.mean([state[1] for state in all_states[tracker[-1][-1]:]]))
+              
+              update = True
+              if ( np.sign(new_step[1] - r0) != orbitside):
+                  orbitside *= -1
+              orbitCount += 0.5
+              if mu != 0.0:
+                  #print(i)
+                  #print(new_step[4:])
+                  condate = True
+                  #print("__________")
+                  dcons = mm.peters_integrate5(all_states, a, mu, tracker[-1][-1], i)
+                  new_step, ch_cons = mm.new_recalc_state6(constants[-1], dcons, new_step, mu, mass, a)
+                  pot_min = viable_cons(ch_cons, new_step, mass, a)
+                  while pot_min[0] < -err_target:
+                      print("tick?")
+                      Lphi, Cart, ro = *ch_cons[1:], pot_min[1]
+                      #print("please?", ch_cons[0], (-pot_min[0])*((2*ro*((ro**3 + ro*(a**2) + 2*(a**2))*ch_cons[0] - 2*Lphi*a))**(-1)))
+                      #ch_cons[0] = (4*a*Lphi*r0 + ((4*a*Lphi*ro)**2 - 4*(ro**4 + 2*ro*(a**2))*((a*Lphi)**2 - (ro**2 - 2*ro + a**2)*(ro**2 + Lphi**2 + Cart)))**(0.5))/(2*(ro**4 + 2*ro*(a**2)))
+                      ch_cons[0] += max(10**(-16), 2*(-pot_min[0])*((2*ro*((ro**3 + ro*(a**2) + 2*(a**2))*ch_cons[0] - 2*Lphi*a))**(-1)))
+                      #ch_cons[0] += 2*(-pot_min[0])*((2*ro*((ro**3 + ro*(a**2) + 2*(a**2))*ch_cons[0] - 2*Lphi*a))**(-1))
+                      #print("       ", ch_cons[0])
+                      new_step = mm.recalc_state(ch_cons, new_step, mass, a)
+                      pot_min = viable_cons(ch_cons, new_step, mass, a)
+                  #print(new_step[4:])
+                  #print("_____")
+              
+
+      #Initializing for the next step
+      #Updates the constants based on the calculated derivatives, then updates the state velocities based on the new constants.
+      #Only happens the step before the derivatives are recalculated.
+      
+      #Update stuff!
+      #print(update)
+      if (update == True):
+         #print("Constant Change!")
+         if condate == False:
+             metric = mm.kerr(new_step, mass, a)[0]
+             newE = -np.matmul(new_step[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
+             newLz = np.matmul(new_step[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
+             newQ = np.matmul(np.matmul(mm.kill_tensor(new_step, mass, a), new_step[4:]), new_step[4:])    #new Carter constant Q
+             newC = newQ - (a*newE - newLz)**2                                                             #initial adjusted Carter constant  
+             #print(newE, newLz, newC, "FROM MAIN")
+             coeff = np.array([newE**2 - 1, 2*mass, (a**2)*(newE**2 - 1) - newLz**2 - newC, 2*mass*((a*newE - newLz)**2 + newC), -newC*(a**2)])
+             coeff2 = np.array([4*(newE**2 - 1), 3*2*mass, 2*((a**2)*(newE**2 - 1) - newLz**2 - newC), 2*mass*((a*newE - newLz)**2 + newC)])
+             r0, inner_turn, outer_turn = max(np.roots(coeff2)), *np.sort(np.roots(coeff))[-2:]
+             e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+             tracker.append([r0, e, inner_turn, outer_turn, new_step[0], i])
+             #print(np.sum(coeff*np.array([r0**4, r0**3, r0**2, r0, 1.0])), "thing")
+             constants.append([newE, newLz, newC])
+             qarter.append(newQ)
+             #print("Are we in here somehow?")
+         else:
+            constants.append(ch_cons)
+            qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2)
+            coeff = np.array([ch_cons[0]**2 - 1, 2*mass, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*mass*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
+            coeff2 = np.array([4*(ch_cons[0]**2 - 1), 3*2*mass, 2*((a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2]), 2*mass*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2])])
+            #print("hewwo??", *np.real(np.sort(np.roots(coeff))[-2:]))
+            r0, inner_turn, outer_turn = max(np.roots(coeff2)), *np.sort(np.roots(coeff))[-2:]
+            inner_turn, outer_turn = np.real(inner_turn), np.real(outer_turn)
+            e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+            tracker.append([r0, e, inner_turn, outer_turn, new_step[0], i])
+
+         if True in np.iscomplex(tracker[-1]):
+             compErr += 1
+             print("skring")
+             print(tracker[-1])
+             #tracker[-1] = np.real(tracker[-1])
+             issues.append((i, new_step[0]))  
+      interval.append(mm.check_interval(mm.kerr, new_step, mass, a))
+      false_constants.append([getEnergy(new_step, mass, a), *getLs(new_step, mu)])
+      dTau_change.append(old_dTau)
+      all_states.append(new_step )    #update position and velocity
+      i += 1
+
+      progress = max(1 - abs(eval(terms[2]) - eval(termdict[terms[0]]))/eval(terms[2]), i/(10**7) ) * 100
+      if verbose == True:
+          if (progress >= milestone):
+            print("Program has completed " + str(round(eval(termdict[terms[0]]), 2)), ",", str(round(progress, 4)) + "% of maximum run: Index = " + str(i))
+            milestone = int(progress) + 1
+
+    #Lets you end the program before the established end without breaking anything
+    #except KeyboardInterrupt:
+    except:
+      print("Ending program")
+      stop = True
+      cap = len(all_states) - 1
+      all_states = all_states[:cap]
+      interval = interval[:cap]
+      dTau_change = dTau_change[:cap]
+      constants = constants[:cap]
+      qarter = qarter[:cap]
+      break
+  print(len(issues), len(all_states))
+  #unit conversion stuff
+  if units == "mks":
+      G, c = 6.67*(10**-11), 3*(10**8)
+  elif units == "cgs":
+      G, c = 6.67*(10**-8),  3*(10**10)
+  else:
+      G, M, c = 1.0, 1.0, 1.0
+  if mu == 0.0:
+      truemu = 0.0
+      mu = 1.0
+      
+  constants = np.array([entry*np.array([M*mu*(c**2), M*M*mu*G/c, (M*M*mu*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
+  false_constants = np.array(false_constants)
+  qarter = np.array(qarter)
+  interval = np.array(interval)
+  dTau_change = np.array([entry * (G*M)/(c**3) for entry in dTau_change])
+  all_states = np.array([entry*np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*M), (c**3)/(G*M)]) for entry in np.array(all_states)]) 
+  tracker = np.array([entry*np.array([(G*M)/(c**2), 1.0, (G*M)/(c**2), (G*M)/(c**2), (G*M)/(c**3), 1]) for entry in tracker])
+  print(np.array([(G*M)/(c**3), (G*M)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*M), (c**3)/(G*M)]))
+  r = all_states[0][1]
+  ind = argrelmin(all_states[:,1])[0]
+  omega, otime = np.diff(all_states[:,2][ind]) - 2*np.pi, np.diff(all_states[:,0][ind])
+  
+  if verbose == True:
+      print("There were " + str(compErr) + " issues with complex roots/turning points.")
+      #for i in issues:
+       # print("Complex value at index " + str(i[0]) + ", t = " + str(i[1]))
+      #print("Here's some data!")
+      #print(checker)
+  final = {"name": label,
+           "raw": all_states,
+           "inputs": inputs,
+           "pos": all_states[:,1:4],
+           "all_vel": all_states[:,4:], 
+           "time": all_states[:,0],
+           "interval": interval,
+           "vel": (np.square(all_states[:,5]) + np.square(all_states[:,1]) * (np.square(all_states[:,6]) + (np.sin(all_states[:,2])**2)*np.square(all_states[:,7])))**(0.5),
+           "dTau_change": dTau_change,
+           "energy": constants[:, 0],
+           "phi_momentum": constants[:, 1],
+           "carter": constants[:, 2],
+           "qarter":qarter,
+           "energy2": false_constants[:, 0],
+           "Lx_momentum": false_constants[:, 1],
+           "Ly_momentum": false_constants[:, 2],
+           "Lz_momentum": false_constants[:, 3],
+           "spin": a,
+           "freqs": np.array([((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2)))),
+                              ((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - pro*(4*a*(r**(-3/2))) + (3*((a/r)**(2)))),
+                              ((r**(3/2) + pro*a)**(-1))]) * (c**3)/(G*M),
+           "r0": tracker[:,0],
+           "e": tracker[:,1],
+           "it": tracker[:,2],
+           "ot": tracker[:,3],
+           "tracktime": tracker[:,4],
+           "trackix": tracker[:,5],
+           "omegadot": omega/otime,
+           "otime": all_states[:,0][ind][1:],
+           "stop": stop,
+           "issues": issues}
+  return final
+
 def wrapsnap(data):
     be, me = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["energy"], 1)
     bl, ml = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["phi_momentum"], 1)
@@ -2333,13 +3146,36 @@ def dicttotxt(dic, filename):
     return 0
 
 def txttodict(filename):
+    newdict = {}
+    try:
+        file1 = open(filename, 'r')
+        Lines = file1.readlines()
+        for line in Lines:
+            key, value = line.strip().split(":")
+            newdict[literal_eval(key)] = literal_eval(value)
+    except:
+        pass
+    return newdict
+
+def txttodict2(filename):
+    newdict = {}
     file1 = open(filename, 'r')
     Lines = file1.readlines()
-    newdict = {}
     for line in Lines:
         key, value = line.strip().split(":")
         newdict[literal_eval(key)] = literal_eval(value)
     return newdict
+
+def dict_saver(data, filename):
+    np.save(filename, data) 
+    return True
+        
+def dict_from_file(filename):
+    if ".npy" not in filename:
+        filename = filename+".npy"
+    data = np.load(filename, allow_pickle='TRUE').item()
+    #print(read_dictionary['hello']) # displays "world"
+    return data
 
 def fillholes(filename):
     rerun = False
