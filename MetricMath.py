@@ -502,7 +502,7 @@ def set_u_kerr2(mass, a, cons=False, velorient=False, vel4=False, params=False, 
     elif np.shape(params) == (3,):
         #params = list(np.array(params) / np.array([(G*M)/(c**2), 1.0, 1.0]))
         print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
-        cons = ls.schmidtparam2(*params, a)
+        cons = ls.schmidtparam3(*params, a)
         if cons == False:
             print("Non-viable parameters")
         if np.shape(pos) != (4,):
@@ -575,6 +575,9 @@ def gr_diff_eq(solution, state, *args):
     d_state[0:4] = state[4:]                                                      #derivative of position is velocity
     metric, chris = solution(state, *args)
     d_state[4:] = -np.einsum("ijk, j, k -> i", chris, state[4:], state[4:])
+    #print(np.max(chris), np.min(chris))
+    #print(np.transpose(np.where(chris == np.max(chris)))[0], np.transpose(np.where(chris == np.min(chris)))[0])
+    #print(d_state[4:])
     return d_state                                                                #return derivative of state
 
 rk4 = {"label": "Standard RK4",
@@ -996,8 +999,8 @@ def recalc_state(constants, state, mass, a, yell=False):
   rlam = np.sqrt(abs(rlam_2))
   cothelam_2 = the_the
   cothelam = np.sqrt(abs(cothelam_2))
-  thelam = (-1/fix_sin(theta))*cothelam
-  philam = -( a*energy - ( lmom/(fix_sin(theta)**2) ) ) + (a/tri)*p_r
+  thelam = (-1/np.sin(theta))*cothelam
+  philam = -( a*energy - ( lmom/(np.sin(theta)**2) ) ) + (a/tri)*p_r
   
   ttau = tlam/sig
   rtau = rlam/sig
@@ -1810,8 +1813,7 @@ def new_recalc_state5(cons, con_derv, state, mu, mass, a):
 def new_recalc_state6(cons, con_derv, state, mu, mass, a):
     # Step 1
     E0, L0, C0 = cons
-    #state_false = recalc_state([E0, Lphi0, C0], state, mass, a)
-
+    #print(con_derv, "AA")
     # Step 2
     if a == 0:
         z2 = C0/(L0**2 + C0)
@@ -1819,58 +1821,37 @@ def new_recalc_state6(cons, con_derv, state, mu, mass, a):
         A = (a**2)*(1 - E0**2)
         z2 = ((A + L0**2 + C0) - ((A + L0**2 + C0)**2 - 4*A*C0)**(1/2))/(2*A)
             
-    #print("z2", z2)
     # Step 3
     dE, dLx, dLy, dLz = con_derv[:4]
-    #print(dE, dLx, dLy, dLz, "JEY MAN WHAT'S UP")
     dL_vec = -np.linalg.norm([dLx, dLy, dLz])
-    
-    '''
-    # Step 4
-    t, r, theta, phi, vel4 = *state[:4], state[4:]
-    sint, cost = fix_sin(theta), fix_cos(theta)
-    sinp, cosp = fix_sin(phi), fix_cos(phi)
-    sph2cart = np.array([[1.0, 0.0,       0.0,         0.0    ],
-                         [0.0, sint*cosp, r*cost*cosp, -r*sinp],
-                         [0.0, sint*sinp, r*cost*sinp, r*cosp ],
-                         [0.0, cost,      -r*sint,     0.0    ]])
-    vel4cart = np.matmul(sph2cart, vel4)
-    vel3cart = vel4cart[1:4]
-    pos3cart = np.array([r*sint*cosp, r*sint*sinp, r*cost])
-    L_vec = np.linalg.norm(np.cross(pos3cart, vel3cart))
-    '''
+    if z2 != 1.0 and L0 != 0.0:
+        dC = 2*z2*(L0*dLz/(1-z2) - (a**2)*E0*dE)  
+    else:
+        #Lz/(1-z2) seems to be approximately the total angular momentum, so replace Lz/(1-z2) with sqrt(C) to account for polar orbits
+        dC = 2*z2*(np.sqrt(C0)*dL_vec - (a**2)*E0*dE)  
+    #print(dLx**2 + dLy**2, dLx, dLy)
 
-    # Step 5
-    #E, Lphi = E0 + dE, Lphi0 + (dL_vec/L_vec)*(Lphi0)
+    # Step 4
     E, L = E0 + dE, L0 + dLz*np.sign(L0) #make sure L0 is going towards 0, not becoming increasingly negative if retrograde
     
-    # Step 6
-    #print("a", a)
-    #print("thing", (L**2)/(1- z2))
-    C = z2*((a**2)*(1 - E**2) + (L**2)/(1 - z2))
-    #print(E, Lphi, C, "yo")
+    # Step 5
+    #C = z2*((a**2)*(1 - E**2) + (L**2)/(1 - z2))
+    C = C0 + dC
+    #print(C - C0)
+    
     potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
     turns = np.roots(potent)
     test = max(np.roots(np.polyder(potent)))
-    #turns = np.roots([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
+
     while (np.polyval(potent, test) < 0.0):
-        #print(np.polyval(potent, test), test)
         dR = -np.polyval(potent, test)
-        #print(np.polyval(np.array([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)]), test))
-        #print(turns)
-        #print("WHY WOULD YOU DO THIS")
-        #print(E, dR*(( 2*test*((test**3 + (a**2)*test + 2*(a**2))*E - 2*L*a))**(-1)), 10**(-16))
         E += max(dR*(( 2*test*((test**3 + (a**2)*test + 2*(a**2))*E - 2*L*a))**(-1)), 10**(-16))
         potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
-        #turns = np.roots(potent)
         test = max(np.roots(np.polyder(potent)))
-        #print(E, "yuh?")
-    #print("_____________________________")
+
     
-    # Step 7
+    # Step 6
+    #print(state, E, L, C, "grr")
     new_state = recalc_state([E, L, C], state, mass, a, yell=True)
-   # print(state[4:])
-    #print(new_state[4:])
-    #print(state[4:] - new_state[4:])
-    #print(E - E0, Lphi - Lphi0, C - C0, "FOR REAL WHAT'S UP RIGHT NOW")
+    #print(new_state, E, L, C, "grraaa")
     return new_state, [E, L, C]

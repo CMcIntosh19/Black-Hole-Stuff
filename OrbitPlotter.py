@@ -8,7 +8,7 @@ Created on Fri May 20 14:37:02 2022
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
-import MetricMath as mm
+import MetricMathStreamline as mm
 import os
 from scipy.fftpack import fft
 import time
@@ -236,15 +236,6 @@ def orthoplots(datalist, ortho=False, zoom=1, start=0, end=-1, leg=True, ele=30,
         ax.set_box_aspect((rbound, rbound, rbound))
         if leg == True:
             ax.legend()
-        '''
-        for i in ax_list:
-            i.label_outer()
-            i.set_xlim(-cap, cap)
-            i.set_ylim(-cap, cap)
-            i.set_aspect('equal')
-            if leg == True:
-                i.legend()
-        '''
     return 0
 
 def physplots(datalist, merge=False, start=0, end=-1, fit=True, leg=True):
@@ -370,72 +361,7 @@ def physplots(datalist, merge=False, start=0, end=-1, fit=True, leg=True):
     else:
         return False
 
-'''
-def animation_thing(data):
-    from mpl_toolkits.mplot3d import Axes3D
-    from matplotlib import animation
-    int_sphere, int_time = mm.interpolate(data["raw"][:,1:4], data["raw"][:,0])
-    x = int_sphere[::10,0]*np.sin(int_sphere[::10,1])*np.cos(int_sphere[::10,2])
-    y = int_sphere[::10,0]*np.sin(int_sphere[::10,1])*np.sin(int_sphere[::10,2])
-    z = int_sphere[::10,0]*np.cos(int_sphere[::10,1])
-    t = int_time[::10]
-    dataSet = np.array([x, y, z])  # Combining our position coordinates
-    numDataPoints = len(t)
-    int_sphere[0]
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    
-    line_ani = animation.FuncAnimation(fig, animate_func, interval=10,   
-                                       frames=numDataPoints)
-    #this bit saves it
-    f = r"c://Users/hepiz/Documents/Github/Black-Hole-Stuff/animate_func.gif"
-    writergif = animation.PillowWriter(fps=numDataPoints)
-    line_ani.save(f, writer=writergif)
-'''
-
-def ani_thing2(data):
-    from mpl_toolkits.mplot3d import Axes3D
-    from matplotlib import animation
-    fig = plt.figure()
-    ax = plt.axes(projection='3d')
-    line = ax.plot([], [], [])[0]
-    print(type(line))
-
-    # initialization function: plot the background of each frame
-    def init():
-        line.set_data_3d([], [], [])
-        return line,
-    
-    int_sphere, int_time = mm.interpolate(data["raw"][:,1:4], data["raw"][:,0])
-    X = int_sphere[::10,0]*np.sin(int_sphere[::10,1])*np.cos(int_sphere[::10,2])
-    Y = int_sphere[::10,0]*np.sin(int_sphere[::10,1])*np.sin(int_sphere[::10,2])
-    Z = int_sphere[::10,0]*np.cos(int_sphere[::10,1])
-    t = int_time[::10]
-    # animation function.  This is called sequentially
-    def animate(i):       
-        x = X[:i]
-        y = Y[:i]
-        z = Z[:i]
-        line.set_data(x, y, z)
-        return line,
-    
-    # call the animator.  blit=True means only re-draw the parts that have changed.
-    line_ani = animation.FuncAnimation(fig, animate, init_func=init,
-                                   frames=200, interval=20, blit=True)
-    
-    # save the animation as an mp4.  This requires ffmpeg or mencoder to be
-    # installed.  The extra_args ensure that the x264 codec is used, so that
-    # the video can be embedded in html5.  You may need to adjust this for
-    # your system: for more information, see
-    # http://matplotlib.sourceforge.net/api/animation_api.html
-    f = r"c://Users/hepiz/Documents/Github/Black-Hole-Stuff/animate_func.gif"
-    numDataPoints = len(t)
-    writergif = animation.PillowWriter(fps=numDataPoints)
-    line_ani.save(f, writer=writergif)
-    
-    plt.show()
-
-def ani_thing3(data, name, threeD=True, zoom=1.0, ele=30, azi=-60, cb=True, delay=100, fid=1):
+def ani_thing3(data, name, threeD=True, zoom=1.0, ele=30, azi=-60, cb=True, numturns=10, fid=1):
     import matplotlib.animation as animation
     
     #print("go")
@@ -449,6 +375,9 @@ def ani_thing3(data, name, threeD=True, zoom=1.0, ele=30, azi=-60, cb=True, dela
     #print("yes")
     num_steps = int(100*fid)
     print(num_steps)
+    
+    first_turn = np.where(data["pos"][:,2] > 2*np.pi)[0][0]
+    
 
     if threeD == True:
         fig = plt.figure(figsize=(6,6))
@@ -492,7 +421,10 @@ def ani_thing3(data, name, threeD=True, zoom=1.0, ele=30, azi=-60, cb=True, dela
         
         def update_line(num, xdata, ydata, zdata, line):
             full = len(xdata)//num_steps
-            beg = max(0, int(full*num - len(xdata)*(delay/100)))
+            if numturns == False:
+                beg = 0
+            else:
+                beg = max(0, full*num - first_turn*numturns)
             line.set_data_3d(xdata[beg:full*num], ydata[beg:full*num], zdata[beg:full*num])
             return line
     else:
@@ -500,16 +432,12 @@ def ani_thing3(data, name, threeD=True, zoom=1.0, ele=30, azi=-60, cb=True, dela
         ax2.set_axis_off()
         line = [ax1.plot([], [])[0], ax3.plot([], [])[0], ax4.plot([], [])[0]]
         # Setting the axes properties
-        rbound = max(data["pos"][:,0])*1.05
         ax1.set(ylabel="Y")
         ax2.set_axis_off()
         ax3.set(xlabel="X", ylabel="Z")
         ax4.set( xlabel="Y")
+        ax2.text(0.5, 0.81, "Orthographic View", fontsize=20, ha="center", va="top", transform=ax2.transAxes)
         #(ax1, ax2), (ax3, ax4) = gs.subplots(sharex='col', sharey='row')
-        ax2.set_xlim(-rbound, rbound)
-        ax2.set_ylim(-rbound, rbound)
-        ax2.set_aspect('equal')
-        ax2.text(0, 0.62*rbound, "Orthographic View", fontsize=20, ha="center", va="top")
         #ax2.text(0, 0.40*rbound, "Scale: " + scale_word + unit, fontsize=15, ha="center", va="top")
         #print(cap)
         fig.subplots_adjust(wspace=0, hspace=0)
@@ -519,13 +447,30 @@ def ani_thing3(data, name, threeD=True, zoom=1.0, ele=30, azi=-60, cb=True, dela
         #print(fig.get_window_extent().width)
         #print(legratio)
         legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))
-    
         def update_line(num, xdata, ydata, zdata, line):
+            full = len(xdata)//num_steps
+            if numturns == False:
+                beg = 0
+            else:
+                beg = max(0, full*num - first_turn*numturns)
             end = int(np.round(num*len(xdata)/num_steps))
-            line[0].set_data(xdata[:end], ydata[:end])
-            line[1].set_data(xdata[:end], zdata[:end])
-            line[2].set_data(ydata[:end], zdata[:end])
+            line[0].set_data(xdata[beg:end], ydata[beg:end])
+            line[1].set_data(xdata[beg:end], zdata[beg:end])
+            line[2].set_data(ydata[beg:end], zdata[beg:end])
             #line.set_data_3d(xdata[:num], ydata[:num], zdata[:num])
+            #print(full, num, first_turn, num_steps, len(xdata))
+            #print(beg, end)
+            #print(data["pos"][beg:end,0])
+            
+            try:
+                rbound = max((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05  
+            except:
+                rbound = max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05 
+
+            ax2.set_xlim(-rbound, rbound)
+            ax2.set_ylim(-rbound, rbound)
+            ax2.set_aspect('equal')
+            print(len(xdata)-beg)
             return line
         
     # Creating the Animation object
@@ -684,13 +629,7 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
         E, L, C = np.array([E]), np.array([L]), np.array([C])
         
     thetbounds = np.linspace(0.0, 2*np.pi, num=180)
-    #tri, sig = rbounds**2 - 2*rbounds + a**2, rbounds**2 + a**2
-    
-    '''def rpot(r, E, L, C, a):
-        return ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
-    def tpot(t, E, L, C, a):
-        return C - ((1 - E**2)*(a**2) + (L**2)/(np.sin(t)**2))*(np.cos(t)**2)
-    '''
+
     R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
     T = lambda t: C - ((1 - E**2)*(a**2) + (L**2)/(np.sin(t)**2))*(np.cos(t)**2)
         
@@ -703,17 +642,32 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
         rbounds = np.linspace(rn*0.95, rx*1.05, num=100)
     else:
         rbounds = np.linspace(rbounds[0]*np.ones((len(rn))), rbounds[-1]*np.ones((len(rx))), num=100)
-    #print(rx, rn, r0, ecc)
-    #print(0.5*(rx + rn))
-    #print(rx/(1+ecc), rn/(1-ecc))
-    #print(ecc)
-    #print(np.polyval(np.array([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -(a**2)*C]), r0))
+
     fig1, ax1 = plt.subplots()
-    #fig2, ax2 = plt.subplots()
     ax1.plot(rbounds, rbounds*0.0)
     ax1.plot(rbounds, R(rbounds))
-    #ax2.plot(thetbounds, thetbounds*0.0)
-    #ax2.plot(thetbounds, T(thetbounds))
+
+def potentplotter2(cons, a, rbounds=[-1, -1]):
+    if len(np.shape(cons)) == 1:
+        cons = [cons]
+    fig1, ax1 = plt.subplots()
+    maxbounds = [1e12, -1e12]
+    for E, L, C in cons:
+        R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
+        coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+        coeff2 = np.polyder(coeff)
+        rx, rn, blah, blee = np.roots(coeff)
+        r0, bloh, bluh = np.roots(coeff2)
+        if True in np.iscomplex([rx, rn, blah, blee, r0, bluh]):
+            print("HEY")
+            print([rx, rn, r0])
+        if -1 in rbounds:
+            rbounds2 = np.linspace(rn*0.95, rx*1.05, num=100)
+        else:
+            rbounds2 = np.linspace(rbounds[0], rbounds[-1], num=100)
+        maxbounds = [min(maxbounds[0], rbounds2[0]), max(maxbounds[1], rbounds2[-1])]
+        ax1.plot(rbounds2, R(rbounds2))
+    ax1.hlines(0.0, maxbounds[0], maxbounds[-1], color="black", zorder=1)
 
 def fouriercountourthing(data, wavedis, num=1000):
     from scipy.fft import rfft, rfftfreq
@@ -854,32 +808,6 @@ def orth_and_fourier(data, start=0, end=-1):
     ax1.set_aspect('equal')
     ax3.set_aspect('equal')
     ax4.set_aspect('equal')
-    '''
-    if datalist[0]["inputs"][-1] == "grav":
-        unit = "Geometric Units"
-    elif datalist[0]["inputs"][-1] == "mks":
-        unit = "Meters"
-    elif datalist[0]["inputs"][-1] == "mks":
-        unit = "Centimeters"
-    ax1.set(ylabel="Y")
-    ax2.set_axis_off()
-    ax3.set(xlabel="X", ylabel="Z")
-    ax4.set( xlabel="Y")
-    #(ax1, ax2), (ax3, ax4) = gs.subplots(sharex='col', sharey='row')
-    ax2.set_xlim(-cap, cap)
-    ax2.set_ylim(-cap, cap)
-    ax2.set_aspect('equal')
-    ax2.text(0, 0.62*cap, "Orthographic View", fontsize=20, ha="center", va="top")
-    ax2.text(0, 0.40*cap, "Scale: " + scale_word + unit, fontsize=15, ha="center", va="top")
-    print(cap)
-    fig.subplots_adjust(wspace=0, hspace=0)
-    legend = fig.legend(loc=(0.75,0.5))
-    hor_ratio = legend.get_window_extent().width/ fig.get_window_extent().width
-    ver_ratio = legend.get_window_extent().height/ fig.get_window_extent().height
-    #print(fig.get_window_extent().width)
-    #print(legratio)
-    legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))
-    '''   
     
     wave, time = mm.full_transform(data, cap*1000)
     x = np.copy(time)

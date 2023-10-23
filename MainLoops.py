@@ -2696,7 +2696,6 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
   else:
       print("Normalizing initial state")
       all_states[0], cons = mm.set_u_kerr2(mass, a, cons, velorient, vel4, params, pos, units)      #normalize initial state so it's actually physical
-  #print(all_states, "a")
   pro = np.sign(all_states[0][7])
   M = mass
   mass = 1.0
@@ -2709,14 +2708,6 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
       print(cons)
       initQ = initC + (a*initE - initLz)**2
       pot_min = viable_cons([initE, initLz, initC], all_states[0], mass, a)
-      '''
-      if pot_min[0] < -1e-10:
-          print(cons)
-          print([initE, initLz, initC])
-          print(pot_min[0])
-          print("WHAT")
-          return False
-      '''
   else:
       initE = -np.matmul(all_states[0][4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
       initLz = np.matmul(all_states[0][4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
@@ -2802,21 +2793,72 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
       old_dTau = dTau
       skip = False
       #print("new step")
+      #print("thingy", i)
+      pom = False
       while ((err_calc >= err_target) or (first == True)) and (skip == False) :
-        new_step = mm.gen_RK(mm.ck4, mm.kerr, state, dTau, mass, a)
-        step_check = mm.gen_RK(mm.ck5, mm.kerr, state, dTau, mass, a) 
-        mod_step = np.append(step_check[0:6], np.sign(step_check[6])*np.sign(step_check[7])*(step_check[6]**2 + (np.cos(step_check[2])*step_check[7])**2)**0.5)
-        mod_new = np.append(new_step[0:6], np.sign(new_step[6])*np.sign(new_step[7])*(new_step[6]**2 + (np.cos(new_step[2])*new_step[7])**2)**0.5)
-        mod_state = np.append(state[0:6], np.sign(state[6])*np.sign(state[7])*(state[6]**2 + (np.cos(state[2])*state[7])**2)**0.5)
-        mod_pre = mod_step - mod_new
-        mod_pre[:4] = mod_pre[:4]/np.linalg.norm(mod_state[:4]) 
-        mod_pre[4:] = mod_pre[4:]/np.linalg.norm(mod_state[4:])
-        err_calc = np.linalg.norm(mod_pre)
-        #err_calc = np.linalg.norm(new_step - step_check)
-        err_calc = 1 - np.dot(new_step, step_check)/np.dot(new_step, new_step)
-        #print(err_calc)
-        old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
-        first = False
+            new_step = mm.gen_RK(mm.ck4, mm.kerr, state, dTau, mass, a)
+            step_check = mm.gen_RK(mm.ck5, mm.kerr, state, dTau, mass, a) 
+            mod_step = np.append(step_check[0:6], np.sign(step_check[6])*np.sign(step_check[7])*(step_check[6]**2 + (np.cos(step_check[2])*step_check[7])**2)**0.5)
+            mod_new = np.append(new_step[0:6], np.sign(new_step[6])*np.sign(new_step[7])*(new_step[6]**2 + (np.cos(new_step[2])*new_step[7])**2)**0.5)
+            mod_state = np.append(state[0:6], np.sign(state[6])*np.sign(state[7])*(state[6]**2 + (np.cos(state[2])*state[7])**2)**0.5)
+            mod_pre = mod_step - mod_new
+            mod_pre[:4] = mod_pre[:4]/np.linalg.norm(mod_state[:4]) 
+            mod_pre[4:] = mod_pre[4:]/np.linalg.norm(mod_state[4:])
+            err_calc = np.linalg.norm(mod_pre)
+            #err_calc = np.linalg.norm(new_step - step_check)
+            err_calc = abs(1 - np.dot(new_step, step_check)/np.dot(new_step, new_step))
+            #print(err_calc, "sph")
+            if "bark" in label:
+                new_cart = np.array([new_step[0],
+                                     new_step[1]*np.sin(new_step[2])*np.cos(new_step[3]),
+                                     new_step[1]*np.sin(new_step[2])*np.sin(new_step[3]),
+                                     new_step[1]*np.cos(new_step[2]),
+                                     new_step[4],
+                                     new_step[5]*np.sin(new_step[2])*np.cos(new_step[3]) + new_step[1]*new_step[6]*np.cos(new_step[2])*np.cos(new_step[3]) - new_step[1]*new_step[7]*np.sin(new_step[2])*np.sin(new_step[3]),
+                                     new_step[5]*np.sin(new_step[2])*np.sin(new_step[3]) + new_step[1]*new_step[6]*np.cos(new_step[2])*np.sin(new_step[3]) + new_step[1]*new_step[7]*np.sin(new_step[2])*np.cos(new_step[3]),
+                                     new_step[5]*np.cos(new_step[2]) - new_step[1]*new_step[6]*np.sin(new_step[2])])
+                cart_check=np.array([step_check[0],
+                                     step_check[1]*np.sin(step_check[2])*np.cos(step_check[3]),
+                                     step_check[1]*np.sin(step_check[2])*np.sin(step_check[3]),
+                                     step_check[1]*np.cos(step_check[2]),
+                                     step_check[4],
+                                     step_check[5]*np.sin(step_check[2])*np.cos(step_check[3]) + step_check[1]*step_check[6]*np.cos(step_check[2])*np.cos(step_check[3]) - step_check[1]*step_check[7]*np.sin(step_check[2])*np.sin(step_check[3]),
+                                     step_check[5]*np.sin(step_check[2])*np.sin(step_check[3]) + step_check[1]*step_check[6]*np.cos(step_check[2])*np.sin(step_check[3]) + step_check[1]*step_check[7]*np.sin(step_check[2])*np.cos(step_check[3]),
+                                     step_check[5]*np.cos(step_check[2]) - step_check[1]*step_check[6]*np.sin(step_check[2])])
+                err_calc = abs(1 - np.dot(new_cart, cart_check)/np.dot(new_cart, new_cart))
+                #print(np.linalg.norm(new_cart - cart_check), "othing")
+            #print(0.5*np.pi*(1 - np.abs(state[2]%2 -1)))
+            E, L, C = constants[-1]
+            def anglething(angle):
+                return 0.5*np.pi - np.abs(angle%np.pi - np.pi/2)
+            #print(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C)), "inc")
+            #print(dTau, "dTau")
+            #print(new_step[2], new_step[6], "anglestuff")
+            #print(np.sign(new_step[6])*(np.ceil(new_step[2]/np.pi) + np.floor(new_step[2]/np.pi)) < -2*np.sign(new_step[6])*new_step[2]/np.pi)
+            #if abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))) < 0.1 and ((anglething(new_step[2])<1e-8 and np.sign(new_step[6])*(np.ceil(new_step[2]/np.pi) + np.floor(new_step[2]/np.pi)) < 2*np.sign(new_step[6])*new_step[2]/np.pi) or (dTau < 0.001*np.mean(dTau_change) and all([anglething(all_states[i][2]) < anglething(all_states[i-1][2]) for i in np.arange(-10, 0)]))):  #("brook" in label and 0.5*np.pi*(1 - np.abs(state[2]%2 -1)) < 0.01) and :
+                # if (high inclination) AND ((very close to pole AND approaching pole) OR (dTau is very small AND dTau is monotonically non-increasing))
+            if np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -1.55 and np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change):
+                print("POW, ind=", i)
+                print(new_step)
+                new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
+                #new_step[1] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*new_step[5]
+                new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
+                new_step[6] = -new_step[6]
+                print(new_step)
+                break
+            #print(anglething(new_step[2]), new_step[2])
+    
+            #print(err_calc, "ap")
+            #print(dTau, "hah!")
+            #print(np.linalg.norm(new_step - step_check), "thing")
+            old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
+            if dTau <= 0.0:
+                dTau = old_dTau
+            first = False
+      #print("check", np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi), np.mean(dTau_change[-10:]), 0.001*np.mean(dTau_change))
+      #print(new_step[0], anglething(new_step[2]), np.mean(dTau_change[-10:]),  0.001*np.mean(dTau_change))
+      #print(old_dTau)
+      #print("____________")
       #print(new_step[4:], old_dTau, i)
       #print("-")
       #print(new_step)
@@ -2824,7 +2866,6 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
           print("why??", i)
           thunk = True
           print(new_step)
-
       metric = mm.kerr(new_step, mass, a)[0]
       #newE = -np.matmul(new_step[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
       #newLz = np.matmul(new_step[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
@@ -2873,7 +2914,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                     #print(err)
                     #print("---")
                     trial += 1
-                    if abs(err/old_err) >= 1:
+                    if abs(err/old_err) > 1:
                         #print("big overshoot")
                         new_step = thing
                         trial -= 1
@@ -2894,15 +2935,16 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                 B = (2*gtt*ut + 2*gtp*up)
                 C = -1 - err
                 int_steps = [np.copy(new_step), np.copy(new_step), np.copy(new_step), np.copy(new_step)]
-                #print(A)
-                #print(B)
-                #print(C)
-                #print(B**2 - 4*A*C)
-                #print("ya")
+                print(A)
+                print(B)
+                print(C)
+                print(B**2 - 4*A*C)
+                print("ya")
                 for num1 in range(4): 
                     try:
                         int_steps[num1][4] += ((-1)**(np.arange(4)//2))*((-B + ((-1)**(np.arange(4)%2))*np.sqrt(B**2 - 4*A*C))/(2*A))
                     except:
+                        print("skip", num1)
                         pass
                 checks = [(mm.check_interval(mm.kerr, int_steps[0], mass, a)+1)**2,
                           (mm.check_interval(mm.kerr, int_steps[1], mass, a)+1)**2,
@@ -2926,6 +2968,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                   new_step = np.copy(og_new_step)
                   #print("fix!", mm.check_interval(mm.kerr, new_step, mass, a))
               break
+      #print(new_step, "warp")
       if thunk == True:
           print(new_step)
       if new_step[4] < 0.0:
@@ -2951,8 +2994,11 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                   condate = True
                   #print("__________")
                   dcons = mm.peters_integrate5(all_states, a, mu, tracker[-1][-1], i)
+                  #print("secthingy", i)
                   new_step, ch_cons = mm.new_recalc_state6(constants[-1], dcons, new_step, mu, mass, a)
+                  
                   pot_min = viable_cons(ch_cons, new_step, mass, a)
+                  #print(new_step, "wap")
                   while pot_min[0] < -err_target:
                       print("tick?")
                       Lphi, Cart, ro = *ch_cons[1:], pot_min[1]
@@ -2966,7 +3012,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                   #print(new_step[4:])
                   #print("_____")
               
-
+                
       #Initializing for the next step
       #Updates the constants based on the calculated derivatives, then updates the state velocities based on the new constants.
       #Only happens the step before the derivatives are recalculated.
@@ -3022,6 +3068,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
 
     #Lets you end the program before the established end without breaking anything
     #except KeyboardInterrupt:
+  #'''
     except:
       print("Ending program")
       stop = True
@@ -3032,6 +3079,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
       constants = constants[:cap]
       qarter = qarter[:cap]
       break
+  #'''
   print(len(issues), len(all_states))
   #unit conversion stuff
   if units == "mks":
