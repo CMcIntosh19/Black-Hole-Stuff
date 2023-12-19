@@ -44,8 +44,8 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
         return potential_min
     
     termdict = {"time": "all_states[i][0]",
-                "phi_orbits": "abs(all_states[i][3]/(2*np.pi))",
-                "radial_orbits": "orbitCount",
+                "phi_orbit": "abs(all_states[i][3]/(2*np.pi))",
+                "rad_orbit": "orbitCount",
                 "radius": "all_states[i][1]",
                 "inclination": "tracker[-1][2]"}
     
@@ -64,8 +64,9 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
     if (np.shape(veltrue) == (4,)) and (np.shape(pos) == (4,)):
         all_states[0] = [*pos, *veltrue]
     else:
-        print("Normalizing initial state")
-        all_states[0], cons = mm.set_u_kerr(a, cons, velorient, vel4, params, pos, units)      #normalize initial state so it's actually physical
+        if verbose == True:
+            print("Normalizing initial state")
+        all_states[0], cons = mm.set_u_kerr(a, cons, velorient, vel4, params, pos)      #normalize initial state so it's actually physical
     pro = np.sign(all_states[0][7])
     
     interval = [mm.check_interval(mm.kerr, all_states[0], a)]           #create interval tracker
@@ -80,9 +81,10 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
         initQ = np.matmul(np.matmul(mm.kill_tensor(all_states[0], a), all_states[0][4:]), all_states[0][4:])    #initial Carter constant Q
         initC = initQ - (a*initE - initLz)**2                                          #initial adjusted Carter constant 
     pot_min = viable_cons([initE, initLz, initC], all_states[0], a)
-    if pot_min < 0.0:
+    while pot_min < 0.0:
+        initE += err_target
+        pot_min = viable_cons([initE, initLz, initC], all_states[0], a)
         print("RAGH")
-        return False
                 
     coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
     coeff2 = np.array([(initE**2 - 1)*4, 6.0, ((a**2)*(initE**2 - 1) - initLz**2 - initC)*2, 2*((a*initE - initLz)**2) + 2*initC])
@@ -129,6 +131,8 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
     dTau = np.abs(np.real((inner_turn/200)**(2)))
     dTau_change = [dTau]                                                #create dTau tracker
     borken = 0
+    initflagval = eval(termdict[terms[0]])
+    plunge = False
     def anglething(angle):
         return 0.5*np.pi - np.abs(angle%np.pi - np.pi/2)
     while (not(eval(newflag)) and i < 10**7):
@@ -143,6 +147,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
           
             #Break if you fall inside event horizon, or if you get really far away (orbit is unbound)
             if (state[1] <= (1 + np.sqrt(1 - a**2))*1.0001):
+                plunge = True
                 break
           
             #Runge-Kutta update using geodesic
@@ -171,7 +176,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
             metric = mm.kerr(new_step, a)[0]
             test = mm.check_interval(mm.kerr, new_step, a)
             looper = 0
-            while (abs(test+1)>(err_target) or new_step[4] < 0.0) and looper <5:
+            while (abs(test+1)>(err_target) or new_step[4] < 0.0) and looper <10:
                 borken = borken + 1
                 og_new_step = np.copy(new_step)
                 gtt, gtp = metric[0,0], metric[0,3]
@@ -181,8 +186,8 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                 test = mm.check_interval(mm.kerr, new_step, a)
                 looper += 1
             if (test+1) > err_target or new_step[4] < 0.0:
-                print("borked", looper)
-                print(test+1, delt)
+                #print("borked", looper)
+                #print(test+1, delt)
                 new_step = np.copy(og_new_step)
    
             #constant modifying section
@@ -253,6 +258,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
             all_states.append(new_step )    #update position and velocity
             i += 1
             progress = max(1 - abs(eval(terms[2]) - eval(termdict[terms[0]]))/eval(terms[2]), i/(10**7) ) * 100
+            progress = max( abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i/(10**7)) * 100
             if verbose == True:
                 if (progress >= milestone):
                     print("Program has completed " + str(round(eval(termdict[terms[0]]), 2)), ",", str(round(progress, 4)) + "% of maximum run: Index = " + str(i))
@@ -302,7 +308,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
     tracker = np.array([entry*np.array([(G*mass)/(c**2), 1.0, 1.0, (G*mass)/(c**2), (G*mass)/(c**2), (G*mass)/(c**3), 1]) for entry in tracker])
     r = all_states[0][1]
     ind = argrelmin(all_states[:,1])[0]
-    omega, otime = np.diff(all_states[:,2][ind]) - 2*np.pi, np.diff(all_states[:,0][ind])
+    omega, otime = all_states[ind,2], all_states[ind,0]
     
     if verbose == True:
         print("There were " + str(compErr) + " issues with complex roots/turning points.")
@@ -334,9 +340,10 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
              "ot": tracker[:,4],
              "tracktime": tracker[:,5],
              "trackix": tracker[:,6],
-             "omegadot": omega/otime,
-             "otime": all_states[:,0][ind][1:],
+             "omega": omega,
+             "otime": otime,
              "stop": stop,
+             "plunge": plunge,
              "issues": issues}
     return final
 
@@ -380,13 +387,15 @@ def clean_continue(data, endflag = False, verbose=False):
              "freqs": data["freqs"],
              "r0": np.concatenate((data["r0"], newdata["r0"])),
              "e": np.concatenate((data["e"], newdata["e"])),
+             "inc": np.concatenate((data["inc"], newdata["inc"])),
              "it": np.concatenate((data["it"], newdata["it"])),
              "ot": np.concatenate((data["ot"], newdata["ot"])),
              "tracktime": np.concatenate((data["tracktime"], newdata["tracktime"])),
              "trackix": np.concatenate((data["trackix"], newdata["trackix"])),
-             "omegadot": np.concatenate((data["omegadot"][:lastcross], newdata["omegadot"])),
+             "omega": np.concatenate((data["omega"][:lastcross], newdata["omega"])),
              "otime": np.concatenate((data["otime"][:lastcross], newdata["otime"])),
              "stop": newdata["stop"],
+             "plunge": newdata["plunge"],
              "issues": np.concatenate((data["issues"], newdata["issues"]))}
     return final
 
@@ -402,13 +411,13 @@ def dict_from_file(filename):
     return data
 
 def wrapsnap(data):
-    #be, me = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["energy"], 1)
-    #bl, ml = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["phi_momentum"], 1)
-    #bc, mc = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["carter"], 1)
+    be, mE = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["energy"], 1)
+    bl, mL = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["phi_momentum"], 1)
+    bc, mC = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["carter"], 1)
     br, mr = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["r0"], 1)
     be, me = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["e"], 1)
     bi, mi = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["inc"], 1)
-    return mr, me, mi
+    return [mE, mL, mC, mr, me, mi]
 
 def wrapwrap(rml, e0l, inl, spl, mul, skip=[]):
     try:
@@ -443,7 +452,7 @@ def wrapwrap(rml, e0l, inl, spl, mul, skip=[]):
     skip = skip + list(condt.keys())
     return condt, skip
 
-def wrapwrap2(rml, e0l, inl, spl, mul, endflag, skip=[]):
+def wrapwrap2(rml, e0l, inl, spl, mul, endflag, skip=[], fid=1e-15):
     try:
         total = len(rml)*len(e0l)*len(inl)*len(spl)*len(mul)
     except:
@@ -458,7 +467,7 @@ def wrapwrap2(rml, e0l, inl, spl, mul, endflag, skip=[]):
         if (rm, e0, inc, spin, mu) not in skip:
             try:  
                 print(rm, e0, inc, spin, mu)
-                test = clean_inspiral3(1.0, spin, mu, endflag, 10**(-15), str((rm, e0, inc, spin, mu)), params = [rm, e0, inc], verbose=False)
+                test = clean_inspiral3(1.0, spin, mu, endflag, fid, str((rm, e0, inc, spin, mu)), params = [rm, e0, inc], verbose=False)
                 if test["stop"] == True:
                     break
                 else:
@@ -467,7 +476,33 @@ def wrapwrap2(rml, e0l, inl, spl, mul, endflag, skip=[]):
                 print("Didn't work?")
         else:
             print("Already run!")
-        print("---")
+        #print("---")
+    skip = skip + list(paramdt.keys())
+    return paramdt, skip
+
+def wrapwrap3(rml, e0l, inl, spl, mul, endflag, skip=[], fid=1e-15, verb = False):
+    try:
+        total = len(rml)*len(e0l)*len(inl)*len(spl)*len(mul)
+    except:
+        print("Invalid parameter list detected")
+        return {}, {}, {}
+    if total == 0:
+        print("Invalid parameter list detected")
+        return {}, {}, {}
+    paramdt = {}
+    for i, j, k, l, m in product(rml, e0l, inl, spl, mul):
+        rm, e0, inc, spin, mu = i, j, k, l, m
+        if (rm, e0, inc, spin, mu) not in skip:
+            try:  
+                print(rm, e0, inc, spin, mu)
+                test = clean_inspiral3(1.0, spin, mu, endflag, fid, str((rm, e0, inc, spin, mu)), params = [rm, e0, inc], verbose=verb)
+                if test["stop"] == True:
+                    break
+                paramdt[rm, e0, inc, spin, mu] = test
+            except:
+                print("Didn't work:", rm, e0, inc, spin, mu)
+        else:
+            print("Already run!")
     skip = skip + list(paramdt.keys())
     return paramdt, skip
 

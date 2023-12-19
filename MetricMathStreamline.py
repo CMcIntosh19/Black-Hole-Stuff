@@ -9,8 +9,6 @@ import scipy.interpolate as spi
 import matplotlib.pyplot as plt
 import sympy as sp
 
-#whenever present, mass is usually set equal to 1
-
 def find_rmb(spin):
     if spin >= 0.0:
         pro = 1.0
@@ -25,8 +23,10 @@ def find_rmb(spin):
         return ang
     
     data = optimize.minimize(pro_min, 4, args=(spin), bounds=( (1+np.sqrt(1-spin**2), 10), ))
-    l_mb, r_mb = pro*data['fun'][0], data['x'][0]
+    #print(data)
+    l_mb, r_mb = pro*data['fun'], data['x'][0]
     return l_mb, r_mb
+
 
 def mink(state):
     '''
@@ -53,8 +53,6 @@ def mink(state):
     chris_tens = np.zeros((4,4,4))
     return (metric, chris_tens)
 
-# schwarz function computes the metric and christoffel connection terms for a given state
-# specific to schwarzchild orbit and may be phased out once kerr is complete
 def schwarz(state):
     '''
     schwarz function generates metric and christoffel symbols
@@ -94,18 +92,6 @@ def schwarz(state):
     chris_tens[3,3,2] = np.cos(theta) / np.sin(theta)
     return (metric, chris_tens)
 
-# set_u function normalizes a given initial state to maintain a proper
-# spacetime interval: -1 for timelike paths, 0 for null
-# converts from a locally defined tetrad frame to more generally defined black hole frame
-# can be made to default to a circular orbit
-
-# specific to schwarzchild orbit and may be phased out once kerr is complete
-#timelike - whether the orbit is for a massive particle or not (True or False)
-#circular - makes initialization default to circular orbit
-#eta - angle between launch and a line parallel to black hole axis
-#xi - angle between launch and a line drawn between black hole and launch point
-
-
 def kerr(state, a):
     '''
     kerr function generates metric and christoffel symbols
@@ -113,7 +99,7 @@ def kerr(state, a):
 
     Parameters
     ----------
-    state : 8 element list/numpy array
+    state : 8 element numpy array of floats
         4-position and 4-velocity of the test particle at a particular moment
     a : int/float
         dimensionless spin constant of black hole, between 0 and 1 inclusive
@@ -172,8 +158,6 @@ def kerr(state, a):
     chris_tens[3,3,2] = ((cosi/sine)/(rho2**2))*((rho2**2) + 2*r*((a*sine)**2))
     return (metric, chris_tens)
 
-#check_interval function returns the spacetime interval of a given state
-#should be -1 for timelike orbits (or 0 for null), otherwise something is wrong
 def check_interval(solution, state, *args):
     '''
     Returns the spacetime interval for a state vector given a particular spacetime solution. 
@@ -182,8 +166,8 @@ def check_interval(solution, state, *args):
     ----------
     solution : function
         One of the solution functions mink, schwarz, or kerr
-    state : 8 element list/numpy array
-        DESCRIPTION.
+    state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment
     *args : int/float
         args required for different solutions, depends on specific function.
 
@@ -440,7 +424,6 @@ def schmidtparam3(r0, e, i, a):
             L, C = 0.0, C/(z**2) - (a**2)*(1 - E**2)
         return [E, L, C]
 
-# kill_tensor function defines the Kerr killing tensor for a given state and spin parameter
 def kill_tensor(state, a):
     '''
     kill_tensor function calculates killing Kerr killing tensor for a given system
@@ -469,9 +452,6 @@ def kill_tensor(state, a):
     ktens = 2 * rho2 * 0.5*(l_n + np.transpose(l_n)) + (r**2) * np.array(metric)
     return ktens
 
-# gr_diff_eq function calculates the time differential of a given state
-# normal state is [position, velocity], this outputs [velocity, acceleration]
-# very important, do not break
 def gr_diff_eq(solution, state, *args):
     '''
     gr_diff_eq function calculates the instantaneous proper time derivative for
@@ -481,7 +461,7 @@ def gr_diff_eq(solution, state, *args):
     ----------
     solution : function
         One of the solution functions mink, schwarz, or kerr
-    state : 8 element list/numpy array
+    state : 8 element numpy array of floats
         4-position and 4-velocity of the test particle at a particular moment
     *args : int/float
         args required for different solutions, depends on specific function.
@@ -528,13 +508,6 @@ ck4 = {"label": "Cash-Karp 4th Order",
                  [-11/54, 5/2, -70/27, 35/27],
                  [1631/55296, 175/512, 575/13824, 44275/110592, 253/4096]]}     
 
-#gen_RK function applies a given Runge-Kutta method to calculate whatever the new state
-#of an orbit will be after some amount of proper time
-#butcher - one of the runge-kutta dictionaries
-#solution - either schwarz or kerr function defined above
-#state - state of the system
-#dTau - proper time between current state and state-to-be-calculated
-#args - required info for solution
 def gen_RK(butcher, solution, state, dTau, *args):
     '''
     gen_RK function applies a given Runge-Kutta method to calculate whatever the new state
@@ -627,28 +600,31 @@ def recalc_state(constants, state, a):
     new_state[4:] = np.array([ttau, rtau, thetau, phitau])
     return new_state
 
-#interpolate function takes calculated orbit and recalculates values for regular time intervals
-def interpolate(data, time):
+def interpolate(data, time, supress=True):
     '''
     interpolates coordinate data to be evenly spaced in coordinate time
+    Fail state plots time against index twice?
 
     Parameters
     ----------
-    data : 3 x N numpy array of floats
+    data : N x 3 numpy array of floats
         r, theta, and phi position of test particle
     time : N element numpy array of floats
         coordinate time of test particle
 
     Returns
     -------
-    new_data : 3 x M numpy array of floats
-        r, theta, and phi position of test particle
-    time : M element numpy array of floats
-        coordinate time of test particle
+    new_data : M x 3 numpy array of floats
+        r, theta, and phi position of test particle, interpolated to be evenly spaced along new_time
+    new_time : M element numpy array of floats
+        coordinate time of test particle, interpolated to be evenly spaced
         M is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
     data = np.array(data)
-    new_time = np.linspace(time[0], time[-1], max(len(time), int(time[-1] - time[0])))
+    if supress == True:
+        new_time = np.linspace(time[0], time[-1], min(10000, max(len(time), int(time[-1] - time[0]))))
+    else:
+        new_time = np.linspace(time[0], time[-1], max(len(time), int(time[-1] - time[0])))
     try:
         r_poly = spi.CubicSpline(time, data[:,0])
         theta_poly = spi.CubicSpline(time, data[:,1])
@@ -662,19 +638,18 @@ def interpolate(data, time):
         ax2.plot(time)
         return False
 
-#sphr2quad function finds the quadrupole moment of a specific position in spherical coordinates
 def sphr2quad(pos):
     '''
-    interpolates coordinate data to be evenly spaced in coordinate time
+    Calculates quadrupole moment of a test particle
 
     Parameters
     ----------
-    pos : 3 x N numpy array of floats
-        x, y, and z position of test particle
+    pos : 3-element numpy array of floats
+        r, theta, and phi position of test particle
 
     Returns
     -------
-    qmom : 3 x 3 x N numpy array of floats
+    qmom : 3 x 3 numpy array of floats
         quadrupole moment of test particle
     '''
     x = pos[0] * np.sin(pos[1]) * np.cos(pos[2])
@@ -685,24 +660,22 @@ def sphr2quad(pos):
                      [3*z*x,                 3*z*y,                 2*z*z - (x**2 + y**2)]], dtype=np.float64)
     return qmom
 
-#matrix_derive function calculates the nth time derivative of a series of 3x3 matrices,
-#where n is determined by degree
 def matrix_derive(data, time, degree):
     '''
     Calculates degree-th time derivative of a series of 3x3 matrices, assuming they are interpolated across time
 
     Parameters
     ----------
-    data : 3 x 3 x N numpy array of floats
-        x, y, z quadrupole moment of test particle
+    data : N x 3 x 3 numpy array of floats
+        x, y, z quadrupole moment of test particle, assumed interpolated
     time : N element numpy array of floats
-        coordinate time of test particle
+        coordinate time of test particle, assumed interpolated
     degree : int
         desired degree of the resulting derivative
 
     Returns
     -------
-    new_data : 3 x 3 x N numpy array of floats
+    new_data : N x 3 x 3 numpy array of floats
         degree-th derivative of quadrupole moment
     '''
     polys = [[0, 0, 0],
@@ -716,37 +689,67 @@ def matrix_derive(data, time, degree):
                                       [polys[2][0](time, degree), polys[2][1](time, degree), polys[2][2](time, degree)]]))
     return new_data
 
-#gwaves function calculates gravitational wave data based on 
-#quadrupole moments, time data, and some given distance from the source
 def gwaves(quad_moment, time, distance):
+    '''
+    Calculates gravitational wave moment from quadrupole moment and distance
+
+    Parameters
+    ----------
+    quad_moment : N x 3 x 3 numpy array of floats
+        x, y, z quadrupole moment of test particle, assumed interpolated
+    time : N element numpy array of floats
+        coordinate time of test particle, assumed interpolated
+    distance : float
+        distance from GW source in geometric units
+
+    Returns
+    -------
+    waves : N x 3 x 3 numpy array of floats
+        GW moment over time; waves[:,0,0] is h+ polarization, waves[:,0,1]=waves[:,1,0] is hx polarization
+    '''
     der_2 = matrix_derive(quad_moment, time, 2)
     waves = np.array([(2/distance) * entry for entry in der_2])
     return waves
 
-#full_transform combines all previous functions in this block in order to
-#produce gravitational wave data from the orbits calculated by one of the
-#main orbit functions, like schw_orbit or kerr_orbit
 def full_transform(data, distance):    #defunctish??
+    '''
+    Calculates gravitational wave moment from orbit dictionary
+
+    Parameters
+    ----------
+    data : 30 element dictionary
+        full data package of an orbit given by clean_inspiral
+    distance : float
+        distance from GW source in geometric units
+
+    Returns
+    -------
+    waves : N x 3 x 3 numpy array of floats
+        GW moment in cartesian coords over interpolated time; waves[:,0,0] is h+ polarization, waves[:,0,1]=waves[:,1,0] is hx polarization
+    int_time : N element numpy array of floats
+        coordinate time of test particle, interpolated to be evenly spaced
+        N is maximum of the length of the original time array or the integerized number of time units that have passed
+    '''
     sphere, time = data["pos"], data["time"]
     int_sphere, int_time = interpolate(sphere, time)
     quad = np.array([sphr2quad(pos) for pos in int_sphere])
     waves = gwaves(quad, int_time, distance)
     return waves, int_time
 
-#sphr2quad function finds the quadrupole moment of a specific position in spherical coordinates
-def big_ortholize(pos_list, mu):
-    x = pos_list[:,0] * np.sin(pos_list[:,1]) * np.cos(pos_list[:,2])
-    y = pos_list[:,0] * np.sin(pos_list[:,1]) * np.sin(pos_list[:,2])
-    z = pos_list[:,0] * np.cos(pos_list[:,1]) 
-    
-    qmom = np.transpose(np.array([[3*x*x - pos_list[:, 0]**2,       3*x*y,                     3*x*z              ],
-                                  [      3*y*x,               3*y*y - pos_list[:, 0]**2,       3*y*z              ],
-                                  [      3*z*x,                     3*z*y,               3*z*z - pos_list[:, 0]**2]]))
-    qmom = qmom*mu
-    return qmom
+def trace_ortholize(pos_list):
+    '''
+    Calculates quadrupole moment in cartesian coords from position in spherical coords 
 
-#Experimenting!! Only use this with mks units, not cgs or geo
-def trace_ortholize(pos_list, mu):
+    Parameters
+    ----------
+    pos : N x 3 numpy array of floats
+        full data package of an orbit given by clean_inspiral, assumed interpolated to be evenly spaced across time
+
+    Returns
+    -------
+    qmom : N x 3 x 3 numpy array of floats
+        quadrupole moment of test particle per unit mass
+    '''
     x = pos_list[:,0] * np.sin(pos_list[:,1]) * np.cos(pos_list[:,2])
     y = pos_list[:,0] * np.sin(pos_list[:,1]) * np.sin(pos_list[:,2])
     z = pos_list[:,0] * np.cos(pos_list[:,1]) 
@@ -757,13 +760,34 @@ def trace_ortholize(pos_list, mu):
     return qmom
 
 def peters_integrate6(states, a, mu, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
     dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
     if (ind2 - ind1) > 2:
         states = np.array(states)
         sphere, time = states[:, 1:4], states[:, 0]
         int_sphere, int_time = interpolate(sphere, time)
         div = np.mean(np.diff(int_time))
-        quad = trace_ortholize(int_sphere, mu)
+        quad = trace_ortholize(int_sphere)
         delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
         coolquad = quad - (1/3)*np.einsum('i, jk -> ijk', np.einsum('ijj -> i', quad), delta)
         dt2 = matrix_derive(coolquad, int_time, 2)
@@ -784,6 +808,27 @@ def peters_integrate6(states, a, mu, ind1, ind2):
     return np.array([dE, dLx, dLy, dLz])
 
 def new_recalc_state6(cons, con_derv, state, a):
+    '''
+    Calculates new state vector from current state and change in orbital constants
+
+    Parameters
+    ----------
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass
+    con_derv : 4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    new_state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment after correction
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass after correction
+    '''
     # Step 1
     E0, L0, C0 = cons
     # Step 2
@@ -817,5 +862,4 @@ def new_recalc_state6(cons, con_derv, state, a):
     
     # Step 6
     new_state = recalc_state([E, L, C], state, a)
-    return new_state, [E, L, C]
     return new_state, [E, L, C]

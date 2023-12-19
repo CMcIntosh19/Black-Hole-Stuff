@@ -20,7 +20,7 @@ def getEnergy(state, a):
     return ene
     
 def getLs(state, mu):
-    t, r, theta, phi, vel4 = *state[:4], state[4:]
+    r, theta, phi, vel4 = *state[1:4], state[4:]
     sint, cost = np.sin(theta), np.cos(theta)
     #print(sint, cost)
     #print(np.sin(theta), np.cos(theta))
@@ -38,63 +38,9 @@ def getLs(state, mu):
     Lmom = np.cross(pos3cart, vel3cart)
     #print(Lmom)
     return Lmom
-
-def getC(state, mu):
-    Lmom = getLs(state,mu)
-    Lnorm = np.linalg.norm(Lmom)
-    return(Lmom[0]**2 + Lmom[1]**2)
-
-def makeAmatrix(state, a, mu):
-    t, r, theta, phi, vel4 = *state[:4], state[4:]
-    sint, cost = np.sin(theta), np.cos(theta)
-    sinp, cosp = np.sin(phi), np.cos(phi)
-    
-    evhor = 1 - 2/r
-    tet2cor = np.array([[evhor**(-1/2), 0,            0,   0         ],
-                        [0,             evhor**(1/2), 0,   0         ],
-                        [0,             0,            1/r, 0         ],
-                        [0,             0,            0,   1/(r*sint)]])
-    cor2tet = np.linalg.inv(tet2cor)
-    sph2cart = np.array([[1.0, 0.0,       0.0,       0.0  ],
-                         [0.0, sint*cosp, cost*cosp, -sinp],
-                         [0.0, sint*sinp, cost*sinp, cosp ],
-                         [0.0, cost,      -sint,     0.0  ]])
-    cart2sph = np.linalg.inv(sph2cart)
-    metric, chris = mm.kerr(state, 1, a)
-    bigA = np.zeros([4,3])
-    
-    cart_tet_state = np.matmul(sph2cart, np.matmul(cor2tet, vel4))
-    strip_ct_state = (cart_tet_state[1:4])/(cart_tet_state[0])
-    print(strip_ct_state)
-    
-    for i in range(3):
-        dvel = np.array([0.0, 0.0, 0.0])
-        dvel[i] = 10**(-10)
-        #print("woo")
-        #print(dvel)
-        new_strip_ct_state = strip_ct_state + dvel
-        print("new strip state")
-        print(new_strip_ct_state)
-        newgamma = (1 - np.linalg.norm(new_strip_ct_state)**2)**(-1/2)
-        new_ct_state = newgamma*np.array([1, *new_strip_ct_state])
-        new_vel = np.matmul(tet2cor, np.matmul(cart2sph, new_ct_state))
-        new_state = np.array([*state[:4], *new_vel])
-        print(state)
-        print(new_state)
-        old_cons = np.array([getEnergy(state, a), *getLs(state, mu)])
-        new_cons = np.array([getEnergy(new_state, a), *getLs(new_state, mu)])
-        print(new_cons)
-        print(old_cons)
-        del_cons = new_cons - old_cons                                         #Using newcons - oldcons instead of assuming delcons is linear like Jeremy said
-        print(del_cons)
-        bigA[:, i] = del_cons/dvel[i]
-        #print(bigA[:, i])
-        print(" ")
-        
-    return bigA
         
 def new_recalc_state3(state, con_derv, mu, mass, a):
-    t, r, theta, phi, vel4 = *state[:4], state[4:]
+    r, theta, phi, vel4 = *state[1:4], state[4:]
     sint, cost = np.sin(theta), np.cos(theta)
     sinp, cosp = np.sin(phi), np.cos(phi)
     
@@ -606,3 +552,25 @@ def schmidtparam3(r0, e, i, a, inner=False):
         if polar == True:
             L, C = 0.0, C/(z**2) - (a**2)*(1 - E**2)
         return [E, L, C]
+    
+def seper_locator3(r0, inc, a):
+    print(r0)
+    test_r = find_rmb(a)[1]
+    e = 1 - test_r/r0
+    small, big = 0.0, 1.0
+    E, L, C = schmidtparam3(r0, e, np.pi/2, a)
+    R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
+    r1, bloh, bluh = np.array(np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]))
+    val = R(bloh)
+    while ((val > 0) or (val < -1e-12)) and (big-small > 1e-14):
+        #print(val, e, small, big, big-small, bloh)
+        if val > 0:
+            big = e
+        else:
+            small = e
+        e = (2*big + small)/3
+        E, L, C = schmidtparam3(r0, e, np.pi/2, a)
+        R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
+        r1, bloh, bluh = np.array(np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]))
+        val = R(bloh)
+    return e
