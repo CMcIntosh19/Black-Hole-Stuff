@@ -6,6 +6,7 @@ Metric Math stuff
 import numpy as np
 from scipy import optimize
 import scipy.interpolate as spi
+import scipy.integrate as integrate
 import matplotlib.pyplot as plt
 import sympy as sp
 
@@ -389,6 +390,7 @@ def schmidtparam3(r0, e, i, a):
     e_err *= np.sign(e_err)
 
     if r_err < 1e-6 and e_err < 1e-6:
+        #print(flats)
         return [E, L, C]
     else:
         def r__funcs(r):
@@ -422,6 +424,7 @@ def schmidtparam3(r0, e, i, a):
                 break     
         if polar == True:
             L, C = 0.0, C/(z**2) - (a**2)*(1 - E**2)
+        #print(flats)
         return [E, L, C]
 
 def kill_tensor(state, a):
@@ -611,6 +614,8 @@ def interpolate(data, time, supress=True):
         r, theta, and phi position of test particle
     time : N element numpy array of floats
         coordinate time of test particle
+    suppress : bool, defaults to True
+        limits the size of the final array to 10000 entries
 
     Returns
     -------
@@ -711,7 +716,7 @@ def gwaves(quad_moment, time, distance):
     waves = np.array([(2/distance) * entry for entry in der_2])
     return waves
 
-def full_transform(data, distance):    #defunctish??
+def full_transform(data, distance, supress=True):    #defunctish??
     '''
     Calculates gravitational wave moment from orbit dictionary
 
@@ -731,7 +736,7 @@ def full_transform(data, distance):    #defunctish??
         N is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
     sphere, time = data["pos"], data["time"]
-    int_sphere, int_time = interpolate(sphere, time)
+    int_sphere, int_time = interpolate(sphere, time, supress)
     quad = np.array([sphr2quad(pos) for pos in int_sphere])
     waves = gwaves(quad, int_time, distance)
     return waves, int_time
@@ -863,3 +868,49 @@ def new_recalc_state6(cons, con_derv, state, a):
     # Step 6
     new_state = recalc_state([E, L, C], state, a)
     return new_state, [E, L, C]
+
+def Jfunc(x, r0, e, i, a, E, L, C):
+    #E, L, C = schmidtparam3(r0, e, i, a)
+    p = r0*(1 - e**2)
+    J = lambda x: (1-E**2)*(1-e**2)+2*(1-E**2-1/r0)*(1+e*np.cos(x))+((1-E**2)*(3+e**2)/(1-e**2)-(4/p)+((a**2)*(1-E**2)+L**2+C)*(1/(r0*p)))*((1+e*np.cos(x))**2)
+    z1 = 1 + ((1+a)**(1/3) + (1-a)**(1/3))*(1 - a**2)**(1/3)
+    z2 = np.sqrt(3*(a**2) + z1**2)
+    rms = 3 + z2 - np.sign(a)*np.sqrt((3-z1)*(3 + z1 + 2*z2))
+    if J(0) < 0.0 and r0*(1-e) > rms:
+        return Jfunc(x, r0/10, e, i, a)/10
+    else:
+        return J(x)
+    
+def freqs_finder(E, L, C, a):
+    B2 = (a**2)*(1 - E**2)
+    roots = np.round(np.sort(np.roots([B2, 0, -(B2 + C + L**2), 0, C])), 15)
+    if len(roots) == 4:
+        zm, zp = roots[-2], roots[-1]
+    else:
+        zm, zp = roots[-1], 1e151
+    k, i = (zm**2)/(zp**2), np.arccos(zm)
+    
+    Rcoeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+    ri, ro = np.sort(np.roots(Rcoeff))[-2:]
+    #print(ro, ri)
+    r0, e = 0.5*(ro + ri), (ro - ri)/(ro + ri)
+    p = r0*(1 - e**2)
+    #print(r0, e, i)
+    
+    J2 = lambda x: Jfunc(x, r0, e, i, a, E, L, C)
+    H = lambda x: 1 - (2/p)*(1 + e*np.cos(x)) + ((a/p)**2)*(1 + e*np.cos(x))**2
+    G = lambda x: L - 2*(L - a*E)*(1 + e*np.cos(x))/p
+    
+    Xt = integrate.quad(lambda x: 1/(J2(x)**0.5), 0, np.pi)[0]
+    Yt = integrate.quad(lambda x: (p**2)/(((1+e*np.cos(x))**2)*(J2(x)**0.5)), 0, np.pi)[0]
+    Zt = integrate.quad(lambda x: G(x)/(H(x)*(J2(x)**0.5)), 0, np.pi)[0]
+
+    Kk = integrate.quad(lambda p: 1/np.sqrt(1 - k*(np.sin(p)**2)), 0, np.pi/2)[0]
+    Ek = integrate.quad(lambda p: np.sqrt(1 - k*(np.sin(p)**2)), 0, np.pi/2)[0]
+    Pk = integrate.quad(lambda p: 1/((1-(zm*np.sin(p))**2)*np.sqrt(1 - k*(np.sin(p)**2))), 0, np.pi/2)[0]
+
+    Lam = (Yt + Xt*(a*zp)**2)*Kk - Xt*Ek*(a*zp)**2
+    wr, wt, wp = np.pi*p*Kk/((1-e**2)*Lam), np.pi*(B2**0.5)*zp*Xt/(2*Lam), (1/Lam)*((Zt - L*Xt)*Kk + L*Xt*Pk)
+    if a == 0.0:
+        wt = wp
+    return np.array([wr, wt, wp])

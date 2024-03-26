@@ -272,7 +272,7 @@ def getparams(vx, vy, vz, tet_mat, metric, r0, e0, i0, a, showme = False):
     
     E = -np.matmul(new[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
     L = np.matmul(new[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
-    Q = np.matmul(np.matmul(mm.kill_tensor(new, 1.0, a), new[4:]), new[4:])               #new Carter constant Q
+    Q = np.matmul(np.matmul(mm.kill_tensor(new, a), new[4:]), new[4:])               #new Carter constant Q
     C = abs(Q - (a*E - L)**2)
     
     #print(E, L, C)
@@ -339,7 +339,7 @@ def leastsquaresparam(r0, e, i, a, showme=False):
     pos = np.array([0.0, r0, theta, 0.0])
     
     #various defined values that make math easier
-    metric, chris = mm.kerr(np.array([*pos, 0, 0, 0, 0]), 1.0, a)
+    metric, chris = mm.kerr(np.array([*pos, 0, 0, 0, 0]), a)
     rho2 = r**2 + (a**2)*(np.cos(theta)**2)
     tri = r**2 - 2*r + a**2
     al2 = (rho2*tri)/(rho2*tri + 2*r*((a**2) + (r**2)))
@@ -415,7 +415,7 @@ def kerrtest():
     state, ans = leastsquaresparam(r0, e, i, a)
     val = np.linalg.norm(100*(np.array([r0, r0*(1-e), i]) - ans)/np.array([r0, r0*(1-e), 1]))
     if val > 100:
-        metric, chris = mm.kerr(state, 1.0, a)
+        metric, chris = mm.kerr(state, a)
         E = -np.matmul(state[4:], np.matmul(metric, [1, 0, 0, 0]))                              #new energy
         L = np.matmul(state[4:], np.matmul(metric, [0, 0, 0, 1]))                              #new angular momentum (axial)
         Q = np.matmul(np.matmul(mm.kill_tensor(state, 1.0, a), state[4:]), state[4:])               #new Carter constant Q
@@ -555,7 +555,7 @@ def schmidtparam3(r0, e, i, a, inner=False):
     
 def seper_locator3(r0, inc, a):
     print(r0)
-    test_r = find_rmb(a)[1]
+    test_r = mm.find_rmb(a)[1]
     e = 1 - test_r/r0
     small, big = 0.0, 1.0
     E, L, C = schmidtparam3(r0, e, np.pi/2, a)
@@ -563,7 +563,7 @@ def seper_locator3(r0, inc, a):
     r1, bloh, bluh = np.array(np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]))
     val = R(bloh)
     while ((val > 0) or (val < -1e-12)) and (big-small > 1e-14):
-        #print(val, e, small, big, big-small, bloh)
+        print(val, e, small, big, big-small, bloh)
         if val > 0:
             big = e
         else:

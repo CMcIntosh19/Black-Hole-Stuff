@@ -14,6 +14,7 @@ from scipy.fftpack import fft
 import time
 import matplotlib.animation as animation
 import pywt
+import time
 
 def get_index(array, time):
     '''
@@ -33,6 +34,7 @@ def get_index(array, time):
     '''
     idx = np.abs(array - time).argmin()
     val = array.flat[idx]
+    print(time, idx, val, "yo")
     return np.where(array == val)[0][0]
 
 def sph2cart(pos):
@@ -54,7 +56,7 @@ def sph2cart(pos):
     z = pos[0] * np.cos(pos[1])
     return [x, y, z]
 
-def plotvalue(data, value, vsindex=False, start=0, end=-1):
+def plotvalue(data, value, vsphase=False, linefit=True, start=0, end=-1):
     '''
     Parameters
     ----------
@@ -62,12 +64,14 @@ def plotvalue(data, value, vsindex=False, start=0, end=-1):
         the thing
     value : string
         thing to plot
-    vsindex : bool, optional
-        decide whether you're plotting against coordinate time or index. The default is False.
+    vsphase : bool, optional
+        decide whether you're plotting against coordinate time or phase. The default is False, which corresponds to time.
+    linefit : bool, optional
+        toggle linear fitting. Defaults to True
     start : int, optional
-        starting time or index. The default is 0.
+        starting time or phase. The default is 0.
     end : int, optional
-        ending time or index. The default is -1.
+        ending time or phase. The default is -1.
 
     Returns
     -------
@@ -79,7 +83,7 @@ def plotvalue(data, value, vsindex=False, start=0, end=-1):
     termdict = {"time": [data["time"], "Coordinate Time"],
                 "radius": [data["pos"][:,0], "Radius"],
                 "theta": [data["pos"][:,1], "Theta"],
-                "phi": [data["pos"][:,2], "Phi"],
+                "phase": [data["pos"][:,2]/(2*np.pi), "Phi"],
                 "r0": [data["r0"], "Effective Potential Minimum"],
                 "ecc": [data["e"], "Eccentricity"],
                 "inc": [data["inc"], "Inclination"],
@@ -93,6 +97,9 @@ def plotvalue(data, value, vsindex=False, start=0, end=-1):
                 "theta_v": [data["all_vel"][:,2], "Theta Velocity"],
                 "phi_v": [data["all_vel"][:,3], "Phi Velocity"],
                 "total_v": [data["vel"], "Velocity"],
+                "radial_freq": [data["freqs"][:, 0], "Radial Frequency"],
+                "theta_freq": [data["freqs"][:, 1], "Theta Frequency"],
+                "phi_freq": [data["freqs"][:, 2], "Phi Frequency"],
                 "energy": [data["energy"], "Specific Energy"],
                 "l_momentum": [data["phi_momentum"], "Specific Angular Momentum"],
                 "carter": [data["carter"], "Carter Constant"],
@@ -104,27 +111,55 @@ def plotvalue(data, value, vsindex=False, start=0, end=-1):
     if (type(value) == str) and (value in termdict):
         fig, ax = plt.subplots()
         if len(termdict[value][0]) == len(data["time"]):
-            if vsindex == True:
-                ax.plot(termdict[value][0][start:end]) 
+            if vsphase == True:
+                title = "%s vs Phase"%(termdict[value][1])
+                xvals = termdict["phase"][0][start:end]
+                yvals = termdict[value][0][start:end]
             else:
+                title = "%s vs Time"%(termdict[value][1])
                 to = get_index(data["time"], start)
                 if end > 0.0:
                     tf = get_index(data["time"], end)
                 else:
-                    tf = get_index(data["time"], data["time"][-1])
-                ax.plot(data["time"][to:tf], termdict[value][0][to:tf])   
+                    tf = len(data["time"])
+                xvals = termdict["time"][0][to:tf]
+                yvals = termdict[value][0][to:tf]
         elif len(termdict[value][0]) == len(data["tracktime"]):
-            if vsindex == True:
-                inds = [ind for ind in range(len(data["time"])) if (data["time"][ind] in data["tracktime"]) and ((ind >= start) and (ind < (end%len(data["time"]))-1))]
-                ax.plot(inds, termdict[value][0])
+            to = get_index(data["tracktime"], start)
+            if end > 0.0:
+                tf = get_index(data["tracktime"], end)
             else:
-                to = get_index(data["tracktime"], start)
-                if end > 0.0:
-                    tf = get_index(data["tracktime"], end)
-                else:
-                    tf = get_index(data["tracktime"], data["tracktime"][-1])
-                ax.plot(data["tracktime"][to:tf], termdict[value][0][to:tf])
-        ax.set_title(termdict[value][1] + " vs Time")
+                tf = len(data["tracktime"])
+            if vsphase == True:
+                title = "%s vs Phase"%(termdict[value][1])
+                newphase = np.interp(data["tracktime"], data["time"], termdict["phase"][0])
+                xvals = newphase[to:tf]
+                yvals = termdict[value][0][to:tf]
+            else:
+                title = "%s vs Time"%(termdict[value][1])
+                xvals = data["tracktime"][to:tf]
+                yvals = termdict[value][0][to:tf]
+        elif value == "omega":
+            to = get_index(data["otime"], start)
+            if end > 0.0:
+                tf = get_index(data["otime"], end)
+            else:
+                tf = len(data["otime"])
+            if vsphase == True:
+                title = "%s vs Phase"%(termdict[value][1])
+                newphase = np.interp(data["otime"], data["time"], termdict["phase"][0])
+                xvals = newphase[to:tf]
+                yvals = termdict[value][0][to:tf]
+            else:
+                title = "%s vs Time"%(termdict[value][1])
+                xvals = data["otime"][to:tf]
+                yvals = termdict[value][0][to:tf]
+        ax.plot(xvals, yvals)
+        if linefit == True:
+            stuff = np.polyfit(xvals, yvals, 1)
+            ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label="Slope: {res:.3e}".format(res=stuff[0]))
+            ax.legend()
+        ax.set_title(title)
         
     else:
         print("Not a valid plottable. Chose one of the following:")
@@ -132,6 +167,133 @@ def plotvalue(data, value, vsindex=False, start=0, end=-1):
             print("'" + name + "':", termdict[name][1])
     return True
     
+def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1):
+    '''
+    Parameters
+    ----------
+    data : single dict OR list/array of dicts
+        orbit dictionar(y/ies). Inputting a single dict will turn it into a list.
+    value : string
+        variable to plot
+    vsphase : bool, optional
+        decide whether you're plotting against coordinate time or phase. The default is False, which corresponds to time.
+    linefit : bool, optional
+        toggle linear fitting. Defaults to True
+    start : int, optional
+        starting time or phase. The default is 0.
+    end : int, optional
+        ending time or phase. The default is -1.
+
+    Returns
+    -------
+    bool
+        True!
+
+    '''
+    # The time thing becomes an issue, since I'm using geometric time that could be different for each orbit
+    # Although now that I think about it that's been an issue from the beginning
+    # Hadn't even considered it until now
+    # Actually it's all based on the central body so?? Shut up??
+    
+    if type(datalist) != list:
+        datalist = [datalist]
+    fig, ax = plt.subplots()
+    colors = list(mcolors.TABLEAU_COLORS)
+    for data in datalist:
+        # ["value": [location in data dict, Value name, extra bit if timing is weird]]
+        termdict = {"time": [data["time"], "Coordinate Time"],
+                    "radius": [data["pos"][:,0], "Radius"],
+                    "theta": [data["pos"][:,1], "Theta"],
+                    "phase": [data["pos"][:,2]/(2*np.pi), "Phase"],
+                    "r0": [data["r0"], "Semimajor Axis"],
+                    "pot_min": [data["pot_min"], "Effective Potential Minimum"],
+                    "ecc": [data["e"], "Eccentricity"],
+                    "semilat": [data["r0"]*(1 - data["e"]**2), "Semilatus-Rectum"],
+                    "inc": [data["inc"], "Inclination"],
+                    "periapse": [data["it"], "Periapse"],
+                    "apoapse": [data["ot"], "Apoapse"],
+                    "omega": [data["omega"], "Phi Position of Periapse", "otime"],
+                    "otime": [data["otime"], "Time of Periapse", "otime"],
+                    "asc_node": [data["asc_node"], "Phi Position of Ascending Node", "asc_node_time"],
+                    "asc_node_time": [data["asc_node_time"], "Time of Ascending Node", "asc_node_time"],
+                    "semi_maj": [0.5*(data["it"] + data["ot"]), "Semimajor Axis"],
+                    "semi_lat": [0.5*(data["it"] + data["ot"])*(1 - data["e"]**2), "Semilatus Rectum"],
+                    "radial_v": [data["all_vel"][:,1], "Radial Velocity"],
+                    "theta_v": [data["all_vel"][:,2], "Theta Velocity"],
+                    "phi_v": [data["all_vel"][:,3], "Phi Velocity"],
+                    "total_v": [data["vel"], "Velocity"],
+                    "radial_freq": [data["freqs"][:, 0], "Radial Frequency"],
+                    "theta_freq": [data["freqs"][:, 1], "Theta Frequency"],
+                    "phi_freq": [data["freqs"][:, 2], "Phi Frequency"],
+                    "energy": [data["energy"], "Specific Energy"],
+                    "l_momentum": [data["phi_momentum"], "Specific Angular Momentum"],
+                    "carter": [data["carter"], "Carter Constant"],
+                    "qarter": [data["qarter"], "Carter Constant (Unnormalized)"],
+                    "l_momentumx": [data["Lx_momentum"], "Specific Angular Momentum (x-component)"],
+                    "l_momentumy": [data["Ly_momentum"], "Specific Angular Momentum (y-component)"],
+                    "l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)"]}
+        
+        if (type(value) == str) and (value in termdict):
+            if len(termdict[value][0]) == len(data["time"]):
+                if vsphase == True:
+                    title = "%s vs Phase"%(termdict[value][1])
+                    xvals = termdict["phase"][0][start:end]
+                    yvals = termdict[value][0][start:end]
+                else:
+                    title = "%s vs Time"%(termdict[value][1])
+                    to = get_index(data["time"], start)
+                    if end > 0.0:
+                        tf = get_index(data["time"], end)
+                    else:
+                        tf = len(data["time"])
+                    xvals = termdict["time"][0][to:tf]
+                    yvals = termdict[value][0][to:tf]
+            elif len(termdict[value][0]) == len(data["tracktime"]):
+                to = get_index(data["tracktime"], start)
+                if end > 0.0:
+                    tf = get_index(data["tracktime"], end)
+                else:
+                    tf = len(data["tracktime"])
+                if vsphase == True:
+                    title = "%s vs Phase"%(termdict[value][1])
+                    newphase = np.interp(data["tracktime"], data["time"], termdict["phase"][0])
+                    xvals = newphase[to:tf]
+                    yvals = termdict[value][0][to:tf]
+                else:
+                    title = "%s vs Time"%(termdict[value][1])
+                    xvals = data["tracktime"][to:tf]
+                    yvals = termdict[value][0][to:tf]
+            else:
+                timething = termdict[termdict[value][2]][0]
+                #change otime to timething
+                to = get_index(timething, start)
+                if end > 0.0:
+                    tf = get_index(timething, end)
+                else:
+                    tf = len(timething)
+                if vsphase == True:
+                    title = "%s vs Phase"%(termdict[value][1])
+                    newphase = np.interp(timething, data["time"], termdict["phase"][0])
+                    xvals = newphase[to:tf]
+                    yvals = termdict[value][0][to:tf]
+                else:
+                    title = "%s vs Time"%(termdict[value][1])
+                    xvals = timething[to:tf]
+                    yvals = termdict[value][0][to:tf]
+            ax.plot(xvals, yvals, color=colors[datalist.index(data)%len(colors)])
+            if linefit == True:
+                stuff = np.polyfit(xvals, yvals, 1)
+                ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[datalist.index(data)%len(colors)])
+        
+        else:
+            print("Not a valid plottable. Chose one of the following:")
+            for name in termdict:
+                print("'" + name + "':", termdict[name][1])
+            return False
+    ax.legend()
+    ax.set_title(title)
+    return True
+
 def comparevalues(data, values, start=0, end=-1, leg=True):
     clean_list = []
     if type(values) != list:
@@ -419,18 +581,18 @@ def physplots(datalist, merge=False, start=0.0, end=-1.0, fit=True, leg=True):
         to1 = get_index(data["time"], start)
         #print(to1)
         if end == -1:
-            tf1 = get_index(data["time"], data["time"][-1])
+            tf1 = len(data["time"]) #get_index(data["time"], data["time"][-1])
         else: 
             tf1 = get_index(data["time"], end)
             
         to2 = get_index(data["tracktime"], start)
         if end == -1:
-            tf2 = get_index(data["tracktime"], data["tracktime"][-1])
+            tf2 = len(data["time"]) #get_index(data["tracktime"], data["tracktime"][-1])
         else: 
             tf2 = get_index(data["tracktime"], end)
         
         min_time = min(data["time"][to1], min_time)
-        max_time = max(data["time"][tf1], max_time)
+        max_time = max(data["time"][tf1], max_time) if end != -1 else max(data["time"][-1], max_time)
         
         ax_list1[0].plot(data["time"][to1:tf1], data["pos"][to1:tf1, 0], label=data["name"])
         ax_list1[0].set_title('Radius vs Time')
@@ -509,7 +671,7 @@ def physplots(datalist, merge=False, start=0.0, end=-1.0, fit=True, leg=True):
     else:
         return True
 
-def ani_thing3(data, name, ortho=False, zoom=1.0, ele=30, azi=-60, cb=True, numturns=10, fid=1):
+def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=True, cb=True, numturns=10, fid=1):
     '''
     Creates an animation of a test particle's path through space
     
@@ -531,6 +693,9 @@ def ani_thing3(data, name, ortho=False, zoom=1.0, ele=30, azi=-60, cb=True, numt
     azi : float
         determines azimuthal viewing angle when plotting in 3D, in degrees relative to positive x axis
         defaults to -60 - 60 degrees behind positive x axis
+    scroll : bool
+        determines whether the bounds of the plot will shift to track the orbit during its evolution
+        defaults to True
     cb : bool
         determines whether or not to visualize event horizon and ergosphere (if applicable) of central body
         defaults to False
@@ -546,6 +711,9 @@ def ani_thing3(data, name, ortho=False, zoom=1.0, ele=30, azi=-60, cb=True, numt
     True
     '''
     import matplotlib.animation as animation
+    
+    if name == False:
+        name=data["name"][:10] + time.strftime("%D:%H:%M", time.localtime())
     
     int_sphere, int_time = mm.interpolate(data["pos"], data["time"], supress = False)
     X = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.cos(int_sphere[:,2])
@@ -590,11 +758,11 @@ def ani_thing3(data, name, ortho=False, zoom=1.0, ele=30, azi=-60, cb=True, numt
             cond = (np.arccos(np.dot(carts, V)/r) < np.pi - B_)
             X, Y, Z = np.transpose(np.array([carts[i] if cond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(cond))]))
             
-        
-        ax.set(xlim3d=(-rbound, rbound), xlabel='X')
-        ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
-        ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
-        ax.set_box_aspect((rbound, rbound, rbound))
+        if scroll == False:
+            ax.set(xlim3d=(-rbound, rbound), xlabel='X')
+            ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
+            ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
+            ax.set_box_aspect((rbound, rbound, rbound))
         
         def update_line(num, xdata, ydata, zdata, line):
             full = int(len(xdata)/num_steps)
@@ -605,6 +773,18 @@ def ani_thing3(data, name, ortho=False, zoom=1.0, ele=30, azi=-60, cb=True, numt
             print(len(xdata), num_steps, full, num)
             #print(beg, full*num, full*num - beg, first_turn)
             line.set_data_3d(xdata[beg:full*num], ydata[beg:full*num], zdata[beg:full*num])
+            
+            if scroll == True:
+                try:
+                    rbound = max((xdata[beg:full*num]**2 + ydata[beg:full*num]**2 + zdata[beg:full*num]**2)**0.5)*1.05  
+                except:
+                    rbound = max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05 
+                rbound = max(rbound/zoom, 6)
+                
+                ax.set(xlim3d=(-rbound, rbound), xlabel='X')
+                ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
+                ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
+                ax.set_box_aspect((rbound, rbound, rbound))
             return line
     else:
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(8,8))
@@ -621,6 +801,13 @@ def ani_thing3(data, name, ortho=False, zoom=1.0, ele=30, azi=-60, cb=True, numt
         hor_ratio = legend.get_window_extent().width/ fig.get_window_extent().width
         ver_ratio = legend.get_window_extent().height/ fig.get_window_extent().height
         legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))
+        
+        if scroll == False:
+            rbound = max(data["pos"][:,0])*1.05/zoom
+            ax2.set_xlim(-rbound, rbound)
+            ax2.set_ylim(-rbound, rbound)
+            ax2.set_aspect('equal')
+        
         def update_line(num, xdata, ydata, zdata, line):
             full = len(xdata)//num_steps
             if numturns == False:
@@ -632,15 +819,16 @@ def ani_thing3(data, name, ortho=False, zoom=1.0, ele=30, azi=-60, cb=True, numt
             line[1].set_data(xdata[beg:end], zdata[beg:end])
             line[2].set_data(ydata[beg:end], zdata[beg:end])
             
-            try:
-                rbound = max((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05  
-            except:
-                rbound = max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05 
+            if scroll == True:
+                try:
+                    rbound = max((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05  
+                except:
+                    rbound = max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05 
+    
+                ax2.set_xlim(-rbound, rbound)
+                ax2.set_ylim(-rbound, rbound)
+                ax2.set_aspect('equal')
 
-            ax2.set_xlim(-rbound, rbound)
-            ax2.set_ylim(-rbound, rbound)
-            ax2.set_aspect('equal')
-            print(len(xdata)-beg)
             return line
         
     # Creating the Animation object
@@ -708,7 +896,9 @@ def potentplotter2(cons, a, rbounds=[-1, -1]):
             rbounds2 = np.linspace(rn*0.95, rx*1.05, num=100)
         else:
             rbounds2 = np.linspace(rbounds[0], rbounds[-1], num=100)
+        print("zah",rbounds2[0],rbounds2[-1])
         maxbounds = [min(maxbounds[0], rbounds2[0]), max(maxbounds[1], rbounds2[-1])]
+        print(maxbounds)
         ax1.plot(rbounds2, R(rbounds2))
     ax1.hlines(0.0, maxbounds[0], maxbounds[-1], color="black", zorder=1)
 
@@ -885,7 +1075,7 @@ def wavelething(data):
     waves, tim = mm.full_transform(data, rad*100)
     samper = tim[1]-tim[0]
     print(samper)
-    period = 2*np.pi*np.sqrt(data["r0"][0]**3)
+    period = np.real(2*np.pi*np.sqrt(data["r0"][0]**3))
     print(period)
     freq = 2*np.pi/period
     print(freq)
@@ -912,6 +1102,266 @@ def wavelething(data):
     plt.xlabel('Time (GU)')
     plt.show()
     return(coef)
+
+def peters_compare(data, plot=True):
+    timen = data["tracktime"]
+    mu = data["inputs"][2]
+    ecc = data["e"]
+    r0 = data["r0"]
+    dadt = (-64/5)*mu*(1+mu)*(1 + (73/24)*(ecc**2) + (37/96)*(ecc**4))/((r0**3)*((1-ecc**2)**(7/2)))
+    dedt = (-304/15)*ecc*mu*(1+mu)*(1 + (121/304)*(ecc**2))/((r0**4)*((1-ecc**2)**(5/2)))
+    dade = (12/19)*(r0/ecc)*(1 + (73/24)*(ecc**2) + (37/96)*(ecc**4))/((1-ecc**2)*(1 + (121/304)*(ecc**2)))
+    con = r0[0]/((ecc[0]**(12/19))*(1 + (121/304)*(ecc[0]**2))/(1-ecc[0]**2))
+    aofe = con*((ecc**(12/19))*(1 + (121/304)*(ecc**2))/(1-ecc**2))
+    
+    num = 10
+    modtime = 0.5*(timen[:-num] + timen[num:])
+    moddadt = (r0[num:] - r0[:-num])/(timen[num:] - timen[:-num])
+    moddedt = (ecc[num:] - ecc[:-num])/(timen[num:] - timen[:-num])
+    moddade = (r0[num:] - r0[:-num])/(ecc[num:] - ecc[:-num])
+    
+    if plot==True:
+        fig1 = plt.figure()
+        ax11 = fig1.add_subplot(111, label="1")
+        ax11.set_title("r0")
+        ax12 = fig1.add_subplot(111, label="2", frame_on=False)
+        ax12.set_xticks([])
+        ax12.yaxis.tick_right()
+        ax12.set_ylabel("Percent Difference", color="C3")
+        ax12.yaxis.set_label_position('right')
+        ax11.plot(modtime, moddadt, label="true r0 deriv")
+        ax11.plot(timen, dadt, label="peters r0 deriv")
+        ax12.plot(modtime, 100*np.abs(moddadt - np.interp(modtime, timen, dadt))/np.abs(np.interp(modtime, timen, dadt)), label="dadt %diff", color="C3")
+        
+        fig2 = plt.figure()
+        ax21 = fig2.add_subplot(111, label="1")
+        ax21.set_title("e")
+        ax22 = fig2.add_subplot(111, label="2", frame_on=False)
+        ax22.set_xticks([])
+        ax22.yaxis.tick_right()
+        ax22.set_ylabel("Percent Difference", color="C3")
+        ax22.yaxis.set_label_position('right')
+        ax21.plot(modtime, moddedt, label="true ecc deriv")
+        ax21.plot(timen, dedt, label="peters ecc deriv")
+        ax22.plot(modtime, 100*np.abs(moddedt - np.interp(modtime, timen, dedt))/np.abs(np.interp(modtime, timen, dedt)), label="dadt %diff", color="C3")
+        
+        fig3 = plt.figure()
+        ax31 = fig3.add_subplot(111, label="1")
+        ax31.set_title("r0/e")
+        ax32 = fig3.add_subplot(111, label="2", frame_on=False)
+        ax32.set_xticks([])
+        ax32.yaxis.tick_right()
+        ax32.set_ylabel("Percent Difference", color="C3")
+        ax32.yaxis.set_label_position('right')
+        ax31.plot(0.5*(ecc[num:] + ecc[:-num]), moddade, label="true dade")
+        ax31.plot(ecc, dade, label="peters dade")
+        ax32.plot((ecc[num:] - ecc[:-num]), 100*np.abs(moddade - np.interp((ecc[num:] - ecc[:-num]), ecc, dade))/np.abs(np.interp((ecc[num:] - ecc[:-num]), ecc, dade)), label="dade %diff", color="C3")
+    
+        fig4 = plt.figure()
+        ax41 = fig4.add_subplot(111, label="1")
+        ax41.set_title("aofe")
+        ax42 = fig4.add_subplot(111, label="2", frame_on=False)
+        ax42.set_xticks([])
+        ax42.yaxis.tick_right()
+        ax42.set_ylabel("Percent Difference", color="C3")
+        ax42.yaxis.set_label_position('right')
+        ax41.plot(ecc, r0, label="true ecc deriv")
+        ax41.plot(ecc, aofe, label="peters ecc deriv")
+        ax42.plot(ecc, 100*np.abs(r0 - aofe)/np.abs(aofe), label="aofe %diff", color="C3")
+        plt.show()
+    else:
+        return [np.mean(100*np.abs(moddadt - np.interp(modtime, timen, dadt))/np.abs(np.interp(modtime, timen, dadt))),
+                np.mean(100*np.abs(moddedt - np.interp(modtime, timen, dedt))/np.abs(np.interp(modtime, timen, dedt))),
+                np.mean(100*np.abs(moddade - np.interp((ecc[num:] - ecc[:-num]), ecc, dade))/np.abs(np.interp((ecc[num:] - ecc[:-num]), ecc, dade))),
+                np.mean(100*np.abs(r0 - aofe)/np.abs(aofe))]
+
+def peters_compare2(data, plot=True):
+    timen = data["tracktime"]
+    mu = data["inputs"][2]
+    ecc = data["e"]
+    r0 = data["r0"]
+    dadt = (-64/5)*mu*(1+mu)*(1 + (73/24)*(ecc**2) + (37/96)*(ecc**4))/((r0**3)*((1-ecc**2)**(7/2)))
+    dedt = (-304/15)*ecc*mu*(1+mu)*(1 + (121/304)*(ecc**2))/((r0**4)*((1-ecc**2)**(5/2)))
+    dade = (12/19)*(r0/(ecc+1e-15))*(1 + (73/24)*(ecc**2) + (37/96)*(ecc**4))/((1-ecc**2)*(1 + (121/304)*(ecc**2)))
+    con = r0[0]/((ecc[0]**(12/19))*(1 + (121/304)*(ecc[0]**2))/(1-ecc[0]**2))
+    aofe = con*((ecc**(12/19))*(1 + (121/304)*(ecc**2))/(1-ecc**2))
+    
+    calcr0 = r0[:-1] + dadt[:-1]*np.diff(timen)
+    calce = ecc[:-1] + dedt[:-1]*np.diff(timen)
+    calcaofe = r0[:-1] + dade[:-1]*np.diff(ecc)
+    
+    calc2r0, calc2e, calc2aofe = np.array([r0[0]]), np.array([ecc[0]]), np.array([r0[0]])
+    for dt in np.diff(timen):
+        r, e, a = calc2r0[-1], calc2e[-1], calc2aofe[-1]
+        calc2r0 = np.append(calc2r0, r + dt*(-64/5)*mu*(1+mu)*(1 + (73/24)*(e**2) + (37/96)*(e**4))/((r**3)*((1-e**2)**(7/2))))
+        calc2e = np.append(calc2e, e + dt*(-304/15)*e*mu*(1+mu)*(1 + (121/304)*(e**2))/((r**4)*((1-e**2)**(5/2))))
+        calc2aofe = np.append(calc2aofe, a + (calc2e[-1] - calc2e[-2])*(12/19)*(a/e)*(1 + (73/24)*(e**2) + (37/96)*(e**4))/((1-e**2)**(1 + (121/304)*(e**2))))
+    
+    if plot==True:
+        fig1 = plt.figure()
+        ax11 = fig1.add_subplot(111, label="1")
+        ax11.set_title("r0")
+        ax12 = fig1.add_subplot(111, label="2", frame_on=False)
+        ax12.set_xticks([])
+        ax12.yaxis.tick_right()
+        ax12.set_ylabel("Percent Difference", color="C3")
+        ax12.yaxis.set_label_position('right')
+        ax11.plot(timen[1:], r0[1:], label="r0")
+        ax11.plot(timen[1:], calcr0, label="calcr0")
+        ax11.plot(timen, calc2r0, label="calc2r0")
+        ax12.plot(timen[1:], 100*np.abs(r0[1:] - calcr0)/calcr0, label="dadt %diff", color="C3")
+        #ax12.plot(timen[1:], 100*np.abs(r0[1:] - calc2r0[1:])/calc2r0[1:], label="dadt %diff", color="C4")
+        
+        fig2 = plt.figure()
+        ax21 = fig2.add_subplot(111, label="1")
+        ax21.set_title("e")
+        ax22 = fig2.add_subplot(111, label="2", frame_on=False)
+        ax22.set_xticks([])
+        ax22.yaxis.tick_right()
+        ax22.set_ylabel("Percent Difference", color="C3")
+        ax22.yaxis.set_label_position('right')
+        ax21.plot(timen[1:], ecc[1:], label="e")
+        ax21.plot(timen[1:], calce, label="calce")
+        ax21.plot(timen, calc2e, label="calc2e")
+        ax22.plot(timen[1:], 100*np.abs(ecc[1:] - calce)/calce, label="dadt %diff", color="C3")
+        #ax22.plot(timen[1:], 100*np.abs(ecc[1:] - calc2e[1:])/calc2e[1:], label="dadt %diff", color="C4")
+        
+        fig3 = plt.figure()
+        ax31 = fig3.add_subplot(111, label="1")
+        ax31.set_title("r0/e")
+        ax32 = fig3.add_subplot(111, label="2", frame_on=False)
+        ax32.set_xticks([])
+        ax32.yaxis.tick_right()
+        ax32.set_ylabel("Percent Difference", color="C3")
+        ax32.yaxis.set_label_position('right')
+        ax31.plot(ecc[1:], aofe[1:], label="r0")
+        ax31.plot(ecc[1:], calcaofe, label="calcr0")
+        ax31.plot(ecc, calc2aofe, label="calc2r0")
+        ax32.plot(ecc[1:], 100*np.abs(aofe[1:] - calcaofe)/calcaofe, label="dadt %diff", color="C3")
+        #ax32.plot(ecc[1:], 100*np.abs(aofe[1:] - calc2aofe[1:])/calc2aofe[1:], label="dadt %diff", color="C4")
+        '''
+        fig4 = plt.figure()
+        ax41 = fig4.add_subplot(111, label="1")
+        ax41.set_title("aofe")
+        ax42 = fig4.add_subplot(111, label="2", frame_on=False)
+        ax42.set_xticks([])
+        ax42.yaxis.tick_right()
+        ax42.set_ylabel("Percent Difference", color="C3")
+        ax42.yaxis.set_label_position('right')
+        ax41.plot(ecc, r0, label="true ecc deriv")
+        ax41.plot(ecc, aofe, label="peters ecc deriv")
+        ax42.plot(ecc, 100*np.abs(r0 - aofe)/np.abs(aofe), label="aofe %diff", color="C3")
+        '''
+        plt.show()
+    else:
+        #print(dade)
+        return ["{calc:.5e}, {calc2:.5e}".format(calc=np.mean(100*np.abs(r0[1:] - calcr0)/calcr0), calc2=np.mean(100*np.abs(r0[1:] - calc2r0[1:])/calc2r0[1:])),
+                "{calc:.5e}, {calc2:.5e}".format(calc=np.mean(200*np.abs(ecc[1:] - calce)/(np.abs(ecc[1:]) + np.abs(calce))), calc2=np.mean(200*np.abs(ecc[1:] - calc2e[1:])/(np.abs(ecc[1:]) + np.abs(calc2e[1:])))),
+                "{calc:.5e}, {calc2:.5e}".format(calc=np.mean(100*np.abs(aofe[1:] - calcaofe)/calcaofe), calc2=np.mean(100*np.abs(aofe[1:] - calc2aofe[1:])/calc2aofe[1:]))]
+
+def get_peter_diffs(r0, ecc, mu):
+    dadt = (-64/5)*mu*(1+mu)*(1 + (73/24)*(ecc**2) + (37/96)*(ecc**4))/((r0**3)*((1-ecc**2)**(7/2)))
+    dedt = (-304/15)*ecc*mu*(1+mu)*(1 + (121/304)*(ecc**2))/((r0**4)*((1-ecc**2)**(5/2)))
+    return np.array([dadt, dedt])
+
+def new_RK(r0, ecc, mu, butcher, dt):
+    k = [get_peter_diffs(r0, ecc, mu)]
+    for i in range(len(butcher["nodes"])):                                        
+        param = np.array([r0, ecc])                                                     
+        for j in range(len(butcher["coeff"][i])):                                   
+            param += np.array(butcher["coeff"][i][j] * dt * k[j])                   
+        k.append(get_peter_diffs(*param, mu))                          
+    new_state = np.array([r0, ecc])
+    for val in range(len(k)):                                                     
+        new_state += k[val] * butcher["weights"][val] * dt                       
+    return new_state
+
+def peters_comp(data, dt):
+    mu = data["inputs"][2]
+    perc = 1
+    vals, T = [np.array([data["r0"][0], data["e"][0]])], [0.0]
+    end = data["tracktime"][-1]
+    state = vals[-1]
+    while T[-1] < end:
+        new_step = new_RK(*state, mu, mm.ck4, dt)
+        vals.append(new_step)
+        T.append(T[-1] + dt)
+        if round(100*T[-1]/end) > perc:
+            #print(T[-1])
+            perc += 1
+        state = np.copy(new_step)
+    vals = np.array(vals)
+    return T, vals[:,0], vals[:,1]
+
+def compbig(data, dt=False):
+    if dt == False:
+        dt = data["tracktime"][-1]/1000.0
+    T, r0, e = peters_comp(data, dt)
+    check = np.concatenate((np.where(r0 <= 0)[0], np.where(e <= 0)[0]))
+    if len(check) > 0:
+        end = min(check)
+        T = T[:end]
+        r0 = r0[:end]
+        e = e[:end]
+    dataT = np.real(data["tracktime"])
+    datar0 = np.real(data["r0"])
+    datae = np.real(data["e"])
+    
+    fig1 = plt.figure()
+    ax1 = fig1.add_subplot(111, label="1")
+    ax1.set_title(data["name"])
+    ax1.plot(data["tracktime"], data["r0"])
+    ax1.plot(T, r0)
+    ax12 = fig1.add_subplot(111, label="2", frame_on=False)
+    ax12.set_xticks([])
+    ax12.yaxis.tick_right()
+    ax12.set_ylabel("Percent Difference", color="C3")
+    ax12.yaxis.set_label_position('right')
+    ax12.plot(dataT, 100*np.abs(datar0 - np.interp(dataT, T, r0))/np.interp(dataT, T, r0), label="dadt %diff", color="C3")
+    #
+    fig2, ax2 = plt.subplots()
+    ax2.plot(data["tracktime"], data["e"])
+    ax2.plot(T, e)
+    ax22 = fig2.add_subplot(111, label="2", frame_on=False)
+    ax22.set_xticks([])
+    ax22.yaxis.tick_right()
+    ax22.set_ylabel("Percent Difference", color="C3")
+    ax22.yaxis.set_label_position('right')
+    ax22.plot(dataT, 200*np.abs(datae - np.interp(dataT, T, e))/(np.abs(datae) + np.abs(np.interp(dataT, T, e))), label="dadt %diff", color="C3")
+    #
+    fig3, ax3 = plt.subplots()
+    ax3.plot(data["e"], data["r0"])
+    ax3.plot(e, r0)
+    ax32 = fig3.add_subplot(111, label="2", frame_on=False)
+    ax32.set_xticks([])
+    ax32.yaxis.tick_right()
+    ax32.set_ylabel("Percent Difference", color="C3")
+    ax32.yaxis.set_label_position('right')
+    ax32.plot(datae, 100*np.abs(datar0 - np.interp(dataT, T, r0))/np.interp(dataT, T, r0), label="dadt %diff", color="C3")
+
+def compsmall(data, dt=False):
+    if dt == False:
+        dt = data["tracktime"][-1]/1000.0
+    T, r0, e = peters_comp(data, dt)
+
+    r0_pd = 100*np.abs(r0 - np.interp(T, np.real(data["tracktime"]), np.real(data["r0"])))/np.interp(T, np.real(data["tracktime"]), np.real(data["r0"]))
+    e_pd = 200*np.abs(e - np.interp(T, np.real(data["tracktime"]), np.real(data["e"])))/(np.abs(e) + np.abs(np.interp(T, np.real(data["tracktime"]), np.real(data["e"]))))
+    print("r0_pd mean/median/max:", np.mean(r0_pd), np.median(r0_pd), max(r0_pd))
+    print("r0_pd error linear slope:", np.polyfit(T, r0_pd/100.0, 1)[0])
+    print("e_pd mean/median/max:", np.mean(e_pd), np.median(e_pd), max(e_pd))
+    print("r0_pd error linear slope:", np.polyfit(T, np.abs(e - np.interp(T, np.real(data["tracktime"]), np.real(data["e"]))), 1)[0])
+    
+def compsmall2(data, dt=False):
+    if dt == False:
+        dt = data["tracktime"][-1]/1000.0
+    T, r0, e = peters_comp(data, dt)
+
+    r0_pd = np.abs(r0 - np.interp(T, np.real(data["tracktime"]), np.real(data["r0"])))/np.interp(T, np.real(data["tracktime"]), np.real(data["r0"]))
+    e_pd = np.abs(e - np.interp(T, np.real(data["tracktime"]), np.real(data["e"])))
+    #print("r0_pd error linear slope:", np.polyfit(T, r0_pd, 1)[0])
+    #print("e_pd error linear slope:", np.polyfit(T, e_pd, 1)[0])
+    return [np.polyfit(T, r0_pd, 1)[0], np.polyfit(T, e_pd, 1)[0]]
+        
 
 #Thing for plotting not-contour plots
 '''

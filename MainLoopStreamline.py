@@ -81,10 +81,17 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
         initQ = np.matmul(np.matmul(mm.kill_tensor(all_states[0], a), all_states[0][4:]), all_states[0][4:])    #initial Carter constant Q
         initC = initQ - (a*initE - initLz)**2                                          #initial adjusted Carter constant 
     pot_min = viable_cons([initE, initLz, initC], all_states[0], a)
+    count = 0
     while pot_min < 0.0:
+        count += 1
         initE += err_target
         pot_min = viable_cons([initE, initLz, initC], all_states[0], a)
-        print("RAGH")
+        if count < 20:
+            print("RAGH", pot_min)
+        elif count < 21:
+            print(inputs)
+        else:
+            break
                 
     coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
     coeff2 = np.array([(initE**2 - 1)*4, 6.0, ((a**2)*(initE**2 - 1) - initLz**2 - initC)*2, 2*((a*initE - initLz)**2) + 2*initC])
@@ -110,13 +117,15 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
     qarter = [initQ]           #Carter constant (Q)
     
     false_constants = [np.array([getEnergy(all_states[0], a), *getLs(all_states[0], mu)])]  #Cartesian approximation of L vector
+    
+    freqs = [mm.freqs_finder(initE, initLz, initC, a)]
                
     #tracker = [[r0, e, inner_turn, outer_turn, all_states[0][0], 0]]
                #r0, eccentricity, turning points, timestamp, index
     
     compErr = 0
     milestone = 0
-    issues = []
+    issues = [(None, None)]
     orbitside = np.sign(all_states[0][1] - r0)
     if orbitside == 0:
         orbitside = -1
@@ -160,12 +169,12 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                 E, L, C = constants[-1]
                 # if (high inclination) AND ((very close to pole AND approaching pole) OR (dTau is very small AND dTau is monotonically non-increasing))
                 if np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -1.55 and np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change):
-                    print("POW, ind=", i)
-                    print(new_step)
+                    #print("POW, ind=", i)
+                    #print(new_step)
                     new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
                     new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
                     new_step[6] = -new_step[6]
-                    print(new_step)
+                    #print(new_step)
                     break
         
                 old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
@@ -200,6 +209,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                     orbitCount += 0.5
                     if mu != 0.0:
                         condate = True
+                        #print(all_states[tracker[-1][-1]:i])
                         dcons = mm.peters_integrate6(all_states[tracker[-1][-1]:i], a, mu, tracker[-1][-1], i)
                         new_step, ch_cons = mm.new_recalc_state6(constants[-1], dcons, new_step, a)
                         pot_min = viable_cons(ch_cons, new_step, a)
@@ -217,6 +227,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
             
             #Update stuff!
             #updatetime = time.time()
+            #print(new_step)
             if (update == True):
                 if condate == False:
                     metric = mm.kerr(new_step, a)[0]
@@ -234,6 +245,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                     tracker.append([r0, e, inc, inner_turn, outer_turn, new_step[0], i])
                     constants.append([newE, newLz, newC])
                     qarter.append(newQ)
+                    freqs.append(mm.freqs_finder(newE, newLz, newC, a))
                 else:
                     constants.append(ch_cons)
                     qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2)
@@ -246,7 +258,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                     z2 = ((A + ch_cons[1]**2 + ch_cons[2]) - ((A + ch_cons[1]**2 + ch_cons[2])**2 - 4*A*ch_cons[2])**(1/2))/(2*A) if A != 0 else ch_cons[2]/(ch_cons[1]**2 + ch_cons[2])
                     inc = np.arccos(np.sqrt(z2))
                     tracker.append([r0, e, inc, inner_turn, outer_turn, new_step[0], i])
-           
+                    freqs.append(mm.freqs_finder(*ch_cons, a))
                 if True in np.iscomplex(tracker[-1]):
                     compErr += 1
                     print("issue")
@@ -274,6 +286,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
             dTau_change = dTau_change[:cap]
             constants = constants[:cap]
             qarter = qarter[:cap]
+            freqs = freqs[:cap]
             break
         except Exception as e:
             print("Ending program - ERROR")
@@ -285,6 +298,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
             dTau_change = dTau_change[:cap]
             constants = constants[:cap]
             qarter = qarter[:cap]
+            freqs = freqs[:cap]
             break
     print(len(issues), len(all_states))
     #unit conversion stuff
@@ -302,14 +316,28 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
     constants = np.array([entry*np.array([mass*mu*(c**2), mass*mass*mu*G/c, (mass*mass*mu*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
     false_constants = np.array(false_constants)
     qarter = np.array(qarter)
+    freqs = np.array(freqs)*(c**3)/(G*mass)
     interval = np.array(interval)
     dTau_change = np.array([entry * (G*mass)/(c**3) for entry in dTau_change])
     all_states = np.array([entry*np.array([(G*mass)/(c**3), (G*mass)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*mass), (c**3)/(G*mass)]) for entry in np.array(all_states)]) 
     tracker = np.array([entry*np.array([(G*mass)/(c**2), 1.0, 1.0, (G*mass)/(c**2), (G*mass)/(c**2), (G*mass)/(c**3), 1]) for entry in tracker])
     r = all_states[0][1]
     ind = argrelmin(all_states[:,1])[0]
-    omega, otime = all_states[ind,2], all_states[ind,0]
-    
+    omega, otime = all_states[ind,3] - 2*np.pi*np.arange(len(ind)), all_states[ind,0]
+    asc_node, asc_node_time = np.array([]), np.array([])
+    if max(all_states[:,2]) - min(all_states[:,2]) > 1e-15:
+        theta_derv = np.interp(all_states[:,0], 0.5*(all_states[:,0][:-1] + all_states[:,0][1:]), np.diff(all_states[:,2])/np.diff(all_states[:,0]))
+        ind2 = argrelmin(theta_derv)[0] #indices for the ascending node
+        ind3 = argrelmin(-theta_derv)[0] #indices for the descending node
+        asc_node, asc_node_time = all_states[ind2,3] - 2*np.pi*np.arange(len(ind2)), all_states[ind2,0] #subtract the normal phi advancement
+        try:
+            if ind2[0] > ind3[0]: #if the ascending node occurs after the descending node
+                #ascending node should be first because of how the program starts on default
+                asc_node = asc_node - np.ones(len(ind2))*2*np.pi #subtract a bit more for when comparing
+            if type(asc_node) != np.ndarray:
+                asc_node, asc_node_time = np.array([asc_node]), np.array([asc_node_time])
+        except:
+            pass
     if verbose == True:
         print("There were " + str(compErr) + " issues with complex roots/turning points.")
     final = {"name": label,
@@ -330,18 +358,19 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
              "Ly_momentum": false_constants[:, 2],
              "Lz_momentum": false_constants[:, 3],
              "spin": a,
-             "freqs": np.array([((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - (6/r) + pro*(8*a*(r**(-3/2))) - (3*((a/r)**(2)))),
-                                ((r**(3/2) + pro*a)**(-1))*np.sqrt(1 - pro*(4*a*(r**(-3/2))) + (3*((a/r)**(2)))),
-                                ((r**(3/2) + pro*a)**(-1))]) * (c**3)/(G*mass),
-             "r0": tracker[:,0],
+             "freqs": freqs,
+             "pot_min": tracker[:,0],
              "e": tracker[:,1],
              "inc": tracker[:,2],
              "it": tracker[:,3],
              "ot": tracker[:,4],
+             "r0": 0.5*(tracker[:,3] + tracker[:,4]),
              "tracktime": tracker[:,5],
              "trackix": tracker[:,6],
              "omega": omega,
              "otime": otime,
+             "asc_node": asc_node,
+             "asc_node_time": asc_node_time,
              "stop": stop,
              "plunge": plunge,
              "issues": issues}
@@ -384,19 +413,87 @@ def clean_continue(data, endflag = False, verbose=False):
              "Ly_momentum": np.concatenate((data["Ly_momentum"], newdata["Ly_momentum"])),
              "Lz_momentum": np.concatenate((data["Lz_momentum"], newdata["Lz_momentum"])),
              "spin": a,
-             "freqs": data["freqs"],
-             "r0": np.concatenate((data["r0"], newdata["r0"])),
+             "freqs": np.concatenate((data["freqs"], newdata["freqs"])),
+             "pot_min":np.concatenate((data["pot_min"], newdata["pot_min"])),
              "e": np.concatenate((data["e"], newdata["e"])),
              "inc": np.concatenate((data["inc"], newdata["inc"])),
              "it": np.concatenate((data["it"], newdata["it"])),
              "ot": np.concatenate((data["ot"], newdata["ot"])),
+             "r0": np.concatenate((data["r0"], newdata["r0"])),
              "tracktime": np.concatenate((data["tracktime"], newdata["tracktime"])),
              "trackix": np.concatenate((data["trackix"], newdata["trackix"])),
-             "omega": np.concatenate((data["omega"][:lastcross], newdata["omega"])),
+             "omega": np.concatenate((data["omega"][:lastcross], newdata["omega"] - 2*np.pi*len(data["omega"][:lastcross]))),
              "otime": np.concatenate((data["otime"][:lastcross], newdata["otime"])),
+             "asc_node": np.concatenate((data["asc_node"][:lastcross], newdata["asc_node"] - 2*np.pi*len(data["asc_node"][:lastcross]))),
+             "asc_node_time": np.concatenate((data["asc_node_time"][:lastcross], newdata["asc_node_time"])),
              "stop": newdata["stop"],
              "plunge": newdata["plunge"],
              "issues": np.concatenate((data["issues"], newdata["issues"]))}
+    return final
+
+def hopper(mass, a, mu, err_target, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav"):
+    orbs = []
+    orbs.append(clean_inspiral3(mass, a, mu, "phi_orbit > 50", err_target, label=label, cons=cons, velorient=velorient, vel4=vel4, params=params, pos=params, veltrue=veltrue, units=units, verbose=True))
+    final = orbs[-1].copy()
+    while orbs[-1]["plunge"] == False:
+        trackphi = np.searchsorted(orbs[-1]["time"], orbs[-1]["tracktime"])
+        dEdphi = np.polyfit(trackphi, orbs[-1]["energy"], 1)[0]
+        dLdphi = np.polyfit(trackphi, orbs[-1]["phi_momentum"], 1)[0]
+        dCdphi = np.polyfit(trackphi, orbs[-1]["carter"], 1)[0]
+        dtdphi, dphi = np.ptp(orbs[-1]["time"])/np.ptp(orbs[-1]["pos"][:,2]), 5000
+        newE, newL, newC = (np.array([dEdphi, dLdphi, dCdphi])*dphi + np.array([orbs[-1]["energy"][-1], orbs[-1]["phi_momentum"][-1], orbs[-1]["carter"][-1]]))/np.array([mu, mu, mu**2])
+        r0 = mm.set_u_kerr(0.0, cons=[newE, newL, newC])[0][1]
+        print(r0, "HEWWO!!")
+        new_end = "phi_orbit > %s"%(orbs[-1]["pos"][-1,2]/(2*np.pi) + dphi/(2*np.pi) + 50)
+        while r0 < 6:
+            print("last r0", orbs[-1]["r0"][-1])
+            if orbs[-1]["r0"][-1] < 7:
+                dphi = 0.0
+                newE, newL, newC = (np.array([dEdphi, dLdphi, dCdphi])*dphi + np.array([orbs[-1]["energy"][-1], orbs[-1]["phi_momentum"][-1], orbs[-1]["carter"][-1]]))/np.array([mu, mu, mu**2])
+                r0 = mm.set_u_kerr(0.0, cons=[newE, newL, newC])[0][1]
+                new_end = "radius < 2"
+                break
+            else:
+                dphi *= 0.5
+                newE, newL, newC = (np.array([dEdphi, dLdphi, dCdphi])*dphi + np.array([orbs[-1]["energy"][-1], orbs[-1]["phi_momentum"][-1], orbs[-1]["carter"][-1]]))/np.array([mu, mu, mu**2])
+                r0 = mm.set_u_kerr(0.0, cons=[newE, newL, newC])[0][1]
+                print(r0, "HEWWO????")
+                new_end = "phi_orbit > %s"%(orbs[-1]["pos"][-1,2]/(2*np.pi) + dphi/(2*np.pi) + 50)
+        #return newE, newL, newC, [orbs[-1]["time"][-1] + dtdphi*dphi, r0, np.pi/2, orbs[-1]["pos"][-1,2] + dphi]
+        orbs.append(clean_inspiral3(mass, a, mu, new_end, err_target, label=label, cons=[newE, newL, newC], pos=[orbs[-1]["time"][-1] + dtdphi*dphi, r0, np.pi/2, orbs[-1]["pos"][-1,2] + dphi], verbose=True))
+        final.update({"raw": np.concatenate((final["raw"], orbs[-1]["raw"])),
+                     "pos": np.concatenate((final["pos"], orbs[-1]["pos"])),
+                     "all_vel": np.concatenate((final["all_vel"], orbs[-1]["all_vel"])), 
+                     "time": np.concatenate((final["time"], orbs[-1]["time"])),
+                     "interval": np.concatenate((final["interval"], orbs[-1]["interval"])),
+                     "vel": np.concatenate((final["vel"], orbs[-1]["vel"])),
+                     "dTau_change": np.concatenate((final["dTau_change"], orbs[-1]["dTau_change"])),
+                     "energy": np.concatenate((final["energy"], orbs[-1]["energy"])),
+                     "phi_momentum": np.concatenate((final["phi_momentum"], orbs[-1]["phi_momentum"])),
+                     "carter": np.concatenate((final["carter"], orbs[-1]["carter"])),
+                     "qarter": np.concatenate((final["qarter"], orbs[-1]["qarter"])),
+                     "energy2": np.concatenate((final["energy2"], orbs[-1]["energy2"])),
+                     "Lx_momentum": np.concatenate((final["Lx_momentum"], orbs[-1]["Lx_momentum"])),
+                     "Ly_momentum": np.concatenate((final["Ly_momentum"], orbs[-1]["Ly_momentum"])),
+                     "Lz_momentum": np.concatenate((final["Lz_momentum"], orbs[-1]["Lz_momentum"])),
+                     "freqs": np.concatenate((final["freqs"], orbs[-1]["freqs"])),
+                     "pot_min":np.concatenate((final["pot_min"], orbs[-1]["pot_min"])),
+                     "e": np.concatenate((final["e"], orbs[-1]["e"])),
+                     "inc": np.concatenate((final["inc"], orbs[-1]["inc"])),
+                     "it": np.concatenate((final["it"], orbs[-1]["it"])),
+                     "ot": np.concatenate((final["ot"], orbs[-1]["ot"])),
+                     "r0": np.concatenate((final["r0"], orbs[-1]["r0"])),
+                     "tracktime": np.concatenate((final["tracktime"], orbs[-1]["tracktime"])),
+                     "trackix": np.concatenate((final["trackix"], orbs[-1]["trackix"])),
+                     "omega": np.concatenate((final["omega"], orbs[-1]["omega"] - 2*np.pi*len(final["omega"]))),
+                     "otime": np.concatenate((final["otime"], orbs[-1]["otime"])),
+                     "asc_node": np.concatenate((final["asc_node"], orbs[-1]["asc_node"] - 2*np.pi*len(final["asc_node"]))),
+                     "asc_node_time": np.concatenate((final["asc_node_time"], orbs[-1]["asc_node_time"])),
+                     "stop": orbs[-1]["stop"],
+                     "plunge": orbs[-1]["plunge"],
+                     "issues": np.concatenate((final["issues"], orbs[-1]["issues"]))})
+        if orbs[-1]["stop"] == True:
+            break
     return final
 
 def dict_saver(data, filename):
