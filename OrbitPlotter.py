@@ -34,7 +34,7 @@ def get_index(array, time):
     '''
     idx = np.abs(array - time).argmin()
     val = array.flat[idx]
-    print(time, idx, val, "yo")
+    #print(time, idx, val, "yo")
     return np.where(array == val)[0][0]
 
 def sph2cart(pos):
@@ -167,7 +167,7 @@ def plotvalue(data, value, vsphase=False, linefit=True, start=0, end=-1):
             print("'" + name + "':", termdict[name][1])
     return True
     
-def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1):
+def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xscale='linear', yscale='linear'):
     '''
     Parameters
     ----------
@@ -214,6 +214,8 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1):
                     "apoapse": [data["ot"], "Apoapse"],
                     "omega": [data["omega"], "Phi Position of Periapse", "otime"],
                     "otime": [data["otime"], "Time of Periapse", "otime"],
+                    "omegadot": [np.diff(data["omega"])/np.diff(data["otime"]), "Advance of Periapse", "odottime"],
+                    "odottime": [0.5*data["otime"][:-1] + 0.5*data["otime"][1:], "Periadvance time", "odottime"],
                     "asc_node": [data["asc_node"], "Phi Position of Ascending Node", "asc_node_time"],
                     "asc_node_time": [data["asc_node_time"], "Time of Ascending Node", "asc_node_time"],
                     "semi_maj": [0.5*(data["it"] + data["ot"]), "Semimajor Axis"],
@@ -284,13 +286,16 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1):
             if linefit == True:
                 stuff = np.polyfit(xvals, yvals, 1)
                 ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[datalist.index(data)%len(colors)])
+                ax.legend()
         
         else:
             print("Not a valid plottable. Chose one of the following:")
             for name in termdict:
                 print("'" + name + "':", termdict[name][1])
             return False
-    ax.legend()
+        
+    ax.set_xscale(xscale)
+    ax.set_yscale(yscale)
     ax.set_title(title)
     return True
 
@@ -345,7 +350,7 @@ def comparevalues(data, values, start=0, end=-1, leg=True):
     
     return True
 
-def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, ele=30, azi=-60, cb=False):
+def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, ele=30, azi=-60, cb=False, stitch=False):
     '''
     Plots one or more test particles' path through space
     
@@ -403,21 +408,31 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
         cap = cap/(10**(3*scaler))
         for data in datalist:
             to = get_index(data["time"], start)
+            flipto = get_index(data["tracktime"], start)
             if end > 0.0:
                 tf = get_index(data["time"], end)
+                fliptf = get_index(data["tracktime"], end)
             else:
                 tf = get_index(data["time"], data["time"][-1])
+                fliptf = get_index(data["tracktime"], data["tracktime"][-1])
 
             carts = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"][to:tf]])
             cartsxy = np.copy(carts)
             cartsxz = np.copy(carts)
             cartsyz = np.copy(carts)
+            flippoints = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"][data["trackix"][flipto:fliptf].astype(int)]])
+            flipsxy = np.copy(flippoints)
+            flipsxz = np.copy(flippoints)
+            flipsyz = np.copy(flippoints)
             
             if cb == True:
                 rb = (1 + (1 - data["spin"]**2)**(0.5))/(10**(3*scaler))
                 circle1 = plt.Circle((0, 0), rb, color='black')
                 circle2 = plt.Circle((0, 0), rb, color='black')
                 circle3 = plt.Circle((0, 0), rb, color='black')
+                ax_list[0].add_patch(circle1)
+                ax_list[1].add_patch(circle2)
+                ax_list[2].add_patch(circle3)
                 
                 al = (azi)*np.pi/180. -np.pi
                 el = (ele)*np.pi/180. - np.pi/2.
@@ -433,39 +448,48 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                 cartsxy = np.array([carts[i] if condxy[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxy))])
                 cartsxz = np.array([carts[i] if condxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxy))])
                 cartsyz = np.array([carts[i] if condyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxy))])
-                ax_list[0].add_patch(circle1)
-                ax_list[1].add_patch(circle2)
-                ax_list[2].add_patch(circle3)
-            
+                
+                try:
+                    flipB_ = A - np.pi/2 + np.arcsin((rb/data["pos"][data["trackix"][flipto:fliptf].astype(int),0])*np.sin(A))
+                    flipcondxy = (np.arccos(np.dot(flippoints, Xxy)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
+                    flipcondxz = (np.arccos(np.dot(flippoints, Xxz)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
+                    flipcondyz = (np.arccos(np.dot(flippoints, Xyz)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
+                    flipsxy = np.array([flippoints[i] if flipcondxy[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxy))])
+                    flipsxz = np.array([flippoints[i] if flipcondxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxy))])
+                    flipsyz = np.array([flippoints[i] if flipcondyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxy))])
+                except:
+                    pass
+                
             ax_list[0].plot(cartsxy[:,0], cartsxy[:,1], label=data["name"], zorder=10)  #XY Plot
             ax_list[1].plot(cartsxz[:,0], cartsxz[:,2], label="_nolabel_", zorder=10)  #XZ Plot
             ax_list[2].plot(cartsyz[:,1], cartsyz[:,2], label="_nolabel_", zorder=10)  #ZY Plot
+            if stitch == True:
+                ax_list[0].scatter(flipsxy[:,0], flipsxy[:,1], label=data["name"], zorder=9, marker="*", s=300)  #XY Plot
+                ax_list[1].scatter(flipsxz[:,0], flipsxz[:,2], label="_nolabel_", zorder=9, marker="*", s=300)  #XZ Plot
+                ax_list[2].scatter(flipsyz[:,1], flipsyz[:,2], label="_nolabel_", zorder=9, marker="*", s=300) 
             
         
         if datalist[0]["inputs"][-1] == "grav":
             unit = "Geometric Units"
         elif datalist[0]["inputs"][-1] == "mks":
             unit = "Meters"
-        elif datalist[0]["inputs"][-1] == "mks":
+        elif datalist[0]["inputs"][-1] == "cgs":
             unit = "Centimeters"
         ax1.set(ylabel="Y")
         ax2.set_axis_off()
         ax3.set(xlabel="X", ylabel="Z")
         ax4.set( xlabel="Y")
-        #(ax1, ax2), (ax3, ax4) = gs.subplots(sharex='col', sharey='row')
         ax2.set_xlim(-cap/zoom, cap/zoom)
         ax2.set_ylim(-cap/zoom, cap/zoom)
         ax2.set_aspect('equal')
         ax2.text(0, 0.62*cap/zoom, "Orthographic View", fontsize=20, ha="center", va="top")
         ax2.text(0, 0.40*cap/zoom, "Scale: " + scale_word + unit, fontsize=15, ha="center", va="top")
-        print(cap)
         fig.subplots_adjust(wspace=0, hspace=0)
-        legend = fig.legend(loc=(0.75,0.5))
-        hor_ratio = legend.get_window_extent().width/ fig.get_window_extent().width
-        ver_ratio = legend.get_window_extent().height/ fig.get_window_extent().height
-        #print(fig.get_window_extent().width)
-        #print(legratio)
-        legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))
+        if leg == True:
+            legend = fig.legend(loc=(0.75,0.5))
+            hor_ratio = legend.get_window_extent().width/ fig.get_window_extent().width
+            ver_ratio = legend.get_window_extent().height/ fig.get_window_extent().height
+            legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))
         
         
     else:
@@ -476,13 +500,17 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
         rbound = 0
         for data in datalist:
             to = get_index(data["time"], start)
+            flipto = get_index(data["tracktime"], start)
             if end > 0.0:
                 tf = get_index(data["time"], end)
+                fliptf = get_index(data["tracktime"], end)
             else:
                 tf = get_index(data["time"], data["time"][-1])
+                fliptf = get_index(data["tracktime"], data["tracktime"][-1])
                 
             rbound = max(max(data["pos"][to:tf,0])*1.05, rbound)
             carts = np.array([sph2cart(pos) for pos in data["pos"][to:tf]])
+            flippoints = np.array([sph2cart(pos) for pos in data["pos"][data["trackix"][flipto:fliptf].astype(int)]])
             
             if cb == True:
                 rb = 1 + (1 - data["spin"]**2)**(0.5)
@@ -504,11 +532,22 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                 
                 blockedcheck = np.arccos(np.dot(carts, X)/data["pos"][to:tf,0]) < np.pi - B_
                 boundboxcheck = [False not in piece for piece in np.abs(carts) <= rbound/zoom]
-                
+                 
                 cond = np.logical_and(blockedcheck, boundboxcheck)
                 carts = np.array([carts[i] if cond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(cond))])
                 
+                try:
+                    flipB_ = A - np.pi/2 + np.arcsin((rb/data["pos"][data["trackix"][flipto:fliptf].astype(int),0])*np.sin(A))
+                    flipblockedcheck = np.arccos(np.dot(flippoints, X)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_
+                    flipboundboxcheck = [False not in piece for piece in np.abs(flippoints) <= rbound/zoom]
+                    flipcond = np.logical_and(flipblockedcheck, flipboundboxcheck)
+                    flippoints = np.array([flippoints[i] if flipcond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcond))])
+                except:
+                    pass
+                
             ax.plot3D(carts[:, 0], carts[:, 1], carts[:, 2], label=data["name"], zorder=10)
+            if stitch == True:
+                ax.scatter(flippoints[:, 0], flippoints[:, 1], flippoints[:, 2], label=data["name"], zorder=9, marker="*", s=300)
             
         
         ax.set(xlim3d=(-rbound/zoom, rbound/zoom), xlabel='X')
@@ -517,7 +556,7 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
         ax.set_box_aspect((rbound, rbound, rbound))
         if leg == True:
             ax.legend()
-    return True
+    return fig
 
 def physplots(datalist, merge=False, start=0.0, end=-1.0, fit=True, leg=True):
     '''
@@ -710,10 +749,9 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
     -------
     True
     '''
-    import matplotlib.animation as animation
     
     if name == False:
-        name=data["name"][:10] + time.strftime("%D:%H:%M", time.localtime())
+        name=data["name"][:10] + time.strftime("%y_%m_%d_%H", time.localtime())
     
     int_sphere, int_time = mm.interpolate(data["pos"], data["time"], supress = False)
     X = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.cos(int_sphere[:,2])
@@ -722,10 +760,11 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
 
     num_steps = int(100*fid)
     
-    first_turn = np.where(data["pos"][:,2] > 2*np.pi)[0][0]
+    #print(np.where(data["pos"][:,2] > 2*np.pi))
+    turn_ind = np.where(data["pos"][:,2] > 2*np.pi)[0][0]
+    first_turn = get_index(int_time, data["time"][turn_ind])
     print(first_turn)
     
-
     if ortho == False:
         fig = plt.figure(figsize=(6,6))
         ax = fig.add_subplot(projection="3d")
@@ -766,25 +805,24 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
         
         def update_line(num, xdata, ydata, zdata, line):
             full = int(len(xdata)/num_steps)
-            if numturns == False:
-                beg = 0
-            else:
-                beg = max(0, full*num - first_turn*numturns)
-            print(len(xdata), num_steps, full, num)
+            beg = max(0, int(full*num - first_turn*numturns))
+            #print(len(xdata), num_steps, full, num)
             #print(beg, full*num, full*num - beg, first_turn)
             line.set_data_3d(xdata[beg:full*num], ydata[beg:full*num], zdata[beg:full*num])
             
             if scroll == True:
                 try:
-                    rbound = max((xdata[beg:full*num]**2 + ydata[beg:full*num]**2 + zdata[beg:full*num]**2)**0.5)*1.05  
+                    rbound = max(max((xdata[beg:full*num]**2 + ydata[beg:full*num]**2 + zdata[beg:full*num]**2)**0.5)*1.05, 3)
                 except:
-                    rbound = max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05 
-                rbound = max(rbound/zoom, 6)
+                    rbound = max(max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05, 3)
                 
-                ax.set(xlim3d=(-rbound, rbound), xlabel='X')
-                ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
-                ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
-                ax.set_box_aspect((rbound, rbound, rbound))
+                try:
+                    ax.set(xlim3d=(-rbound, rbound), xlabel='X')
+                    ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
+                    ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
+                    ax.set_box_aspect((rbound, rbound, rbound))
+                except:
+                    pass
             return line
     else:
         fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(8,8))
@@ -810,10 +848,7 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
         
         def update_line(num, xdata, ydata, zdata, line):
             full = len(xdata)//num_steps
-            if numturns == False:
-                beg = 0
-            else:
-                beg = max(0, full*num - first_turn*numturns)
+            beg = max(0, int(full*num - first_turn*numturns))
             end = int(np.round(num*len(xdata)/num_steps))
             line[0].set_data(xdata[beg:end], ydata[beg:end])
             line[1].set_data(xdata[beg:end], zdata[beg:end])
@@ -821,9 +856,9 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
             
             if scroll == True:
                 try:
-                    rbound = max((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05  
+                    rbound = np.nanmax(np.nanmax((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05, 3) 
                 except:
-                    rbound = max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05 
+                    rbound = np.nanmax(np.nanmax((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05, 3)
     
                 ax2.set_xlim(-rbound, rbound)
                 ax2.set_ylim(-rbound, rbound)
@@ -835,12 +870,229 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
     ani = animation.FuncAnimation(
         fig, update_line, frames=num_steps + 10, fargs=(X, Y, Z, line), interval=10)
     
+    #HEY, CAN YOU JUST MAKE MULTIPLE ANIMATION OBJECTS ON THE SAME FIGURE??? EXPERIMENT ON SOMETHING SIMPLE
+    
     cwd = os.getcwd()
     f = os.path.join(cwd, name + ".gif")
     writergif = animation.PillowWriter(fps=10)
     ani.save(f, writer=writergif)
     
     plt.show()
+    print(name + '.gif')
+    return True
+
+def ani_test():
+    # initializing a figure in  
+    # which the graph will be plotted 
+    fig = plt.figure()  
+       
+    # marking the x-axis and y-axis 
+    axis = plt.axes(xlim =(0, 4),  
+                    ylim =(-2, 2))  
+      
+    # initializing a line variable 
+    line, = axis.plot([], [], lw = 3) 
+    line2, = axis.plot([], [], lw = 3) 
+       
+    # data which the line will  
+    # contain (x, y) 
+    def init():  
+        line.set_data([], []) 
+        line2.set_data([], []) 
+        return line, line2
+       
+    def animate(i): 
+        x = np.linspace(0, 4, 1000) 
+       
+        # plots a sine graph 
+        y = np.sin(2 * np.pi * (x - 0.01 * i)) 
+        line.set_data(x, y) 
+        y2 = np.cos(2 * np.pi * (x - 0.03 * i)) 
+        line2.set_data(x, y2) 
+          
+        return line, line2, 
+       
+    anim = animation.FuncAnimation(fig, animate, init_func = init, 
+                         frames = 200, interval = 20, blit = True)  
+       
+    anim.save('continuousSineWave.gif', fps = 30) 
+    return 0
+
+def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=True, cb=True, numturns=10, fid=1):
+    '''
+    Creates an animation of a test particle's path through space
+    
+    Parameters
+    ----------
+    data: 30 element dictionary
+        dictionary MUST be output of clean_inspiral
+    name : string
+        name of final animation - will be saved as cwd/name.gif
+    ortho : bool
+        determines plot type - False creates a single 3D plot, True creates 3 orthogonal 2D plots from POV of positve x, y, and z axes
+        defaults to False
+    zoom : float
+        determines how tightly plot focuses on origin
+        defaults to 1.0 - bounds of plot are just wide enough to include furthest point on orbital path
+    ele : float
+        determines elevation viewing angle when plotting in 3D, in degrees above or below equator of central body
+        defaults to 30 - 30 degrees above equator
+    azi : float
+        determines azimuthal viewing angle when plotting in 3D, in degrees relative to positive x axis
+        defaults to -60 - 60 degrees behind positive x axis
+    scroll : bool
+        determines whether the bounds of the plot will shift to track the orbit during its evolution
+        defaults to True
+    cb : bool
+        determines whether or not to visualize event horizon and ergosphere (if applicable) of central body
+        defaults to False
+    numturns : float
+        determines approximatelt how many phi-orbits to include at any one time - how long the "tail" is
+        defaults to 10
+    fid : positive float
+        determines how many frames to make the animation - "fidelity"
+        defaults to 1 - multiplied by 100 gives 100 frames
+
+    Returns
+    -------
+    True
+    '''
+    
+    if name == False:
+        name="False"
+
+    num_steps = int(100*fid)
+    
+    #print(np.where(data["pos"][:,2] > 2*np.pi))
+    #print(first_turn)
+    
+    if ortho == False:
+        fig = plt.figure(figsize=(6,6))
+        ax = fig.add_subplot(projection="3d")
+        ax.view_init(elev=ele, azim=azi)
+        lines, paths = [], []
+        
+        rbound = 0
+        for data in datalist:
+            lines.append(ax.plot([], [], [], zorder=10)[0])
+            int_sphere, int_time = mm.interpolate(data["pos"], data["time"], supress = False)
+            X = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.cos(int_sphere[:,2])
+            Y = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.sin(int_sphere[:,2])
+            Z = int_sphere[:,0]*np.cos(int_sphere[:,1])
+            paths.append(np.array([X, Y, Z, int_time]))
+            rbound = max(rbound, max(data["pos"][:,0]))
+            
+        if cb == True:
+            rb = 1 + (1 - datalist[0]["spin"]**2)**(0.5)
+            theta, phi = np.linspace(0, 2*np.pi), np.linspace(0, np.pi)
+            phi, theta = np.meshgrid(phi, theta)
+            x, y, z = rb*np.sin(theta)*np.sin(phi), rb*np.sin(theta)*np.cos(phi), rb*np.cos(theta)
+            ax.plot_surface(x, y, z, color="black", zorder=2)
+            
+            re = 1 + (1 - (data["spin"]*np.cos(theta))**2)**(0.5)
+            x, y, z = re*np.sin(theta)*np.sin(phi), re*np.sin(theta)*np.cos(phi), re*np.cos(theta)
+            ax.plot_surface(x, y, z, color="darksalmon", zorder=1, alpha = 0.3)
+            
+            al = (azi)*np.pi/180. -np.pi
+            el = (ele)*np.pi/180. - np.pi/2.
+            V = [ np.sin(el) * np.cos(al),np.sin(el) * np.sin(al),np.cos(el)]
+            A = np.pi - np.arctan(20*rbound/(rb*zoom))
+            
+            #hide paths behind black hole
+            print(paths[0])
+            for i in range(len(paths)):
+                carts = np.transpose(paths[i][:3])
+                r = np.sqrt(carts[:,0]**2 + carts[:,1]**2 + carts[:,2]**2)
+                B_ = A - np.pi/2 + np.arcsin((rb/r)*np.sin(A))
+                #print(len(carts), len(V), len(r), len(B_))
+                cond = (np.arccos(np.dot(carts, V)/r) < np.pi - B_)
+                #print(list(cond).count(False))
+                #newpath = 
+                paths[i] = np.append(np.transpose(np.array([carts[i] if cond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(cond))])), [paths[i][-1]], axis=0)
+            print(paths[0])
+            
+        if scroll == False:
+            ax.set(xlim3d=(-rbound, rbound), xlabel='X')
+            ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
+            ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
+            ax.set_box_aspect((rbound, rbound, rbound))
+        
+        def update_lines(num, paths, lines):
+            rbound = 0
+            for i in range(len(lines)):
+                turn_ind = np.where(datalist[i]["pos"][:,2] > 2*np.pi)[0][0]
+                #print(datalist[i]["time"][turn_ind])
+                first_turn = get_index(paths[i][-1], datalist[i]["time"][turn_ind])
+                #rbound = max(datalist[i]["pos"][:,0])*1.05/zoom
+                full = int(len(paths[i][0])/num_steps)
+                beg = max(0, int(full*num - first_turn*numturns)) #gonna have to change this whole turns thing, maybe time based?
+                lines[i].set_data_3d(paths[i][0,beg:full*num], paths[i][1,beg:full*num], paths[i][2,beg:full*num])
+                rbound = max(rbound, max(datalist[i]["pos"][:,0]))*1.05/zoom
+            
+            if scroll == True:
+                try:
+                    ax.set(xlim3d=(-rbound, rbound), xlabel='X')
+                    ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
+                    ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
+                    ax.set_box_aspect((rbound, rbound, rbound))
+                except:
+                    pass
+            return lines
+    else:
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(8,8))
+        ax2.set_axis_off()
+        line = [ax1.plot([], [])[0], ax3.plot([], [])[0], ax4.plot([], [])[0]]
+        # Setting the axes properties
+        ax1.set(ylabel="Y")
+        ax2.set_axis_off()
+        ax3.set(xlabel="X", ylabel="Z")
+        ax4.set( xlabel="Y")
+        ax2.text(0.5, 0.81, "Orthographic View", fontsize=20, ha="center", va="top", transform=ax2.transAxes)
+        fig.subplots_adjust(wspace=0, hspace=0)
+        legend = fig.legend(loc=(0.75,0.5))
+        hor_ratio = legend.get_window_extent().width/ fig.get_window_extent().width
+        ver_ratio = legend.get_window_extent().height/ fig.get_window_extent().height
+        legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))
+        
+        if scroll == False:
+            rbound = max(data["pos"][:,0])*1.05/zoom
+            ax2.set_xlim(-rbound, rbound)
+            ax2.set_ylim(-rbound, rbound)
+            ax2.set_aspect('equal')
+        
+        def update_line(num, xdata, ydata, zdata, line):
+            full = len(xdata)//num_steps
+            beg = max(0, int(full*num - first_turn*numturns))
+            end = int(np.round(num*len(xdata)/num_steps))
+            line[0].set_data(xdata[beg:end], ydata[beg:end])
+            line[1].set_data(xdata[beg:end], zdata[beg:end])
+            line[2].set_data(ydata[beg:end], zdata[beg:end])
+            
+            if scroll == True:
+                try:
+                    rbound = np.nanmax(np.nanmax((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05, 3) 
+                except:
+                    rbound = np.nanmax(np.nanmax((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05, 3)
+    
+                ax2.set_xlim(-rbound, rbound)
+                ax2.set_ylim(-rbound, rbound)
+                ax2.set_aspect('equal')
+
+            return line
+        
+    # Creating the Animation object
+    ani = animation.FuncAnimation(
+        fig, update_lines, frames=num_steps + 10, fargs=(paths, lines), interval=10)
+    
+    #HEY, CAN YOU JUST MAKE MULTIPLE ANIMATION OBJECTS ON THE SAME FIGURE??? EXPERIMENT ON SOMETHING SIMPLE
+    
+    cwd = os.getcwd()
+    f = os.path.join(cwd, name + ".gif")
+    writergif = animation.PillowWriter(fps=10)
+    ani.save(f, writer=writergif)
+    
+    plt.show()
+    print(name + '.gif')
     return True
 
 def gimme_startpot(data, rbounds = [-1, 1]):
@@ -865,17 +1117,33 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
     
     rx, rn, blah, blee = np.transpose(np.array([np.roots([E[i]**2 - 1, 2, (a**2)*(E[i]**2 - 1) - L[i]**2 - C[i], 2*((a*E[i] - L[i])**2 + C[i]), -(a**2)*C[i]]) for i in range(len(E))]))
     r0, bloh, bluh = np.transpose(np.array([np.roots([4*(E[i]**2 - 1), 6, 2*((a**2)*(E[i]**2 - 1) - L[i]**2 - C[i]), 2*((a*E[i] - L[i])**2 + C[i])]) for i in range(len(E))]))
-    print(r0, bloh, bluh)
     ecc = (rx - rn)/(rx + rn)
+    print(rx, rn, ecc)
+    print(r0, bloh, bluh)
     if -1 in rbounds:
         p = 1/(1 - E**2)
-        rbounds = np.linspace(rn*0.95, rx*1.05, num=100)
+        rbounds = np.linspace(0.0, rx*1.05, num=100)
     else:
         rbounds = np.linspace(rbounds[0]*np.ones((len(rn))), rbounds[-1]*np.ones((len(rx))), num=100)
 
     fig1, ax1 = plt.subplots()
+    ax1.set_xlabel("Radius (Geometric Units)")
+    ax1.set_ylabel("Effective Potential")
+    #ax1.set_title("Effective Potential")
     ax1.plot(rbounds, rbounds*0.0)
-    ax1.plot(rbounds, R(rbounds))
+    ax1.plot(rbounds, -R(rbounds))
+    print(R(np.array([r0, bloh, bluh])))
+    ext = False
+    if r0 >= rbounds[0]:
+        ax1.vlines(r0, -R(r0), 0)
+        ax1.scatter(r0, 0.0, label="Potential Minimum")
+        ext = True
+    if bloh >= rbounds[0] and abs(R(bloh)) < 1e-5:
+        ax1.vlines(bloh, -R(bloh), 0)
+        ax1.scatter(bloh, 0.0, marker="*", label="Unstable Circular orbit")
+        ext = True
+    if ext == True:
+        ax1.legend()
     return(R(bloh))
 
 def potentplotter2(cons, a, rbounds=[-1, -1]):
@@ -929,7 +1197,7 @@ def fouriercountourthing(data, wavedis, num=1000):
     print("good?")
     Z = z.transpose()
     print("good?")
-    print(X, Y, Z)
+    print(np.shape(X), np.shape(Y), np.shape(Z))
     plt.contourf(X, Y, Z)
     plt.show()
 
@@ -1023,7 +1291,8 @@ def orth_and_fourier(data, start=0, end=-1):
     else:
         tf = get_index(data["time"], data["time"][-1])
 
-    carts = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"]])
+    carts = np.array([sph2cart(pos) for pos in data["pos"]])
+    #carts = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"]])
     ax_list[0].plot(carts[to:tf,0], carts[to:tf,1], label=data["name"])  #XY Plot
     ax_list[1].plot(carts[to:tf,0], carts[to:tf,2], label="_nolabel_")  #XZ Plot
     ax_list[2].plot(carts[to:tf,1], carts[to:tf,2], label="_nolabel_")  #ZY Plot
@@ -1034,7 +1303,11 @@ def orth_and_fourier(data, start=0, end=-1):
     #ax4.set_xlim(-cap, cap)
     #ax4.set_ylim(-cap, cap)
     ax1.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='XY Plot')
-    ax2.set(xlabel='Waveform Frequency (G\u209C\u207B\u00B9)')
+    if data["inputs"][-1] == "grav":
+        freq_unit = '(G\u209C\u207B\u00B9)'
+    else:
+        freq_unit = '(Hz)'
+    #ax2.set(xlabel='Waveform Frequency ' + freq_unit)
     ax3.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='XZ Plot')
     ax4.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='YZ Plot')
     ax1.set_aspect('equal')
@@ -1062,12 +1335,53 @@ def orth_and_fourier(data, start=0, end=-1):
     plt.setp(ax3.get_yticklabels(), visible=False)
     plt.setp(ax4.get_yticklabels(), visible=False)
     ax2.set_title(data["name"])
+    ax2.set_title('Waveform Frequency ' + freq_unit)
     ax2.set_yscale('log')
     ax2.set_xscale('log')
     ax2.grid()
     ax2.legend()
-    
     return 0
+
+def justfourier(data, start=0, end=-1):
+    cap = max(data["pos"][:,0])
+    wave, time = mm.full_transform(data, cap*1000)
+    to = get_index(time, start)
+    if end > 0.0:
+        tf = get_index(time, end)
+    else:
+        tf = get_index(time, data["time"][-1])
+    x = np.copy(time[to:tf])
+    y1 = np.copy(wave[to:tf,0,0])
+    y2 = np.copy(wave[to:tf,0,1])
+    y0 = np.sqrt(y1**2 + y2**2)
+    N = x.size
+    T = (x[-1] - x[0])/N
+    yf1 = fft(y1)
+    yf2 = fft(y2)
+    yf0 = fft(y0)
+    xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
+    
+    fig, ax = plt.subplots()
+    h_plus = 2.0/N * np.abs(yf1[0:N//2])
+    h_min = 2.0/N * np.abs(yf2[0:N//2])
+    ax.plot(xf, h_plus/max(h_plus), label = "h+")
+    ax.plot(xf, h_min/max(h_min), label = "hx")
+    #plt.setp(ax3.get_yticklabels(), visible=False)
+    #plt.setp(ax4.get_yticklabels(), visible=False)
+    ax.set_title("Waveform Fourier Transform")
+    #ax.set_title('Waveform Frequency ' + freq_unit)
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    if data["inputs"][-1] == "grav":
+        freq_unit = "(Geometric Units)"#'(G\u209C\u207B\u00B9)'
+    else:
+        freq_unit = '(Hz)'
+    ax.set_xlabel("Frequency " + freq_unit)
+    ax.set_ylabel("Relative Intensity")
+    ax.grid()
+    ax.legend()
+    return 0
+    
 
 def wavelething(data):
     #It hates you and it's not even what you want, leave it alone

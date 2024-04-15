@@ -32,14 +32,16 @@ def getLs(state, mu):
     Lmom = np.cross(pos3cart, vel3cart)
     return Lmom
 
-def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
+def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
     #basically the same as schwarz, except references to schwarz changed to kerr
     
     def viable_cons(constants, state, a):
         energy, lz, cart = constants
         coeff = np.array([energy**2 - 1, 2, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*((a*energy - lz)**2 + cart), -cart*(a**2)])
         coeff2 = np.array([(energy**2 - 1)*4, (2.0)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*((a*energy - lz)**2) + 2*cart])
-        r0 = max(np.roots(coeff2))
+        flats = np.roots(coeff2)
+        flats = flats.real[abs(flats.imag)<err_target]
+        r0 = max(flats)
         potential_min = np.polyval(coeff, r0)
         return potential_min
     
@@ -261,8 +263,8 @@ def clean_inspiral3(mass, a, mu, endflag, err_target, label="default", cons=Fals
                     freqs.append(mm.freqs_finder(*ch_cons, a))
                 if True in np.iscomplex(tracker[-1]):
                     compErr += 1
-                    print("issue")
-                    print(tracker[-1])
+                    #print("issue")
+                    #print(tracker[-1])
                     issues.append((i, new_step[0]))  
             interval.append(mm.check_interval(mm.kerr, new_step, a))
             false_constants.append([getEnergy(new_step, a), *getLs(new_step, mu)])

@@ -28,6 +28,16 @@ def find_rmb(spin):
     l_mb, r_mb = pro*data['fun'], data['x'][0]
     return l_mb, r_mb
 
+def find_rms(spin):
+    if spin >= 0.0:
+        pro = 1.0
+    else:
+        pro = -1.0
+        
+    z1 = 1 + ((1 - spin**2)**(1/3))*(((1 + spin)**(1/3)) + ((1 - spin)**(1/3)))
+    z2 = np.sqrt(3*(spin**2) + z1**2)
+    r_ms = 3 + z2 - pro*np.sqrt((3 - z1)*(3 + z1 + 2*z2))
+    return r_ms
 
 def mink(state):
     '''
@@ -214,6 +224,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             E, L, C = cons
             Rdco = [4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]
             flats = np.roots(Rdco)
+            flats = np.sort(flats.real[abs(flats.imag)<1e-14])
             pos = [0.0, flats[0], np.pi/2, 0.0]
             new = recalc_state(cons, pos, a)
     elif (np.shape(velorient) == (3,)):
@@ -900,10 +911,12 @@ def freqs_finder(E, L, C, a):
     J2 = lambda x: Jfunc(x, r0, e, i, a, E, L, C)
     H = lambda x: 1 - (2/p)*(1 + e*np.cos(x)) + ((a/p)**2)*(1 + e*np.cos(x))**2
     G = lambda x: L - 2*(L - a*E)*(1 + e*np.cos(x))/p
+    F = lambda x: E + ((a/p)**2)*E*((1 + e*np.cos(x))**2) - 2*a*(L - a*E)*((1 + e*np.cos(x))/p)**3
     
-    Xt = integrate.quad(lambda x: 1/(J2(x)**0.5), 0, np.pi)[0]
-    Yt = integrate.quad(lambda x: (p**2)/(((1+e*np.cos(x))**2)*(J2(x)**0.5)), 0, np.pi)[0]
-    Zt = integrate.quad(lambda x: G(x)/(H(x)*(J2(x)**0.5)), 0, np.pi)[0]
+    Xt = integrate.quad(lambda x: 1/(J2(x)**0.5), 0.0, np.pi)[0]
+    Yt = integrate.quad(lambda x: (p**2)/(((1+e*np.cos(x))**2)*(J2(x)**0.5)), 0.0, np.pi)[0]
+    Zt = integrate.quad(lambda x: G(x)/(H(x)*(J2(x)**0.5)), 0.0, np.pi)[0]
+    Wt = integrate.quad(lambda x: (p**2)*F(x)/(((1 + e*np.cos(x))**2)*H(x)*(J2(x)**0.5)), 0.0, np.pi)[0]
 
     Kk = integrate.quad(lambda p: 1/np.sqrt(1 - k*(np.sin(p)**2)), 0, np.pi/2)[0]
     Ek = integrate.quad(lambda p: np.sqrt(1 - k*(np.sin(p)**2)), 0, np.pi/2)[0]
@@ -911,6 +924,7 @@ def freqs_finder(E, L, C, a):
 
     Lam = (Yt + Xt*(a*zp)**2)*Kk - Xt*Ek*(a*zp)**2
     wr, wt, wp = np.pi*p*Kk/((1-e**2)*Lam), np.pi*(B2**0.5)*zp*Xt/(2*Lam), (1/Lam)*((Zt - L*Xt)*Kk + L*Xt*Pk)
+    g = (1/Lam)*((Wt + E*Xt*(a*zp)**2)*Kk - E*Xt*Ek*(a*zp)**2)
     if a == 0.0:
         wt = wp
-    return np.array([wr, wt, wp])
+    return np.array([wr, wt, wp])/g

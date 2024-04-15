@@ -554,23 +554,67 @@ def schmidtparam3(r0, e, i, a, inner=False):
         return [E, L, C]
     
 def seper_locator3(r0, inc, a):
-    print(r0)
+    #print(r0)
     test_r = mm.find_rmb(a)[1]
     e = 1 - test_r/r0
     small, big = 0.0, 1.0
-    E, L, C = schmidtparam3(r0, e, np.pi/2, a)
+    E, L, C = schmidtparam3(r0, e, inc, a)
     R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
     r1, bloh, bluh = np.array(np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]))
     val = R(bloh)
     while ((val > 0) or (val < -1e-12)) and (big-small > 1e-14):
-        print(val, e, small, big, big-small, bloh)
+        #print(val, e, small, big, big-small, bloh)
         if val > 0:
             big = e
         else:
             small = e
         e = (2*big + small)/3
-        E, L, C = schmidtparam3(r0, e, np.pi/2, a)
+        E, L, C = schmidtparam3(r0, e, inc, a)
         R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
         r1, bloh, bluh = np.array(np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]))
         val = R(bloh)
+    return e
+
+def seper_locator4(r0, inc, a):
+    #print(r0)
+    if r0 < mm.find_rmb(a)[1]:
+        return np.nan
+    elif r0 <= mm.find_rms(a):
+        return 0.0
+    old_e = 0.0
+    sub = (mm.find_rms(a) + r0)/2
+    new_e = np.abs(1 - sub/r0)
+    e = 0
+    while np.abs(new_e - e) > 1e-5:
+        try:
+            e, old_e = new_e, e
+            E, L, C = schmidtparam3(r0, e, inc, a)
+            coeff = np.array([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+            turns = np.sort(np.roots(coeff))
+            print((turns[-1] + turns[-2])/2, e)
+            if np.isreal((turns[-1] + turns[-2])/2):
+                new_e = (1 + (turns[-2] - turns[-3])/(turns[-1] - turns[-2]) )*e
+            else:
+                new_e = 0.9*e
+        except:
+            e = np.nan
+            break
+    return e
+
+def seper_locator5(r0, inc, a):
+    #print(r0)
+    if r0 < mm.find_rmb(a)[1]:
+        return np.nan
+    elif r0 <= mm.find_rms(a):
+        return 0.0
+    cusp = mm.find_rms(a)
+    e = 1e-7
+    print(e)
+    while np.abs((r0*(1-e) - cusp)/cusp) > 1e-5:
+        E, L, C = schmidtparam3(r0, e, inc, a)
+        coeff = np.array([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+        turns = np.sort(np.roots(coeff))
+        ri, ro = r0*(1-e), r0*(1+e)
+        e = (((ri - cusp)/(ro - ri)) + 1)*e
+        print(e)
     return e
