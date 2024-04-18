@@ -205,6 +205,7 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
                     "radius": [data["pos"][:,0], "Radius"],
                     "theta": [data["pos"][:,1], "Theta"],
                     "phase": [data["pos"][:,2]/(2*np.pi), "Phase"],
+                    "true_anom": [data["true_anom"], "True Anomaly"],
                     "r0": [data["r0"], "Semimajor Axis"],
                     "pot_min": [data["pot_min"], "Effective Potential Minimum"],
                     "ecc": [data["e"], "Eccentricity"],

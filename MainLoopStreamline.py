@@ -32,22 +32,60 @@ def getLs(state, mu):
     Lmom = np.cross(pos3cart, vel3cart)
     return Lmom
 
-def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
-    #basically the same as schwarz, except references to schwarz changed to kerr
-    
-    def viable_cons(constants, state, a):
-        energy, lz, cart = constants
-        coeff = np.array([energy**2 - 1, 2, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*((a*energy - lz)**2 + cart), -cart*(a**2)])
-        coeff2 = np.array([(energy**2 - 1)*4, (2.0)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*((a*energy - lz)**2) + 2*cart])
-        flats = np.roots(coeff2)
-        flats = flats.real[abs(flats.imag)<err_target]
-        r0 = max(flats)
-        potential_min = np.polyval(coeff, r0)
-        return potential_min
-    
+def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
+    '''
+    Generates orbit
+
+    Parameters
+    ----------
+    a : float
+        Dimensionless spin parameter of the central body. Valid for values between -1 and 1.
+    mu : float
+        Mass ratio between secondary body and central body. EMRI systems require mu to be less than or equal to 10^-4.
+    endflag : string
+        Condition for ending the simulation, written in the form '(variable) (comp.operator) (value)'
+        Current valid variables:
+            time - time, measured in geometric units
+            phi_orbit - absolute phi displacement from original position, measured in radians
+            rad_orbit - number of completed radial oscillations
+            radius - distance from central body, measured in geometric units
+            inclination - maximum displacement from north pole of central body, measured in radians
+    mass : float, optional
+        Mass of the central body. The default is 1.0.
+    err_target : float, optional
+        Maximum error allowed during the geodesic evaluation. The default is 1e-15.
+    label : string, optional
+        Internal label for the simulation. The default is "default", which gives it a label based on Keplerian paramters.
+    cons : 3-element list of floats, optional
+        Energy, Angular Momentum, and Carter Constant per unit mass. The default is False.
+    velorient : 3-element list/array of floats, optional
+        Ratio of velocity/speed of light (beta), angle between r-hat and trajectory (eta - radians), angle between phi hat and trajectory (xi - radians)
+    vel4 : 4-element list/array of floats, optional
+        Tetrad component velocities [t, r, theta, phi].
+    params : 3-element list/array of floats, optional
+        Semimajor axis, eccentricity, and inclination of orbit.
+    pos : 4-element list/array of floats, optional
+        Initial 4-position of particle. The default is False
+    veltrue : 4-element list/array of floats, optional
+        Initial 4-velocity of particle. The default is False.
+    units : string, optional
+        System of units for final output. The default is "grav".
+        Current valid units:
+            'grav' - Geometric units, with G, c, and M (central body mass) all set to 1.0.
+            'mks' - Standard SI units, with G = 6.67e-11 N*m^2*kg^-2, c = 3e8 m*s^-1, and M in kg
+            'cgs' - Standard cgs units, with G = 6.67e-8 dyn*cm^2*g^-2, c = 3e11 cm*s^-1, and M in g
+    verbose : bool, optional
+        Toggle for progress updates as program runs. The default is False.
+
+    Returns
+    -------
+    dict
+        DESCRIPTION.
+
+    '''
     termdict = {"time": "all_states[i][0]",
                 "phi_orbit": "abs(all_states[i][3]/(2*np.pi))",
-                "rad_orbit": "orbitCount",
+                "rad_orbit": "(true_anom[i] - true_anom[0])/(2*np.pi)",
                 "radius": "all_states[i][1]",
                 "inclination": "tracker[-1][2]"}
     
@@ -69,10 +107,25 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
         if verbose == True:
             print("Normalizing initial state")
         all_states[0], cons = mm.set_u_kerr(a, cons, velorient, vel4, params, pos)      #normalize initial state so it's actually physical
-    pro = np.sign(all_states[0][7])
     
     interval = [mm.check_interval(mm.kerr, all_states[0], a)]           #create interval tracker
     metric = mm.kerr(all_states[0], a)[0]                                      #initial metric
+    
+    def viable_cons(constants, state, a):
+        energy, lz, cart = constants
+        coeff = np.array([energy**2 - 1, 2, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*((a*energy - lz)**2 + cart), -cart*(a**2)])
+        coeff2 = np.array([(energy**2 - 1)*4, (2.0)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*((a*energy - lz)**2) + 2*cart])
+        flats = np.roots(coeff2)
+        flats = flats.real[abs(flats.imag)<err_target]
+        pot_min = max(flats)
+        potential_min = np.polyval(coeff, pot_min)
+        return potential_min
+    
+    def get_true_anom(state, r0, e):
+        val = np.arccos((r0*(1 - e**2)/state[1] - 1)/e)
+        if state[5] < 0:
+            val = 2*np.pi - val
+        return val
     
     if np.shape(cons) == (3,):
         initE, initLz, initC = cons
@@ -97,22 +150,22 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
                 
     coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
     coeff2 = np.array([(initE**2 - 1)*4, 6.0, ((a**2)*(initE**2 - 1) - initLz**2 - initC)*2, 2*((a*initE - initLz)**2) + 2*initC])
-    r0, inner_turn, outer_turn = np.sort(np.roots(coeff2))[-1], *np.sort(np.real(np.roots(coeff)))[-2:]
+    pot_min, inner_turn, outer_turn = np.sort(np.roots(coeff2))[-1], *np.sort(np.real(np.roots(coeff)))[-2:]
     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
     A = (a**2)*(1 - initE**2)
     z2 = ((A + initLz**2 + initC) - ((A + initLz**2 + initC)**2 - 4*A*initC)**(1/2))/(2*A) if A != 0 else initC/(initLz**2 + initC)
     inc = np.arccos(np.sqrt(z2))
-    tracker = [[r0, e, inc, inner_turn, outer_turn, all_states[0][0], 0]]
+    tracker = [[pot_min, e, inc, inner_turn, outer_turn, all_states[0][0], 0]]
     if True in np.iscomplex(tracker[0]):
-        initE = (4*a*initLz*r0 + ((4*a*initLz*r0)**2 - 4*(r0**4 + 2*r0*(a**2))*((a*initLz)**2 - (r0**2 - 2*r0 + a**2)*(r0**2 + initLz**2 + initC)))**(0.5))/(2*(r0**4 + 2*r0*(a**2)))
+        initE = (4*a*initLz*pot_min + ((4*a*initLz*pot_min)**2 - 4*(pot_min**4 + 2*pot_min*(a**2))*((a*initLz)**2 - (pot_min**2 - 2*pot_min + a**2)*(pot_min**2 + initLz**2 + initC)))**(0.5))/(2*(pot_min**4 + 2*pot_min*(a**2)))
         coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
         coeff2 = np.array([(initE**2 - 1)*4, (2.0)*3, ((a**2)*(initE**2 - 1) - initLz**2 - initC)*2, 2*((a*initE - initLz)**2) + 2*initC])
-        r0, inner_turn, outer_turn = np.sort(np.roots(coeff2))[-1], *np.sort(np.roots(coeff))[-2:]
+        pot_min, inner_turn, outer_turn = np.sort(np.roots(coeff2))[-1], *np.sort(np.roots(coeff))[-2:]
         e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
         A = (a**2)*(1 - initE**2)
         z2 = ((A + initLz**2 + initC) - ((A + initLz**2 + initC)**2 - 4*A*initC)**(1/2))/(2*A) if A != 0 else initC/(initLz**2 + initC)
         inc = np.arccos(np.sqrt(z2))
-        tracker = [[r0, e, inc, inner_turn, outer_turn, all_states[0][0], 0]]
+        tracker = [[pot_min, e, inc, inner_turn, outer_turn, all_states[0][0], 0]]
     constants = [ np.array([initE,      #energy   
                             initLz,      #angular momentum (axial)
                             initC]) ]    #Carter constant (C)
@@ -122,21 +175,22 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
     
     freqs = [mm.freqs_finder(initE, initLz, initC, a)]
                
-    #tracker = [[r0, e, inner_turn, outer_turn, all_states[0][0], 0]]
-               #r0, eccentricity, turning points, timestamp, index
+    #tracker = [[pot_min, e, inner_turn, outer_turn, all_states[0][0], 0]]
+               #pot_min, eccentricity, turning points, timestamp, index
     
     compErr = 0
     milestone = 0
     issues = [(None, None)]
-    orbitside = np.sign(all_states[0][1] - r0)
+    orbitside = np.sign(all_states[0][1] - pot_min)
     if orbitside == 0:
         orbitside = -1
     
-    orbitCount = all_states[-1][0]/(2*np.pi/(((r0**(3/2) + pro*a)**(-1))*(1 - (6/r0) + pro*(8*a*(r0**(-3/2))) - (3*((a/r0)**(2))))**(0.5)))
+    orbCount = 0
+    true_anom = [get_true_anom(all_states[0], 0.5*(outer_turn + inner_turn), e)]
     stop = False
     
     if label == "default":
-        label = "r" + str(r0) + "e" + str(e) + "zU+03C0" + str(inc/np.pi) + "mu" + str(mu) + "a" + str(a)
+        label = "r" + str(pot_min) + "e" + str(e) + "zU+03C0" + str(inc/np.pi) + "mu" + str(mu) + "a" + str(a)
     
     #Main Loop
     dTau = np.abs(np.real((inner_turn/200)**(2)))
@@ -154,7 +208,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
           
             #Grab the current state
             state = all_states[i]  
-            r0 = tracker[-1][0]   
+            pot_min = tracker[-1][0]   
           
             #Break if you fall inside event horizon, or if you get really far away (orbit is unbound)
             if (state[1] <= (1 + np.sqrt(1 - a**2))*1.0001):
@@ -183,7 +237,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
                 if dTau <= 0.0:
                     dTau = old_dTau
                 first = False
-
+            
             metric = mm.kerr(new_step, a)[0]
             test = mm.check_interval(mm.kerr, new_step, a)
             looper = 0
@@ -202,13 +256,12 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
                 new_step = np.copy(og_new_step)
    
             #constant modifying section
-            #Whenever you pass from one side of r0 to the other, mess with the effective potential.
-            if ( np.sign(new_step[1] - r0) != orbitside) or ((new_step[3] - all_states[tracker[-1][-1]][3] > np.pi*(3/2)) and (np.std([state[1] for state in all_states[tracker[-1][-1]:]]) < 0.01*np.mean([state[1] for state in all_states[tracker[-1][-1]:]]))):
+            #Whenever you pass from one side of pot_min to the other, mess with the effective potential.
+            if ( np.sign(new_step[1] - pot_min) != orbitside) or ((new_step[3] - all_states[tracker[-1][-1]][3] > np.pi*(3/2)) and (np.std([state[1] for state in all_states[tracker[-1][-1]:]]) < 0.01*np.mean([state[1] for state in all_states[tracker[-1][-1]:]]))):
                 if (i - tracker[-1][-1] > 2):
                     update = True
-                    if ( np.sign(new_step[1] - r0) != orbitside):
+                    if ( np.sign(new_step[1] - pot_min) != orbitside):
                         orbitside *= -1
-                    orbitCount += 0.5
                     if mu != 0.0:
                         condate = True
                         #print(all_states[tracker[-1][-1]:i])
@@ -239,12 +292,12 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
                     newC = newQ - (a*newE - newLz)**2                                                             #initial adjusted Carter constant  
                     coeff = np.array([newE**2 - 1, 2.0, (a**2)*(newE**2 - 1) - newLz**2 - newC, 2*((a*newE - newLz)**2 + newC), -newC*(a**2)])
                     coeff2 = np.array([4*(newE**2 - 1), 6.0, 2*((a**2)*(newE**2 - 1) - newLz**2 - newC), 2*((a*newE - newLz)**2 + newC)])
-                    r0, inner_turn, outer_turn = max(np.roots(coeff2)), *np.sort(np.roots(coeff))[-2:]
+                    pot_min, inner_turn, outer_turn = max(np.roots(coeff2)), *np.sort(np.roots(coeff))[-2:]
                     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
                     A = (a**2)*(1 - newE**2)
                     z2 = ((A + newLz**2 + newC) - ((A + newLz**2 + newC)**2 - 4*A*newC)**(1/2))/(2*A) if A != 0 else newC/(newLz**2 + newC)
                     inc = np.arccos(np.sqrt(z2))
-                    tracker.append([r0, e, inc, inner_turn, outer_turn, new_step[0], i])
+                    tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
                     constants.append([newE, newLz, newC])
                     qarter.append(newQ)
                     freqs.append(mm.freqs_finder(newE, newLz, newC, a))
@@ -253,23 +306,33 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
                     qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2)
                     coeff = np.array([ch_cons[0]**2 - 1, 2.0, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
                     coeff2 = np.array([4*(ch_cons[0]**2 - 1), 6.0, 2*((a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2]), 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2])])
-                    r0, inner_turn, outer_turn = max(np.roots(coeff2)), *np.sort(np.roots(coeff))[-2:]
+                    pot_min, inner_turn, outer_turn = max(np.roots(coeff2)), *np.sort(np.roots(coeff))[-2:]
                     inner_turn, outer_turn = np.real(inner_turn), np.real(outer_turn)
                     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
                     A = (a**2)*(1 - ch_cons[0]**2)
                     z2 = ((A + ch_cons[1]**2 + ch_cons[2]) - ((A + ch_cons[1]**2 + ch_cons[2])**2 - 4*A*ch_cons[2])**(1/2))/(2*A) if A != 0 else ch_cons[2]/(ch_cons[1]**2 + ch_cons[2])
                     inc = np.arccos(np.sqrt(z2))
-                    tracker.append([r0, e, inc, inner_turn, outer_turn, new_step[0], i])
+                    tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
                     freqs.append(mm.freqs_finder(*ch_cons, a))
                 if True in np.iscomplex(tracker[-1]):
                     compErr += 1
                     #print("issue")
                     #print(tracker[-1])
                     issues.append((i, new_step[0]))  
+            
             interval.append(mm.check_interval(mm.kerr, new_step, a))
             false_constants.append([getEnergy(new_step, a), *getLs(new_step, mu)])
             dTau_change.append(old_dTau)
             all_states.append(new_step )    #update position and velocity
+            anomval = get_true_anom(new_step, 0.5*(outer_turn + inner_turn), e) + orbCount*2*np.pi
+            #print(anomval)
+            #print(np.isnan(anomval))
+            #print(true_anom[~np.isnan(true_anom)][-1])
+            if anomval < np.array(true_anom)[~np.isnan(true_anom)][-1]:
+                anomval += 2*np.pi
+                orbCount += 1
+                print("fix!", anomval)
+            true_anom.append(anomval)
             i += 1
             progress = max(1 - abs(eval(terms[2]) - eval(termdict[terms[0]]))/eval(terms[2]), i/(10**7) ) * 100
             progress = max( abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i/(10**7)) * 100
@@ -323,10 +386,10 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
     dTau_change = np.array([entry * (G*mass)/(c**3) for entry in dTau_change])
     all_states = np.array([entry*np.array([(G*mass)/(c**3), (G*mass)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*mass), (c**3)/(G*mass)]) for entry in np.array(all_states)]) 
     tracker = np.array([entry*np.array([(G*mass)/(c**2), 1.0, 1.0, (G*mass)/(c**2), (G*mass)/(c**2), (G*mass)/(c**3), 1]) for entry in tracker])
-    r = all_states[0][1]
     ind = argrelmin(all_states[:,1])[0]
     omega, otime = all_states[ind,3] - 2*np.pi*np.arange(len(ind)), all_states[ind,0]
     asc_node, asc_node_time = np.array([]), np.array([])
+    true_anom = np.array(true_anom)
     if max(all_states[:,2]) - min(all_states[:,2]) > 1e-15:
         theta_derv = np.interp(all_states[:,0], 0.5*(all_states[:,0][:-1] + all_states[:,0][1:]), np.diff(all_states[:,2])/np.diff(all_states[:,0]))
         ind2 = argrelmin(theta_derv)[0] #indices for the ascending node
@@ -348,6 +411,7 @@ def clean_inspiral3(mass, a, mu, endflag, err_target=1e-15, label="default", con
              "pos": all_states[:,1:4],
              "all_vel": all_states[:,4:], 
              "time": all_states[:,0],
+             "true_anom": true_anom,
              "interval": interval,
              "vel": (np.square(all_states[:,5]) + np.square(all_states[:,1]) * (np.square(all_states[:,6]) + (np.sin(all_states[:,2])**2)*np.square(all_states[:,7])))**(0.5),
              "dTau_change": dTau_change,
