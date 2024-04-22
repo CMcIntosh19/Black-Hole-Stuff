@@ -321,6 +321,8 @@ def schmidtparam3(r0, e, i, a):
     cons : 3-element list/array of floats
         energy, angular momentum, and carter constant per unit mass
     '''
+    #sympy doesn't like tiny e?? idk what the issue is
+    e = 0.0 if e < 1e-15 else e
     p = r0*(1 - (e**2))  #p is semi-latus rectum 
     rp, ra = p/(1 + e), p/(1 - e)
     polar = False
@@ -402,6 +404,8 @@ def schmidtparam3(r0, e, i, a):
 
     if r_err < 1e-6 and e_err < 1e-6:
         #print(flats)
+        if (np.sqrt(L**2 + C) - np.abs(L))/L < 1e-15:
+            C = 0.0
         return [E, L, C]
     else:
         def r__funcs(r):
@@ -436,6 +440,8 @@ def schmidtparam3(r0, e, i, a):
         if polar == True:
             L, C = 0.0, C/(z**2) - (a**2)*(1 - E**2)
         #print(flats)
+        if (np.sqrt(L**2 + C) - np.abs(L))/L < 1e-15:
+            C = 0.0
         return [E, L, C]
 
 def kill_tensor(state, a):
@@ -582,18 +588,16 @@ def recalc_state(constants, state, a):
     energy, lmom, cart = constants[0], constants[1], constants[2]
     rad, theta = state[1], state[2]
     sig, tri = rad**2 + (a**2)*(np.cos(theta)**2), rad**2 - 2*rad + a**2
+
+    p_r = np.array([energy, 0, a*(a*energy - lmom)])
+    r_r = np.array([energy**2 - 1, 2, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*((a*energy - lmom)**2 + cart), -cart*(a**2)])
+    the_the = np.array([(a**2)*(1 - energy**2), 0, - (cart + (a**2)*(1 - energy**2) + lmom**2), 0, cart])
     
-    p_r = energy*(rad**2 + a**2) - a*lmom
-    r_r = (p_r)**2 - tri*(rad**2 + (a*energy - lmom)**2 + cart)
-    the_the = cart - (cart + (a**2)*(1 - energy**2) + lmom**2)*(np.cos(theta)**2) + (a**2)*(1 - energy**2)*(np.cos(theta)**4)
-    
-    tlam = -a*(a*energy*(np.sin(theta)**2) - lmom) + ((rad**2 + a**2)/tri)*p_r
-    rlam_2 = r_r
-    rlam = np.sqrt(abs(rlam_2))
-    cothelam_2 = the_the
-    cothelam = np.sqrt(abs(cothelam_2))
+    tlam = -a*(a*energy*(np.sin(theta)**2) - lmom) + ((rad**2 + a**2)/tri)*np.polyval(p_r, rad)
+    rlam = np.sqrt(abs(np.polyval(r_r, rad)))
+    cothelam = np.sqrt(abs(np.polyval(the_the, np.cos(theta))))
     thelam = (-1/np.sin(theta))*cothelam
-    philam = -( a*energy - ( lmom/(np.sin(theta)**2) ) ) + (a/tri)*p_r
+    philam = -( a*energy - ( lmom/(np.sin(theta)**2) ) ) + (a/tri)*np.polyval(p_r, rad)
     
     ttau = tlam/sig
     rtau = rlam/sig
@@ -607,10 +611,17 @@ def recalc_state(constants, state, a):
         new_state = np.zeros(8)
         new_state[:4] = state[:4]
     else:
-        rtau = abs(rtau) * np.sign(state[5]) 
+        roots = np.sort(np.roots(r_r))
+        #If current radius is between the inner and outer turning points, maintain direction
+        if (rad - roots[-2])*(roots[-1] - rad) > 0:
+            direc = np.sign(state[5])
+        #If current radius is somehow outside that range, follow the potential to go back in
+        else:
+            direc = np.sign(np.polyval(np.polyder(r_r), rad))
+        rtau = abs(rtau) * direc
         thetau = abs(thetau) * np.sign(state[6])
         new_state = np.copy(state)
-    
+        
     new_state[4:] = np.array([ttau, rtau, thetau, phitau])
     return new_state
 

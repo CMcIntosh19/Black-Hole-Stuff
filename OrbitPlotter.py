@@ -199,7 +199,8 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
         datalist = [datalist]
     fig, ax = plt.subplots()
     colors = list(mcolors.TABLEAU_COLORS)
-    for data in datalist:
+    for thing in range(len(datalist)):
+        data = datalist[thing]
         # ["value": [location in data dict, Value name, extra bit if timing is weird]]
         termdict = {"time": [data["time"], "Coordinate Time"],
                     "radius": [data["pos"][:,0], "Radius"],
@@ -283,10 +284,10 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
                     title = "%s vs Time"%(termdict[value][1])
                     xvals = timething[to:tf]
                     yvals = termdict[value][0][to:tf]
-            ax.plot(xvals, yvals, color=colors[datalist.index(data)%len(colors)])
+            ax.plot(xvals, yvals, color=colors[thing%len(colors)])
             if linefit == True:
                 stuff = np.polyfit(xvals, yvals, 1)
-                ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[datalist.index(data)%len(colors)])
+                ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[thing%len(colors)])
                 ax.legend()
         
         else:

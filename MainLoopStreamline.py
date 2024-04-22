@@ -114,7 +114,7 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
     def viable_cons(constants, state, a):
         energy, lz, cart = constants
         coeff = np.array([energy**2 - 1, 2, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*((a*energy - lz)**2 + cart), -cart*(a**2)])
-        coeff2 = np.array([(energy**2 - 1)*4, (2.0)*3, ((a**2)*(energy**2 - 1) - lz**2 - cart)*2, 2*((a*energy - lz)**2) + 2*cart])
+        coeff2 = np.polyder(coeff)
         flats = np.roots(coeff2)
         flats = flats.real[abs(flats.imag)<err_target]
         pot_min = max(flats)
@@ -122,7 +122,8 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
         return potential_min
     
     def get_true_anom(state, r0, e):
-        val = np.arccos((r0*(1 - e**2)/state[1] - 1)/e)
+        pre = np.sign((r0*(1 - e**2)/state[1] - 1)/e)
+        val = np.arccos(pre*min(1.0, abs((r0*(1 - e**2)/state[1] - 1)/e)))
         if state[5] < 0:
             val = 2*np.pi - val
         return val
@@ -149,8 +150,9 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
             break
                 
     coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
-    coeff2 = np.array([(initE**2 - 1)*4, 6.0, ((a**2)*(initE**2 - 1) - initLz**2 - initC)*2, 2*((a*initE - initLz)**2) + 2*initC])
-    pot_min, inner_turn, outer_turn = np.sort(np.roots(coeff2))[-1], *np.sort(np.real(np.roots(coeff)))[-2:]
+    coeff2 = np.polyder(coeff)
+    keps = np.array([np.sort(np.roots(coeff2))[-1], *np.sort(np.real(np.roots(coeff)))[-2:]])
+    pot_min, inner_turn, outer_turn = keps.real[abs(keps.imag)<(1e-6)*abs(keps[0])]
     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
     A = (a**2)*(1 - initE**2)
     z2 = ((A + initLz**2 + initC) - ((A + initLz**2 + initC)**2 - 4*A*initC)**(1/2))/(2*A) if A != 0 else initC/(initLz**2 + initC)
@@ -159,8 +161,9 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
     if True in np.iscomplex(tracker[0]):
         initE = (4*a*initLz*pot_min + ((4*a*initLz*pot_min)**2 - 4*(pot_min**4 + 2*pot_min*(a**2))*((a*initLz)**2 - (pot_min**2 - 2*pot_min + a**2)*(pot_min**2 + initLz**2 + initC)))**(0.5))/(2*(pot_min**4 + 2*pot_min*(a**2)))
         coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
-        coeff2 = np.array([(initE**2 - 1)*4, (2.0)*3, ((a**2)*(initE**2 - 1) - initLz**2 - initC)*2, 2*((a*initE - initLz)**2) + 2*initC])
-        pot_min, inner_turn, outer_turn = np.sort(np.roots(coeff2))[-1], *np.sort(np.roots(coeff))[-2:]
+        coeff2 = np.polyder(coeff)
+        keps = np.array([np.sort(np.roots(coeff2))[-1], *np.sort(np.real(np.roots(coeff)))[-2:]])
+        pot_min, inner_turn, outer_turn = keps.real[abs(keps.imag)<(1e-6)*abs(keps[0])]
         e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
         A = (a**2)*(1 - initE**2)
         z2 = ((A + initLz**2 + initC) - ((A + initLz**2 + initC)**2 - 4*A*initC)**(1/2))/(2*A) if A != 0 else initC/(initLz**2 + initC)
@@ -174,10 +177,7 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
     false_constants = [np.array([getEnergy(all_states[0], a), *getLs(all_states[0], mu)])]  #Cartesian approximation of L vector
     
     freqs = [mm.freqs_finder(initE, initLz, initC, a)]
-               
-    #tracker = [[pot_min, e, inner_turn, outer_turn, all_states[0][0], 0]]
-               #pot_min, eccentricity, turning points, timestamp, index
-    
+
     compErr = 0
     milestone = 0
     issues = [(None, None)]
@@ -186,7 +186,8 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
         orbitside = -1
     
     orbCount = 0
-    true_anom = [get_true_anom(all_states[0], 0.5*(outer_turn + inner_turn), e)]
+    val = get_true_anom(all_states[0], 0.5*(outer_turn + inner_turn), e)
+    true_anom = [val if np.isnan(val) == False else 0.0]
     stop = False
     
     if label == "default":
@@ -225,12 +226,9 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
                 E, L, C = constants[-1]
                 # if (high inclination) AND ((very close to pole AND approaching pole) OR (dTau is very small AND dTau is monotonically non-increasing))
                 if np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -1.55 and np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change):
-                    #print("POW, ind=", i)
-                    #print(new_step)
                     new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
                     new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
                     new_step[6] = -new_step[6]
-                    #print(new_step)
                     break
         
                 old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
@@ -251,20 +249,21 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
                 test = mm.check_interval(mm.kerr, new_step, a)
                 looper += 1
             if (test+1) > err_target or new_step[4] < 0.0:
-                #print("borked", looper)
-                #print(test+1, delt)
                 new_step = np.copy(og_new_step)
    
             #constant modifying section
             #Whenever you pass from one side of pot_min to the other, mess with the effective potential.
-            if ( np.sign(new_step[1] - pot_min) != orbitside) or ((new_step[3] - all_states[tracker[-1][-1]][3] > np.pi*(3/2)) and (np.std([state[1] for state in all_states[tracker[-1][-1]:]]) < 0.01*np.mean([state[1] for state in all_states[tracker[-1][-1]:]]))):
+            #if ( np.sign(new_step[1] - pot_min) != orbitside) or ((new_step[3] - all_states[tracker[-1][-1]][3] > np.pi*(3/2)) and (np.std([state[1] for state in all_states[tracker[-1][-1]:]]) < 0.01*np.mean([state[1] for state in all_states[tracker[-1][-1]:]]))):
+            R0, ECC = 0.5*(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
+            compl, comph = np.arccos(-ECC), 2*np.pi - np.arccos(-ECC)
+            S1, S2 = get_true_anom(state, R0, ECC), get_true_anom(new_step, R0, ECC)
+            if (np.sign(new_step[1] - pot_min) != orbitside) or ((S2-compl)*(compl-S1) > 0 or (S2-comph)*(comph-S1) > 0):
                 if (i - tracker[-1][-1] > 2):
                     update = True
                     if ( np.sign(new_step[1] - pot_min) != orbitside):
                         orbitside *= -1
                     if mu != 0.0:
                         condate = True
-                        #print(all_states[tracker[-1][-1]:i])
                         dcons = mm.peters_integrate6(all_states[tracker[-1][-1]:i], a, mu, tracker[-1][-1], i)
                         new_step, ch_cons = mm.new_recalc_state6(constants[-1], dcons, new_step, a)
                         pot_min = viable_cons(ch_cons, new_step, a)
@@ -281,8 +280,6 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
             #Only happens the step before the derivatives are recalculated.
             
             #Update stuff!
-            #updatetime = time.time()
-            #print(new_step)
             if (update == True):
                 if condate == False:
                     metric = mm.kerr(new_step, a)[0]
@@ -316,8 +313,6 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
                     freqs.append(mm.freqs_finder(*ch_cons, a))
                 if True in np.iscomplex(tracker[-1]):
                     compErr += 1
-                    #print("issue")
-                    #print(tracker[-1])
                     issues.append((i, new_step[0]))  
             
             interval.append(mm.check_interval(mm.kerr, new_step, a))
@@ -325,13 +320,9 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
             dTau_change.append(old_dTau)
             all_states.append(new_step )    #update position and velocity
             anomval = get_true_anom(new_step, 0.5*(outer_turn + inner_turn), e) + orbCount*2*np.pi
-            #print(anomval)
-            #print(np.isnan(anomval))
-            #print(true_anom[~np.isnan(true_anom)][-1])
-            if anomval < np.array(true_anom)[~np.isnan(true_anom)][-1]:
+            if anomval < true_anom[-1]:
                 anomval += 2*np.pi
                 orbCount += 1
-                print("fix!", anomval)
             true_anom.append(anomval)
             i += 1
             progress = max(1 - abs(eval(terms[2]) - eval(termdict[terms[0]]))/eval(terms[2]), i/(10**7) ) * 100
