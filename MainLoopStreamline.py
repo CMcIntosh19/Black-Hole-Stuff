@@ -12,13 +12,43 @@ from itertools import product
 from scipy.signal import argrelmin
 
 def getEnergy(state, a):
+    '''
+    Calculates energy per unit mass for a given position, trajectory, and black hole spin
+
+    Parameters
+    ----------
+    state : 8 element list/numpy array
+        4-position and 4-velocity of the test particle at a particular moment
+    a : float
+        Dimensionless spin parameter of the central body. Valid for values between -1 and 1.
+
+    Returns
+    -------
+    ene : float
+        Energy per unit mass
+    '''
     metric, chris = mm.kerr(state, a)
     stuff = np.matmul(metric, state[4:])
     ene = -stuff[0]
-    #print(stuff)
     return ene
     
 def getLs(state, mu):
+    '''
+    Returns Cartesian angular momentum given position, trajectory, and mass ratio
+
+    Parameters
+    ----------
+    state : 8 element list/numpy array
+        4-position and 4-velocity of the test particle at a particular moment
+    mu : float
+        Mass ratio between secondary body and central body. EMRI systems require mu to be less than or equal to 10^-4.
+
+    Returns
+    -------
+    Lmom : 3 element numpy array
+        x, y, and z components of Cartesian angular momentum, where the z-component is parallel to the central body's rotational axis
+
+    '''
     r, theta, phi, vel4 = *state[1:4], state[4:]
     sint, cost = np.sin(theta), np.cos(theta)
     sinp, cosp = np.sin(phi), np.cos(phi)
@@ -32,7 +62,7 @@ def getLs(state, mu):
     Lmom = np.cross(pos3cart, vel3cart)
     return Lmom
 
-def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
+def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
     '''
     Generates orbit
 
@@ -79,9 +109,43 @@ def clean_inspiral3(a, mu, endflag, mass=1.0, err_target=1e-15, label="default",
 
     Returns
     -------
-    dict
-        DESCRIPTION.
-
+    final: 35 element dict
+        Various tracked and record-keeping values for the resulting orbit
+        "name": Label for orbit if plotted, defaults to a list of Keplerian values for initial trajectory
+        "raw": 8 element state of the orbiting body from beginning to end [time, radius, theta, phi, dt, dradius, dtheta, dphi]
+        "inputs": initial input for function
+        "pos": Subset of "raw", only includes radius, theta position, and phi positions
+        "all_vel": Subset of "raw", only includes time, radius, theta position, and phi velocities
+        "time": Subset of "raw", only includes time
+        "true_anom": True anomaly measured at every moment in "time"; approximate
+        "interval": Derived from "raw", spacetime interval at every point measured in "time"; should equal -1 at all times
+        "vel": Derived from "raw", absolute velocity w.r.t. Mino time
+        "dTau_change": Change in timestep 
+        "energy": Energy of orbiting body at points of recalculation
+        "phi_momentum": Angular momentum of orbiting body at points of recalculation
+        "carter": Carter Constant of orbiting body (set to 0 for equatorial orbits) at points of recalculation
+        "qarter": Carter Constant of orbiting body at points of recalculation
+        "energy2": Specific Energy of orbiting body at all points in "time"
+        "Lx_momentum": X-component of Specific Angular Momentum of orbiting body at all points in "time"
+        "Ly_momentum": Y-component of Specific Angular Momentum of orbiting body at all points in "time"
+        "Lz_momentum": Z-component of Specific Angular Momentum of orbiting body at all points in "time"
+        "spin": Dimensionless spin of central body
+        "freqs": Characteristic frequencies of orbit w.r.t. time at points of recalculation [radial, theta, phi]
+        "pot_min": Radial distance of potential minimum at points of recalculation
+        "e": Eccentricity at points of recalculation
+        "inc": Inclination at points of recalculation
+        "it": Inner turning point at points of recalculation
+        "ot": Outer turning point at points of recalculation
+        "r0": Semimajor axis at points of recalculation
+        "tracktime": Value of time corresponding to points of recalculation
+        "trackix": Indices of "raw" corresponding to points of recalculation
+        "omega": Phi position of periapse
+        "otime": Time at periapse
+        "asc_node": Phi position of ascending node
+        "asc_node_time": Time at ascending node
+        "stop": 'True' if simulation was aborted before reaching end condition, False otherwise
+        "plunge": 'True' if simulation ended in a plunge, False otherwise
+        "issues": index and state corresponding to any point where Keplerian values read as complex
     '''
     termdict = {"time": "all_states[i][0]",
                 "phi_orbit": "abs(all_states[i][3]/(2*np.pi))",
@@ -450,7 +514,7 @@ def clean_continue(data, endflag = False, verbose=False):
     
     newstart = data["raw"][lastcross]/np.array([(G*mass)/(c**3), (G*mass)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*mass), (c**3)/(G*mass)])
     pos_new, vel_new = newstart[:4], newstart[4:]
-    newdata = clean_inspiral3(mass, a, mu, endflag, err_target, label=label_old, pos=pos_new, veltrue=vel_new, verbose=verbose_new)
+    newdata = EMRIGenerator(a, mu, endflag, mass, err_target, label=label_old, pos=pos_new, veltrue=vel_new, verbose=verbose_new)
     
     final = {"name": label_old,
              "raw": np.concatenate((data["raw"][:lastcross], newdata["raw"])),
@@ -488,71 +552,6 @@ def clean_continue(data, endflag = False, verbose=False):
              "issues": np.concatenate((data["issues"], newdata["issues"]))}
     return final
 
-def hopper(mass, a, mu, err_target, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav"):
-    orbs = []
-    orbs.append(clean_inspiral3(mass, a, mu, "phi_orbit > 50", err_target, label=label, cons=cons, velorient=velorient, vel4=vel4, params=params, pos=params, veltrue=veltrue, units=units, verbose=True))
-    final = orbs[-1].copy()
-    while orbs[-1]["plunge"] == False:
-        trackphi = np.searchsorted(orbs[-1]["time"], orbs[-1]["tracktime"])
-        dEdphi = np.polyfit(trackphi, orbs[-1]["energy"], 1)[0]
-        dLdphi = np.polyfit(trackphi, orbs[-1]["phi_momentum"], 1)[0]
-        dCdphi = np.polyfit(trackphi, orbs[-1]["carter"], 1)[0]
-        dtdphi, dphi = np.ptp(orbs[-1]["time"])/np.ptp(orbs[-1]["pos"][:,2]), 5000
-        newE, newL, newC = (np.array([dEdphi, dLdphi, dCdphi])*dphi + np.array([orbs[-1]["energy"][-1], orbs[-1]["phi_momentum"][-1], orbs[-1]["carter"][-1]]))/np.array([mu, mu, mu**2])
-        r0 = mm.set_u_kerr(0.0, cons=[newE, newL, newC])[0][1]
-        print(r0, "HEWWO!!")
-        new_end = "phi_orbit > %s"%(orbs[-1]["pos"][-1,2]/(2*np.pi) + dphi/(2*np.pi) + 50)
-        while r0 < 6:
-            print("last r0", orbs[-1]["r0"][-1])
-            if orbs[-1]["r0"][-1] < 7:
-                dphi = 0.0
-                newE, newL, newC = (np.array([dEdphi, dLdphi, dCdphi])*dphi + np.array([orbs[-1]["energy"][-1], orbs[-1]["phi_momentum"][-1], orbs[-1]["carter"][-1]]))/np.array([mu, mu, mu**2])
-                r0 = mm.set_u_kerr(0.0, cons=[newE, newL, newC])[0][1]
-                new_end = "radius < 2"
-                break
-            else:
-                dphi *= 0.5
-                newE, newL, newC = (np.array([dEdphi, dLdphi, dCdphi])*dphi + np.array([orbs[-1]["energy"][-1], orbs[-1]["phi_momentum"][-1], orbs[-1]["carter"][-1]]))/np.array([mu, mu, mu**2])
-                r0 = mm.set_u_kerr(0.0, cons=[newE, newL, newC])[0][1]
-                print(r0, "HEWWO????")
-                new_end = "phi_orbit > %s"%(orbs[-1]["pos"][-1,2]/(2*np.pi) + dphi/(2*np.pi) + 50)
-        #return newE, newL, newC, [orbs[-1]["time"][-1] + dtdphi*dphi, r0, np.pi/2, orbs[-1]["pos"][-1,2] + dphi]
-        orbs.append(clean_inspiral3(mass, a, mu, new_end, err_target, label=label, cons=[newE, newL, newC], pos=[orbs[-1]["time"][-1] + dtdphi*dphi, r0, np.pi/2, orbs[-1]["pos"][-1,2] + dphi], verbose=True))
-        final.update({"raw": np.concatenate((final["raw"], orbs[-1]["raw"])),
-                     "pos": np.concatenate((final["pos"], orbs[-1]["pos"])),
-                     "all_vel": np.concatenate((final["all_vel"], orbs[-1]["all_vel"])), 
-                     "time": np.concatenate((final["time"], orbs[-1]["time"])),
-                     "interval": np.concatenate((final["interval"], orbs[-1]["interval"])),
-                     "vel": np.concatenate((final["vel"], orbs[-1]["vel"])),
-                     "dTau_change": np.concatenate((final["dTau_change"], orbs[-1]["dTau_change"])),
-                     "energy": np.concatenate((final["energy"], orbs[-1]["energy"])),
-                     "phi_momentum": np.concatenate((final["phi_momentum"], orbs[-1]["phi_momentum"])),
-                     "carter": np.concatenate((final["carter"], orbs[-1]["carter"])),
-                     "qarter": np.concatenate((final["qarter"], orbs[-1]["qarter"])),
-                     "energy2": np.concatenate((final["energy2"], orbs[-1]["energy2"])),
-                     "Lx_momentum": np.concatenate((final["Lx_momentum"], orbs[-1]["Lx_momentum"])),
-                     "Ly_momentum": np.concatenate((final["Ly_momentum"], orbs[-1]["Ly_momentum"])),
-                     "Lz_momentum": np.concatenate((final["Lz_momentum"], orbs[-1]["Lz_momentum"])),
-                     "freqs": np.concatenate((final["freqs"], orbs[-1]["freqs"])),
-                     "pot_min":np.concatenate((final["pot_min"], orbs[-1]["pot_min"])),
-                     "e": np.concatenate((final["e"], orbs[-1]["e"])),
-                     "inc": np.concatenate((final["inc"], orbs[-1]["inc"])),
-                     "it": np.concatenate((final["it"], orbs[-1]["it"])),
-                     "ot": np.concatenate((final["ot"], orbs[-1]["ot"])),
-                     "r0": np.concatenate((final["r0"], orbs[-1]["r0"])),
-                     "tracktime": np.concatenate((final["tracktime"], orbs[-1]["tracktime"])),
-                     "trackix": np.concatenate((final["trackix"], orbs[-1]["trackix"])),
-                     "omega": np.concatenate((final["omega"], orbs[-1]["omega"] - 2*np.pi*len(final["omega"]))),
-                     "otime": np.concatenate((final["otime"], orbs[-1]["otime"])),
-                     "asc_node": np.concatenate((final["asc_node"], orbs[-1]["asc_node"] - 2*np.pi*len(final["asc_node"]))),
-                     "asc_node_time": np.concatenate((final["asc_node_time"], orbs[-1]["asc_node_time"])),
-                     "stop": orbs[-1]["stop"],
-                     "plunge": orbs[-1]["plunge"],
-                     "issues": np.concatenate((final["issues"], orbs[-1]["issues"]))})
-        if orbs[-1]["stop"] == True:
-            break
-    return final
-
 def dict_saver(data, filename):
     np.save(filename, data) 
     return True
@@ -561,155 +560,4 @@ def dict_from_file(filename):
     if ".npy" not in filename:
         filename = filename+".npy"
     data = np.load(filename, allow_pickle='TRUE').item()
-    #print(read_dictionary['hello']) # displays "world"
     return data
-
-def wrapsnap(data):
-    be, mE = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["energy"], 1)
-    bl, mL = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["phi_momentum"], 1)
-    bc, mC = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["carter"], 1)
-    br, mr = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["r0"], 1)
-    be, me = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["e"], 1)
-    bi, mi = np.polynomial.polynomial.polyfit(list(data["tracktime"]), data["inc"], 1)
-    return [mE, mL, mC, mr, me, mi]
-
-def wrapwrap(rml, e0l, inl, spl, mul, skip=[]):
-    try:
-        total = len(rml)*len(e0l)*len(inl)*len(spl)*len(mul)
-    except:
-        print("Invalid parameter list detected")
-        return {}, {}, {}
-    if total == 0:
-        print("Invalid parameter list detected")
-        return {}, {}, {}
-    condt = {}
-    for i, j, k, l, m in product(rml, e0l, inl, spl, mul):
-        rm, e0, inc, spin, mu = i, j, k, l, m
-        if (rm, e0, inc, spin, mu) not in skip:
-            t = np.sqrt(4*(np.pi**2)*(rm**3))
-            try:
-                test = clean_inspiral3(1.0, spin, mu, t*4, 0.1, 10**(-13), "test", params = [rm, e0, inc*np.pi/2], verbose=False)
-                if test["time"][-1] < t*4:
-                    if test["stop"] == True:
-                        skip.append(False)
-                        break
-                    else:
-                        print("Something's wonky.")
-                else:
-                    #edt[rm, e0, inc, spin, mu], ldt[rm, e0, inc, spin, mu], cdt[rm, e0, inc, spin, mu] = wrapsnap(test)
-                    condt[rm, e0, inc, spin, mu] = wrapsnap(test)
-            except:
-                print("Didn't work?")
-        else:
-            print("Already run!")
-        print("---")
-    skip = skip + list(condt.keys())
-    return condt, skip
-
-def wrapwrap2(rml, e0l, inl, spl, mul, endflag, skip=[], fid=1e-15):
-    try:
-        total = len(rml)*len(e0l)*len(inl)*len(spl)*len(mul)
-    except:
-        print("Invalid parameter list detected")
-        return {}, {}, {}
-    if total == 0:
-        print("Invalid parameter list detected")
-        return {}, {}, {}
-    paramdt = {}
-    for i, j, k, l, m in product(rml, e0l, inl, spl, mul):
-        rm, e0, inc, spin, mu = i, j, k, l, m
-        if (rm, e0, inc, spin, mu) not in skip:
-            try:  
-                print(rm, e0, inc, spin, mu)
-                test = clean_inspiral3(1.0, spin, mu, endflag, fid, str((rm, e0, inc, spin, mu)), params = [rm, e0, inc], verbose=False)
-                if test["stop"] == True:
-                    break
-                else:
-                    paramdt[rm, e0, inc, spin, mu] = wrapsnap(test)
-            except:
-                print("Didn't work?")
-        else:
-            print("Already run!")
-        #print("---")
-    skip = skip + list(paramdt.keys())
-    return paramdt, skip
-
-def wrapwrap3(rml, e0l, inl, spl, mul, endflag, skip=[], fid=1e-15, verb = False):
-    try:
-        total = len(rml)*len(e0l)*len(inl)*len(spl)*len(mul)
-    except:
-        print("Invalid parameter list detected")
-        return {}, {}, {}
-    if total == 0:
-        print("Invalid parameter list detected")
-        return {}, {}, {}
-    paramdt = {}
-    for i, j, k, l, m in product(rml, e0l, inl, spl, mul):
-        rm, e0, inc, spin, mu = i, j, k, l, m
-        if (rm, e0, inc, spin, mu) not in skip:
-            try:  
-                print(rm, e0, inc, spin, mu)
-                test = clean_inspiral3(1.0, spin, mu, endflag, fid, str((rm, e0, inc, spin, mu)), params = [rm, e0, inc], verbose=verb)
-                if test["stop"] == True:
-                    break
-                paramdt[rm, e0, inc, spin, mu] = test
-            except:
-                print("Didn't work:", rm, e0, inc, spin, mu)
-        else:
-            print("Already run!")
-    skip = skip + list(paramdt.keys())
-    return paramdt, skip
-
-def dictslice(data, con, rm, e0, inc, spin, mu):
-    #con = 0 for edot, 1 for ldot, 2 for cdot
-    info = data.keys()
-    params = [rm, e0, inc, spin, mu]
-    itr = params.index("A")
-    for i in range(len(params)):
-        if params[i] != "A":
-            info = [keys for keys in info if keys[i] == params[i]]
-    xdat = [ind[itr] for ind in info]
-    ydat = [data[ind][con] for ind in info]
-    xdat, ydat = (list(t) for t in zip(*sorted(zip(xdat, ydat))))
-    return xdat, ydat
-
-def multislice(data, con, rm, e0, inc, spin, mu, legend = True, logx=False, logy=False):
-    info = data.keys()
-    params = [rm, e0, inc, spin, mu]
-    conname = ["dE/dt", "dL/dt", "dC/dt"]
-    paramname = ["R0", "Eccentricity", "Inclination", "Spin", "Mu"]
-    itr1, itr2 = params.index("A"), params.index("B")
-    spec = [paramname[i][:3] + " = " + str(params[i]) for i in range(5) if (params[i]!="A" and params[i]!="B")]
-    blist = []
-    pairs = []
-    labs = []
-    for i in range(len(params)):
-        if (params[i] != "A") and (params[i] != "B"):
-            info = [keys for keys in info if keys[i] == params[i]]
-    for index in info:
-        if index[itr2] not in blist:
-            blist.append(index[itr2])
-    temp = dict((k, data[k]) for k in info if k in data)
-    for bval in blist:
-        params[itr2] = bval
-        pairs.append((*dictslice(temp, con, *params), paramname[itr2][:3] + " = " + str(bval)))
-        labs.append(bval)
-    
-    labs, pairs = (list(t) for t in zip(*sorted(zip(labs, pairs))))
-    fig, ax = plt.subplots()
-    for pair in pairs:
-        x = pair[0]
-        y = pair[1]
-        if logx == True:
-            x = np.log(pair[0])/np.log(10)
-        if logy == True:
-            y = np.log(pair[1])/np.log(10)
-        ax.plot(x, y, label=pair[2])
-    if logx == True:
-        paramname[itr1] = "Log(" + paramname[itr1] + ")"
-    if logy == True:
-        conname[con] = "Log(" + conname[con] + ")"
-    ax.set_title("Variation in " + conname[con] + " vs " + paramname[itr1])
-    if legend != False:
-        ax.legend(title = ', '.join(spec)) if legend == True else ax.legend()
-    return pairs

@@ -480,7 +480,7 @@ def gr_diff_eq(solution, state, *args):
     Parameters
     ----------
     solution : function
-        One of the solution functions mink, schwarz, or kerr
+        One of the GR solution functions (mink, schwarz, or kerr)
     state : 8 element numpy array of floats
         4-position and 4-velocity of the test particle at a particular moment
     *args : int/float
