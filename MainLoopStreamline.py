@@ -7,8 +7,6 @@ Created on Mon Sep 18 13:30:25 2023
 
 import numpy as np
 import MetricMathStreamline as mm
-import matplotlib.pyplot as plt
-from itertools import product
 from scipy.signal import argrelmin
 
 def getEnergy(state, a):
@@ -303,7 +301,7 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
             metric = mm.kerr(new_step, a)[0]
             test = mm.check_interval(mm.kerr, new_step, a)
             looper = 0
-            while (abs(test+1)>(err_target) or new_step[4] < 0.0) and looper <10:
+            while (abs(test+1)>(err_target) or new_step[4] < 0.0) and looper < 10:
                 borken = borken + 1
                 og_new_step = np.copy(new_step)
                 gtt, gtp = metric[0,0], metric[0,3]

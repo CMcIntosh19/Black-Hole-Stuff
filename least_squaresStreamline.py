@@ -435,130 +435,13 @@ def errorplot(x, y, num=1000, binns=50):
     ax.stairs(ycounts, ybins, label="Random r0, e, i, a")
     ax.vlines(-6, 0, max(np.concatenate((xcounts, ycounts))), label="Maximum Accepted Error")
     ax.legend()
-
-def schmidtparam3(r0, e, i, a, inner=False):
-    p = r0*(1 - (e**2))  #p is semi-latus rectum, r0 is semimajor axis 
-    rp, ra = p/(1 + e), p/(1 - e)
-    polar = False
-    j = i
-    if i == 0.0 or i == np.pi:
-        vals = np.transpose([[inc, *schmidtparam3(r0, e, inc, a, inner=True)] for inc in np.linspace(np.pi/2, i, endpoint=False)])
-        Efit, Lfit, Cfit = np.polyfit(vals[0], vals[1], 10), np.polyfit(vals[0], vals[2], 10), np.polyfit(vals[0], vals[3], 10)
-        E, L, C = np.polyval(Efit, i), np.polyval(Lfit, i), np.polyval(Cfit, i)
-        coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
-        coeff2 = np.polyder(coeff)
-        turns = np.roots(coeff)
-        flats = np.roots(coeff2)
-        r02, e2 = (turns[0] + turns[1])/2.0, (turns[0] - turns[1])/(turns[0] + turns[1])
-        r_err, e_err = ((r0 - r02)/r0)*100, ((e2 - e)/(2-e))*100
-        r_err *= np.sign(r_err)
-        e_err *= np.sign(e_err)
-        return [E, 0.0, C]
-    z = abs(np.cos(j))
-    
-    def rfuncs(r):
-        tri = r**2 - 2*r + a**2
-        f = r**4 + (a**2)*(r*(r + 2) + tri*(z**2))
-        g = 2*a*r
-        h = r*(r - 2) + tri*(z**2)/(1 - z**2)
-        d = (r**2 + (a*z)**2)*tri
-        return f, g, h, d
-    def r_funcs(r):
-        f_ = 4*(r**3) + 2*(a**2)*((1 + z**2)*r + (1 - z**2))
-        g_ = 2*a
-        h_ = 2*(r - 1)/(1 - z**2)
-        d_ = 2*(2*r - 3)*(r**2) + 2*(a**2)*((1 + z**2)*r - z**2)
-        return f_, g_, h_, d_   
-    
-    if e == 0.0:
-        f1, g1, h1, d1 = rfuncs(p)
-        f2, g2, h2, d2 = r_funcs(p)
-    else:
-        f1, g1, h1, d1 = rfuncs(rp)
-        f2, g2, h2, d2 = rfuncs(ra)
-    
-    def newC(E, L, a, z):
-        return (z**2)*((a**2)*(1 - E**2) + (L**2)/(1 - z**2))
-    
-    x, y = sp.symbols("x y", real=True)
-    eq1 = sp.Eq(f1*(x**2) - 2*g1*x*y - h1*(y**2), d1)
-    eq2 = sp.Eq(f2*(x**2) - 2*g2*x*y - h2*(y**2), d2)
-    symsols = sp.solve([eq1, eq2])
-
-    full_sols = []
-    E, L, C = (1 - (1 - e**2)/p)**0.5, ((1 - z**2)*p)**(0.5), p*(z**2)
-    for thing in symsols:
-        ene, lel = np.array([thing[x], thing[y]]).astype(float)
-        if ene > 0.0 and ene < 1.0: 
-            full_sols.append([ene, lel, newC(ene, lel, a, z)])
-            E, L, C = [ene, lel, newC(ene, lel, a, z)]
-            if np.product(np.sign([E, L, C])) == np.sign(np.sin(j)):
-                break
-            else:
-                E, L, C = (1 - (1 - e**2)/p)**0.5, ((1 - z**2)*p)**(0.5), p*(z**2)
-
-    coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
-    coeff2 = np.polyder(coeff)
-    turns = np.roots(coeff)
-    flats = np.roots(coeff2)
-    ro = max(flats)
-    while np.polyval(coeff, ro) < -1e-12:
-        E += 10**(-16)
-        coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
-        coeff2 = np.polyder(coeff)
-        turns = np.roots(coeff)
-        flats = np.roots(coeff2)
-        ro = max(flats)
-        #print("uh", np.polyval(coeff, ro), E)
-    turns = np.sort(turns)
-    
-    r02, e2 = (turns[-1] + turns[-2])/2.0, (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
-    r_err, e_err = ((r0 - r02)/r0)*100, ((e2 - e)/(2-e))*100
-    r_err *= np.sign(r_err)
-    e_err *= np.sign(e_err)
-
-    if r_err < 1e-6 and e_err < 1e-6:
-        return [E, L, C]
-    else:
-        def r__funcs(r):
-            f__ = 12*(r**2) + 2*a*(1 + z**2)
-            g__ = 0.0
-            h__ = 2/(1 - z**2)
-            d__ = 4*(r - 1)*(r + 3) + 2*(a**2)*(1 + z**2)
-            return f__, g__, h__, d__  
-        
-        if False not in np.isreal([r_err, e_err]):
-            f1, g1, h1, d1 = r_funcs(rp)
-        else:
-            f1, g1, h1, d1 = r__funcs(rp)
-
-        f2, g2, h2, d2 = rfuncs(ra)
-        
-        eq1 = sp.Eq(f1*(x**2) - 2*g1*x*y - h1*(y**2), d1)
-        eq2 = sp.Eq(f2*(x**2) - 2*g2*x*y - h2*(y**2), d2)
-
-        symsols = sp.solve([eq1, eq2])
-        
-        full_sols = []
-        for thing in symsols:
-            ene, lel = np.array([thing[x], thing[y]]).astype(float)
-            if ene > 0.0: 
-                full_sols.append([ene, lel, newC(ene, lel, a, z)])
-        
-        for solution in full_sols:
-            if (np.product(np.sign(solution)) == np.sign(np.sin(i))):
-                E, L, C = solution
-                break     
-        if polar == True:
-            L, C = 0.0, C/(z**2) - (a**2)*(1 - E**2)
-        return [E, L, C]
     
 def seper_locator3(r0, inc, a):
     #print(r0)
     test_r = mm.find_rmb(a)[1]
     e = 1 - test_r/r0
     small, big = 0.0, 1.0
-    E, L, C = schmidtparam3(r0, e, inc, a)
+    E, L, C = mm.schmidtparam3(r0, e, inc, a)
     R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
     r1, bloh, bluh = np.array(np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]))
     val = R(bloh)
@@ -569,7 +452,7 @@ def seper_locator3(r0, inc, a):
         else:
             small = e
         e = (2*big + small)/3
-        E, L, C = schmidtparam3(r0, e, inc, a)
+        E, L, C = mm.schmidtparam3(r0, e, inc, a)
         R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
         r1, bloh, bluh = np.array(np.roots([4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]))
         val = R(bloh)
@@ -588,7 +471,7 @@ def seper_locator4(r0, inc, a):
     while np.abs(new_e - e) > 1e-5:
         try:
             e, old_e = new_e, e
-            E, L, C = schmidtparam3(r0, e, inc, a)
+            E, L, C = mm.schmidtparam3(r0, e, inc, a)
             coeff = np.array([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
             turns = np.sort(np.roots(coeff))
             print((turns[-1] + turns[-2])/2, e)
@@ -611,7 +494,7 @@ def seper_locator5(r0, inc, a):
     e = 1e-7
     print(e)
     while np.abs((r0*(1-e) - cusp)/cusp) > 1e-5:
-        E, L, C = schmidtparam3(r0, e, inc, a)
+        E, L, C = mm.schmidtparam3(r0, e, inc, a)
         coeff = np.array([E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
         turns = np.sort(np.roots(coeff))
         ri, ro = r0*(1-e), r0*(1+e)

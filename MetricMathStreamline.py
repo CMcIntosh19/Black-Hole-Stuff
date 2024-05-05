@@ -11,6 +11,21 @@ import matplotlib.pyplot as plt
 import sympy as sp
 
 def find_rmb(spin):
+    '''
+    Brief calculations for marginally bound orbits
+
+    Parameters
+    ----------
+    spin : float
+        Dimensionless spin constant of black hole, between -1 and 1 inclusive
+
+    Returns
+    -------
+    l_mb: float
+        Specific angular momentum of an equatorial orbit at the marginally bound orbit
+    r_mb: float
+        Periapse of an equatorial orbit at the marginally bound orbit
+    '''
     if spin >= 0.0:
         pro = 1.0
     else:
@@ -29,6 +44,19 @@ def find_rmb(spin):
     return l_mb, r_mb
 
 def find_rms(spin):
+    '''
+    Brief calculations for marginally stable orbits (ISCO)
+
+    Parameters
+    ----------
+    spin : float
+        Dimensionless spin constant of black hole, between -1 and 1 inclusive
+
+    Returns
+    -------
+    r_ms: float
+        Radius of an equatorial orbit at the marginally stable bound orbit
+    '''
     if spin >= 0.0:
         pro = 1.0
     else:
@@ -112,8 +140,8 @@ def kerr(state, a):
     ----------
     state : 8 element numpy array of floats
         4-position and 4-velocity of the test particle at a particular moment
-    a : int/float
-        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    a : float
+        dimensionless spin constant of black hole, between -1 and 1 inclusive
 
     Returns
     -------
@@ -225,7 +253,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             Rdco = [4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]
             flats = np.roots(Rdco)
             flats = np.sort(flats.real[abs(flats.imag)<1e-14])
-            pos = [0.0, flats[0], np.pi/2, 0.0]
+            pos = [0.0, flats[-1], np.pi/2, 0.0]
             new = recalc_state(cons, pos, a)
     elif (np.shape(velorient) == (3,)):
         print("Calculating intial velocity from tetrad velocity and orientation")
@@ -372,7 +400,6 @@ def schmidtparam3(r0, e, i, a):
     symsols = sp.solve([eq1, eq2])
 
     full_sols = []
-    E, L, C = (1 - (1 - e**2)/p)**0.5, ((1 - z**2)*p)**(0.5), p*(z**2)
     for thing in symsols:
         ene, lel = np.array([thing[x], thing[y]]).astype(float)
         if ene > 0.0 and ene < 1.0: 
@@ -382,28 +409,22 @@ def schmidtparam3(r0, e, i, a):
                 break
             else:
                 E, L, C = (1 - (1 - e**2)/p)**0.55, ((1 - z**2)*p)**(0.5), p*(z**2)
-
-    coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
-    coeff2 = np.polyder(coeff)
-    turns = np.roots(coeff)
-    flats = np.roots(coeff2)
-    ro = max(flats)
+                
+    coeff, ro = [-1], 1
     while np.polyval(coeff, ro) < -1e-12:
         E += 10**(-16)
         coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
         coeff2 = np.polyder(coeff)
         turns = np.roots(coeff)
         flats = np.roots(coeff2)
+        turns = turns.real[abs(turns.imag)<(1e-6)*r0]
+        flats = flats.real[abs(flats.imag)<(1e-6)*r0]
         ro = max(flats)
     turns = np.sort(turns)
-    
     r02, e2 = (turns[-1] + turns[-2])/2.0, (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
-    r_err, e_err = ((r0 - r02)/r0)*100, ((e2 - e)/(2-e))*100
-    r_err *= np.sign(r_err)
-    e_err *= np.sign(e_err)
-
+    r_err, e_err = np.abs((r0 - r02)/r0)*100, np.abs((e2 - e)/(2-e))*100
+    
     if r_err < 1e-6 and e_err < 1e-6:
-        #print(flats)
         if (np.sqrt(L**2 + C) - np.abs(L))/L < 1e-15:
             C = 0.0
         return [E, L, C]
@@ -892,6 +913,34 @@ def new_recalc_state6(cons, con_derv, state, a):
     return new_state, [E, L, C]
 
 def Jfunc(x, r0, e, i, a, E, L, C):
+    '''
+    Supplementary function for freqs_finder. Separated because it uses recursion to iterate
+
+    Parameters
+    ----------
+    x : float
+        Radius in terms of gravitational radii
+    r0 : float
+        Semimajor axis corresponding to given orbit, in terms of gravitational radii
+    e : float
+        Eccentrity of orbit
+    i : float
+        Inclination of orbit, with pi/2 as equatorial
+    a : float
+        Dimensionless spin of central black hole
+    E : float
+        Specific energy of orbit
+    L : float
+        Specific angular momentum of orbit
+    C : float
+        Specific Carter constant of orbit
+
+    Returns
+    -------
+    float
+        Intermediate value used for calculating orbital frequencies
+
+    '''
     #E, L, C = schmidtparam3(r0, e, i, a)
     p = r0*(1 - e**2)
     J = lambda x: (1-E**2)*(1-e**2)+2*(1-E**2-1/r0)*(1+e*np.cos(x))+((1-E**2)*(3+e**2)/(1-e**2)-(4/p)+((a**2)*(1-E**2)+L**2+C)*(1/(r0*p)))*((1+e*np.cos(x))**2)
@@ -899,11 +948,32 @@ def Jfunc(x, r0, e, i, a, E, L, C):
     z2 = np.sqrt(3*(a**2) + z1**2)
     rms = 3 + z2 - np.sign(a)*np.sqrt((3-z1)*(3 + z1 + 2*z2))
     if J(0) < 0.0 and r0*(1-e) > rms:
-        return Jfunc(x, r0/10, e, i, a)/10
+        E1, L1, C1 = schmidtparam3(r0/10, e, i, a)
+        return Jfunc(x, r0/10, e, i, a, E1, L1, C1)/10
     else:
         return J(x)
     
 def freqs_finder(E, L, C, a):
+    '''
+    Calculates characteristic frequencies of a given orbit
+
+    Parameters
+    ----------
+    E : float
+        Specific energy of orbit
+    L : float
+        Specific angular momentum of orbit
+    C : float
+        Specific Carter constant of orbit
+    a : float
+        Dimensionless spin of central black hole
+
+    Returns
+    -------
+    3-element numpy array
+        [Radial frequency, theta frequency, phi frequency] in geometric units
+
+    '''
     B2 = (a**2)*(1 - E**2)
     roots = np.round(np.sort(np.roots([B2, 0, -(B2 + C + L**2), 0, C])), 15)
     if len(roots) == 4:
@@ -936,6 +1006,55 @@ def freqs_finder(E, L, C, a):
     Lam = (Yt + Xt*(a*zp)**2)*Kk - Xt*Ek*(a*zp)**2
     wr, wt, wp = np.pi*p*Kk/((1-e**2)*Lam), np.pi*(B2**0.5)*zp*Xt/(2*Lam), (1/Lam)*((Zt - L*Xt)*Kk + L*Xt*Pk)
     g = (1/Lam)*((Wt + E*Xt*(a*zp)**2)*Kk - E*Xt*Ek*(a*zp)**2)
+    wr, wt, wp, g = np.where(np.array([wr, wt, wp, g]).imag < 1e-11, np.array([wr, wt, wp, g]).real, np.array([wr, wt, wp, g]))
     if a == 0.0:
         wt = wp
     return np.array([wr, wt, wp])/g
+
+def seper_locator(r0, inc, a):
+    '''
+    Locates seperatrix for a given semimajor axis, inclination, and black hole spin
+
+    Parameters
+    ----------
+    r0 : float
+        Semimajor axis in gravitational units
+    inc : float
+        Inclination of orbit, with pi/2 as equatorial
+    a : float
+        Dimensionless spin of central black hole
+
+    Returns
+    -------
+    3-element numpy array
+        [Specific Energy, Specific Angular Momentum, Specific Carter constant] of seperatrix orbit
+    float
+        Eccentricity of orbit
+
+    '''
+    r2, r3 = 1, 0
+    rmb = find_rmb(a)[1]
+    e = (1 - (rmb/r0))*0.5
+    e_list = [e]
+    loops = 1
+    while (r2 - r3 > 1e-11 or r2 - r3 < 0) and loops < 100:
+        r1, r2 = r0*(1 + e), r0*(1 - e)
+        E, L, C = schmidtparam3(r0, e, inc, a)
+        A_B = 2/(1 - E**2) - (r1 + r2)
+        AB = (a**2)*C/((1 - E**2)*r1*r2)
+        r3 = (A_B + np.sqrt(A_B**2 - 4*AB))/2.0
+        #print(r2, r3, r2-r3, e)
+        if r2 - r3 > 1e-11:
+            new_e = e*(1 + (np.abs(r2 - r3)/np.abs(r1 - r3))**1.0)
+            if new_e == e:
+                new_e += 5e-13
+        elif r2 - r3 < 0:
+            if r1 < r3:
+                print("r0 gives plunge for all values of e")
+                return [False, False, False]
+            else:
+                new_e = e*(1 + (r2 - r3)/10)
+        e = new_e
+        e_list.append(e)
+        loops += 1
+    return [E, L, C], e
