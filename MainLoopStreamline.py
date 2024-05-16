@@ -8,6 +8,7 @@ Created on Mon Sep 18 13:30:25 2023
 import numpy as np
 import MetricMathStreamline as mm
 from scipy.signal import argrelmin
+from tqdm import tqdm
 
 def getEnergy(state, a):
     '''
@@ -184,8 +185,8 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
         return potential_min
     
     def get_true_anom(state, r0, e):
-        pre = np.sign((r0*(1 - e**2)/state[1] - 1)/e)
-        val = np.arccos(pre*min(1.0, abs((r0*(1 - e**2)/state[1] - 1)/e)))
+        pre = np.sign((r0*(1 - e**2)/state[1] - 1)) #e is always positive
+        val = np.arccos(pre*min(1.0, abs((r0*(1 - e**2)/state[1] - 1)/(e + 1e-15)))) #add a little tiny bias to get rid of divide by zero errors
         if state[5] < 0:
             val = 2*np.pi - val
         return val
@@ -263,6 +264,9 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
     plunge = False
     def anglething(angle):
         return 0.5*np.pi - np.abs(angle%np.pi - np.pi/2)
+    if verbose == False:
+        pbar = tqdm(total = 10000000, position=0)
+    progress = 0
     while (not(eval(newflag)) and i < 10**7):
         try:
             update = False
@@ -320,7 +324,7 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
             compl, comph = np.arccos(-ECC), 2*np.pi - np.arccos(-ECC)
             S1, S2 = get_true_anom(state, R0, ECC), get_true_anom(new_step, R0, ECC)
             if (np.sign(new_step[1] - pot_min) != orbitside) or ((S2-compl)*(compl-S1) > 0 or (S2-comph)*(comph-S1) > 0):
-                if (i - tracker[-1][-1] > 2):
+                if (i - tracker[-1][-1] > 10):
                     update = True
                     if ( np.sign(new_step[1] - pot_min) != orbitside):
                         orbitside *= -1
@@ -331,12 +335,11 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
                         pot_min = viable_cons(ch_cons, new_step, a)
                         while pot_min < -err_target:
                             print("tick?")
-                            Lphi, ro = *ch_cons[1], pot_min[1]
-                            ch_cons[0] += max(10**(-16), 2*(-pot_min[0])*((2*ro*((ro**3 + ro*(a**2) + 2*(a**2))*ch_cons[0] - 2*Lphi*a))**(-1)))
+                            Lphi, ro = ch_cons[1], pot_min
+                            ch_cons[0] += max(10**(-16), 2*(-pot_min)*((2*ro*((ro**3 + ro*(a**2) + 2*(a**2))*ch_cons[0] - 2*Lphi*a))**(-1)))
                             new_step = mm.recalc_state(ch_cons, new_step, a)
                             pot_min = viable_cons(ch_cons, new_step, a)
                         
-                    
             #Initializing for the next step
             #Updates the constants based on the calculated derivatives, then updates the state velocities based on the new constants.
             #Only happens the step before the derivatives are recalculated.
@@ -387,16 +390,20 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
                 orbCount += 1
             true_anom.append(anomval)
             i += 1
-            progress = max(1 - abs(eval(terms[2]) - eval(termdict[terms[0]]))/eval(terms[2]), i/(10**7) ) * 100
-            progress = max( abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i/(10**7)) * 100
             if verbose == True:
+                progress = max( abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i/(10**7)) * 100
                 if (progress >= milestone):
                     print("Program has completed " + str(round(eval(termdict[terms[0]]), 2)), ",", str(round(progress, 4)) + "% of maximum run: Index = " + str(i))
                     milestone = int(progress) + 1
+            else:
+                val = max( (10**7)*abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i) - progress
+                if val > 0:
+                    pbar.update(val)
+                    progress = max( (10**7)*abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i)
         
         #Lets you end the program before the established end without breaking anything
         except KeyboardInterrupt:
-            print("Ending program")
+            print("\nEnding program")
             stop = True
             cap = len(all_states) - 1
             all_states = all_states[:cap]
@@ -407,8 +414,8 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
             freqs = freqs[:cap]
             break
         except Exception as e:
-            print("Ending program - ERROR")
-            print(e)
+            print("\nEnding program - ERROR")
+            print(type(e), e)
             stop = True
             cap = len(all_states) - 1
             all_states = all_states[:cap]
@@ -418,6 +425,8 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
             qarter = qarter[:cap]
             freqs = freqs[:cap]
             break
+    if verbose == False:
+        pbar.close()
     print(len(issues), len(all_states))
     #unit conversion stuff
     if units == "mks":

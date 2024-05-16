@@ -438,7 +438,7 @@ def errorplot(x, y, num=1000, binns=50):
     
 def seper_locator3(r0, inc, a):
     #print(r0)
-    test_r = mm.find_rmb(a)[1]
+    test_r = mm.find_rmb(a)
     e = 1 - test_r/r0
     small, big = 0.0, 1.0
     E, L, C = mm.schmidtparam3(r0, e, inc, a)
@@ -460,7 +460,7 @@ def seper_locator3(r0, inc, a):
 
 def seper_locator4(r0, inc, a):
     #print(r0)
-    if r0 < mm.find_rmb(a)[1]:
+    if r0 < mm.find_rmb(a):
         return np.nan
     elif r0 <= mm.find_rms(a):
         return 0.0
@@ -486,7 +486,7 @@ def seper_locator4(r0, inc, a):
 
 def seper_locator5(r0, inc, a):
     #print(r0)
-    if r0 < mm.find_rmb(a)[1]:
+    if r0 < mm.find_rmb(a):
         return np.nan
     elif r0 <= mm.find_rms(a):
         return 0.0

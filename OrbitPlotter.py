@@ -167,7 +167,7 @@ def plotvalue(data, value, vsphase=False, linefit=True, start=0, end=-1):
             print("'" + name + "':", termdict[name][1])
     return True
     
-def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xscale='linear', yscale='linear'):
+def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xscale='linear', yscale='linear', filename=False):
     '''
     Parameters
     ----------
@@ -229,6 +229,7 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
                     "radial_freq": [data["freqs"][:, 0], "Radial Frequency"],
                     "theta_freq": [data["freqs"][:, 1], "Theta Frequency"],
                     "phi_freq": [data["freqs"][:, 2], "Phi Frequency"],
+                    "all_freq": [data["freqs"], "All Frequencies"],
                     "energy": [data["energy"], "Specific Energy"],
                     "l_momentum": [data["phi_momentum"], "Specific Angular Momentum"],
                     "carter": [data["carter"], "Carter Constant"],
@@ -299,7 +300,10 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
     ax.set_xscale(xscale)
     ax.set_yscale(yscale)
     ax.set_title(title)
-    return True
+    if filename == False:
+        plt.show()
+    else:
+        plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
 
 def comparevalues(data, values, start=0, end=-1, leg=True):
     clean_list = []
@@ -352,7 +356,7 @@ def comparevalues(data, values, start=0, end=-1, leg=True):
     
     return True
 
-def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, ele=30, azi=-60, cb=False, stitch=False):
+def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, ele=30, azi=-60, cb=False, stitch=False, filename=False):
     '''
     Plots one or more test particles' path through space
     
@@ -558,7 +562,10 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
         ax.set_box_aspect((rbound, rbound, rbound))
         if leg == True:
             ax.legend()
-    return fig
+    if filename == False:
+        plt.show()
+    else:
+        plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
 
 def physplots(datalist, merge=False, start=0.0, end=-1.0, fit=True, leg=True):
     '''
@@ -962,6 +969,8 @@ def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scr
     
     if name == False:
         name="False"
+    if type(datalist) != list:
+        datalist = [datalist]
 
     num_steps = int(100*fid)
     
@@ -977,6 +986,8 @@ def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scr
         rbound = 0
         for data in datalist:
             lines.append(ax.plot([], [], [], zorder=10)[0])
+            #print(data)
+            #print(data["time"][0])
             int_sphere, int_time = mm.interpolate(data["pos"], data["time"], supress = False)
             X = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.cos(int_sphere[:,2])
             Y = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.sin(int_sphere[:,2])
@@ -1001,7 +1012,7 @@ def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scr
             A = np.pi - np.arctan(20*rbound/(rb*zoom))
             
             #hide paths behind black hole
-            print(paths[0])
+            #print(paths[0])
             for i in range(len(paths)):
                 carts = np.transpose(paths[i][:3])
                 r = np.sqrt(carts[:,0]**2 + carts[:,1]**2 + carts[:,2]**2)
@@ -1011,7 +1022,7 @@ def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scr
                 #print(list(cond).count(False))
                 #newpath = 
                 paths[i] = np.append(np.transpose(np.array([carts[i] if cond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(cond))])), [paths[i][-1]], axis=0)
-            print(paths[0])
+            #print(paths[0])
             
         if scroll == False:
             ax.set(xlim3d=(-rbound, rbound), xlabel='X')
@@ -1269,7 +1280,7 @@ def top_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         ax[i,1].grid()
         ax[i,1].legend()
         
-def orth_and_fourier(data, start=0, end=-1):
+def orth_and_fourier(data, start=0, end=-1, filename=False):
     fig = plt.figure(figsize=(8,6))
     ax1 = fig.add_subplot(2,3,4)
     ax2 = fig.add_subplot(2,1,1)
@@ -1342,11 +1353,14 @@ def orth_and_fourier(data, start=0, end=-1):
     ax2.set_xscale('log')
     ax2.grid()
     ax2.legend()
-    return 0
+    if filename == False:
+        plt.show()
+    else:
+        plt.savefig("%s.png"%(filename), bbox_inches="tight")
 
-def justfourier(data, start=0, end=-1):
+def justfourier(data, start=0, end=-1, filename=False):
     cap = max(data["pos"][:,0])
-    wave, time = mm.full_transform(data, cap*1000)
+    wave, time = mm.full_transform(data, cap*1000, supress=True)
     to = get_index(time, start)
     if end > 0.0:
         tf = get_index(time, end)
@@ -1382,7 +1396,10 @@ def justfourier(data, start=0, end=-1):
     ax.set_ylabel("Relative Intensity")
     ax.grid()
     ax.legend()
-    return 0
+    if filename == False:
+        plt.show()
+    else:
+        plt.savefig("%s.png"%(filename), bbox_inches="tight")
     
 
 def wavelething(data):
@@ -1396,10 +1413,8 @@ def wavelething(data):
     freq = 2*np.pi/period
     print(freq)
     #0.06804175435239163
-    print(pywt.frequency2scale('morl',samper*freq
-*10), pywt.frequency2scale('morl',samper*freq/10))
-    scalelow, scalehigh = max(1, pywt.frequency2scale('morl',samper*0.06804175435239163
-*10)), pywt.frequency2scale('morl',samper*freq/100)
+    print(pywt.frequency2scale('morl',samper*freq*10), pywt.frequency2scale('morl',samper*freq/10))
+    scalelow, scalehigh = max(1, pywt.frequency2scale('morl',samper*0.06804175435239163*10)), pywt.frequency2scale('morl',samper*freq/100)
     coef, freqs = pywt.cwt(waves[:,0,0], np.linspace(scalelow, scalehigh, 200), 'morl',
                        sampling_period=samper) 
 

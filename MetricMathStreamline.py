@@ -5,6 +5,7 @@ Metric Math stuff
 
 import numpy as np
 from scipy import optimize
+from scipy.signal import argrelmin
 import scipy.interpolate as spi
 import scipy.integrate as integrate
 import matplotlib.pyplot as plt
@@ -21,27 +22,11 @@ def find_rmb(spin):
 
     Returns
     -------
-    l_mb: float
-        Specific angular momentum of an equatorial orbit at the marginally bound orbit
     r_mb: float
         Periapse of an equatorial orbit at the marginally bound orbit
     '''
-    if spin >= 0.0:
-        pro = 1.0
-    else:
-        pro = -1.0
-    def pro_min(x, a):
-        if a >= 0.0:
-            ang = (a - np.sqrt(a**2 - (a**2 + x**2)*(1 - (x/2))))/(1- (x/2))
-        else:
-            a = abs(a)
-            ang = -(a + np.sqrt(a**2 - (a**2 + x**2)*(1 - (x/2))))/(1- (x/2))
-        return ang
-    
-    data = optimize.minimize(pro_min, 4, args=(spin), bounds=( (1+np.sqrt(1-spin**2), 10), ))
-    #print(data)
-    l_mb, r_mb = pro*data['fun'], data['x'][0]
-    return l_mb, r_mb
+
+    return (1 + np.sqrt(1 - spin))**2
 
 def find_rms(spin):
     '''
@@ -400,6 +385,7 @@ def schmidtparam3(r0, e, i, a):
     symsols = sp.solve([eq1, eq2])
 
     full_sols = []
+    E, L, C = [np.sqrt(1-((1-e**2)/p)), (1 - z**2)*p, p*(z**2)]
     for thing in symsols:
         ene, lel = np.array([thing[x], thing[y]]).astype(float)
         if ene > 0.0 and ene < 1.0: 
@@ -410,8 +396,8 @@ def schmidtparam3(r0, e, i, a):
             else:
                 E, L, C = (1 - (1 - e**2)/p)**0.55, ((1 - z**2)*p)**(0.5), p*(z**2)
                 
-    coeff, ro = [-1], 1
-    while np.polyval(coeff, ro) < -1e-12:
+    coeff, ro, count = [-1], 1, 0
+    while np.polyval(coeff, ro) < -1e-12 and count < 20:
         E += 10**(-16)
         coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
         coeff2 = np.polyder(coeff)
@@ -419,7 +405,11 @@ def schmidtparam3(r0, e, i, a):
         flats = np.roots(coeff2)
         turns = turns.real[abs(turns.imag)<(1e-6)*r0]
         flats = flats.real[abs(flats.imag)<(1e-6)*r0]
-        ro = max(flats)
+        try:
+            ro = max(flats)
+        except:
+            ro = np.max(np.roots(coeff2)).real
+
     turns = np.sort(turns)
     r02, e2 = (turns[-1] + turns[-2])/2.0, (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
     r_err, e_err = np.abs((r0 - r02)/r0)*100, np.abs((e2 - e)/(2-e))*100
@@ -460,7 +450,7 @@ def schmidtparam3(r0, e, i, a):
                 break     
         if polar == True:
             L, C = 0.0, C/(z**2) - (a**2)*(1 - E**2)
-        #print(flats)
+            
         if (np.sqrt(L**2 + C) - np.abs(L))/L < 1e-15:
             C = 0.0
         return [E, L, C]
@@ -658,7 +648,7 @@ def interpolate(data, time, supress=True):
     time : N element numpy array of floats
         coordinate time of test particle
     suppress : bool, defaults to True
-        limits the size of the final array to 10000 entries
+        limits the size of the final array to 10000 entries or ~20 samples per phase (assuming circular orbit), whichever is greater
 
     Returns
     -------
@@ -670,7 +660,11 @@ def interpolate(data, time, supress=True):
     '''
     data = np.array(data)
     if supress == True:
-        new_time = np.linspace(time[0], time[-1], min(10000, max(len(time), int(time[-1] - time[0]))))
+        try:
+            rad = data[argrelmin(data[:,0])[0][0], 0]
+        except:
+            rad = data[0,0]
+        new_time = np.arange(time[0], time[-1], min(2*np.pi*np.sqrt(rad**3)/20, (time[-1] - time[0])/10000))
     else:
         new_time = np.linspace(time[0], time[-1], max(len(time), int(time[-1] - time[0])))
     try:
@@ -984,15 +978,16 @@ def freqs_finder(E, L, C, a):
     
     Rcoeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
     ri, ro = np.sort(np.roots(Rcoeff))[-2:]
-    #print(ro, ri)
+    if ri.imag/ri.real > 1e-8:
+        return np.array([np.nan, np.nan, np.nan])
+
     r0, e = 0.5*(ro + ri), (ro - ri)/(ro + ri)
     p = r0*(1 - e**2)
-    #print(r0, e, i)
-    
-    J2 = lambda x: Jfunc(x, r0, e, i, a, E, L, C)
-    H = lambda x: 1 - (2/p)*(1 + e*np.cos(x)) + ((a/p)**2)*(1 + e*np.cos(x))**2
-    G = lambda x: L - 2*(L - a*E)*(1 + e*np.cos(x))/p
-    F = lambda x: E + ((a/p)**2)*E*((1 + e*np.cos(x))**2) - 2*a*(L - a*E)*((1 + e*np.cos(x))/p)**3
+
+    J2 = lambda x: np.real(Jfunc(x, r0, e, i, a, E, L, C))
+    H = lambda x: np.real(1 - (2/p)*(1 + e*np.cos(x)) + ((a/p)**2)*(1 + e*np.cos(x))**2)
+    G = lambda x: np.real(L - 2*(L - a*E)*(1 + e*np.cos(x))/p)
+    F = lambda x: np.real(E + ((a/p)**2)*E*((1 + e*np.cos(x))**2) - 2*a*(L - a*E)*((1 + e*np.cos(x))/p)**3)
     
     Xt = integrate.quad(lambda x: 1/(J2(x)**0.5), 0.0, np.pi)[0]
     Yt = integrate.quad(lambda x: (p**2)/(((1+e*np.cos(x))**2)*(J2(x)**0.5)), 0.0, np.pi)[0]
@@ -1033,7 +1028,7 @@ def seper_locator(r0, inc, a):
 
     '''
     r2, r3 = 1, 0
-    rmb = find_rmb(a)[1]
+    rmb = find_rmb(a)
     e = (1 - (rmb/r0))*0.5
     e_list = [e]
     loops = 1
