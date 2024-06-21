@@ -14,7 +14,7 @@ from scipy.fftpack import fft
 import time
 import matplotlib.animation as animation
 import pywt
-import time
+from tqdm import tqdm
 
 def get_index(array, time):
     '''
@@ -34,7 +34,6 @@ def get_index(array, time):
     '''
     idx = np.abs(array - time).argmin()
     val = array.flat[idx]
-    #print(time, idx, val, "yo")
     return np.where(array == val)[0][0]
 
 def sph2cart(pos):
@@ -772,7 +771,7 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
     #print(np.where(data["pos"][:,2] > 2*np.pi))
     turn_ind = np.where(data["pos"][:,2] > 2*np.pi)[0][0]
     first_turn = get_index(int_time, data["time"][turn_ind])
-    print(first_turn)
+    #print(first_turn)
     
     if ortho == False:
         fig = plt.figure(figsize=(6,6))
@@ -876,8 +875,10 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
             return line
         
     # Creating the Animation object
+    
+    #pbar = tqdm(total=num_steps+10, position=0)
     ani = animation.FuncAnimation(
-        fig, update_line, frames=num_steps + 10, fargs=(X, Y, Z, line), interval=10)
+        fig, update_line, frames=tqdm(range(num_steps+10), position=0, initial=1), fargs=(X, Y, Z, line), interval=10)
     
     #HEY, CAN YOU JUST MAKE MULTIPLE ANIMATION OBJECTS ON THE SAME FIGURE??? EXPERIMENT ON SOMETHING SIMPLE
     
@@ -887,6 +888,7 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
     ani.save(f, writer=writergif)
     
     plt.show()
+    print("\n")
     print(name + '.gif')
     return True
 
@@ -1108,6 +1110,218 @@ def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scr
     print(name + '.gif')
     return True
 
+def ani_thing5(data, name=False, ortho=False, start=0.0, end=-1.0, zoom=1.0, ele=30, azi=-60, scroll=True, cb=True, numturns=10, fid=1):
+    '''
+    Creates an animation of a test particle's path through space
+    
+    Parameters
+    ----------
+    data: 30 element dictionary
+        dictionary MUST be output of clean_inspiral
+    name : string
+        name of final animation - will be saved as cwd/name.gif
+    ortho : bool
+        determines plot type - False creates a single 3D plot, True creates 3 orthogonal 2D plots from POV of positve x, y, and z axes
+        defaults to False
+    zoom : float
+        determines how tightly plot focuses on origin
+        defaults to 1.0 - bounds of plot are just wide enough to include furthest point on orbital path
+    ele : float
+        determines elevation viewing angle when plotting in 3D, in degrees above or below equator of central body
+        defaults to 30 - 30 degrees above equator
+    azi : float
+        determines azimuthal viewing angle when plotting in 3D, in degrees relative to positive x axis
+        defaults to -60 - 60 degrees behind positive x axis
+    scroll : bool
+        determines whether the bounds of the plot will shift to track the orbit during its evolution
+        defaults to True
+    cb : bool
+        determines whether or not to visualize event horizon and ergosphere (if applicable) of central body
+        defaults to False
+    numturns : float
+        determines approximatelt how many phi-orbits to include at any one time - how long the "tail" is
+        defaults to 10
+    fid : positive float
+        determines how many frames to make the animation - "fidelity"
+        defaults to 1 - multiplied by 100 gives 100 frames
+
+    Returns
+    -------
+    True
+    '''
+    
+    to = get_index(data["time"], start)
+    if end == -1.0:
+        tf = len(data["time"]) #get_index(data["time"], data["time"][-1])
+    else: 
+        tf = get_index(data["time"], end)
+    
+    if name == False:
+        name=data["name"][:10] + time.strftime("%y_%m_%d_%H", time.localtime())
+    
+    int_sphere, int_time = mm.interpolate(data["pos"][to:tf], data["time"][to:tf], supress = False)
+    X = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.cos(int_sphere[:,2])
+    Y = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.sin(int_sphere[:,2])
+    Z = int_sphere[:,0]*np.cos(int_sphere[:,1])
+    num_steps = int(100*fid)
+    first_turn = np.where(int_sphere[:,2] - int_sphere[0,2] > 2*np.pi)[0][0]
+    
+    if ortho == False:
+        fig = plt.figure(figsize=(6,6))
+        ax = fig.add_subplot(projection="3d")
+        ax.view_init(elev=ele, azim=azi)
+        line = ax.plot([], [], [], zorder=10)[0]
+
+        # Setting the axes properties
+        rbound = max(data["pos"][to:tf,0])*1.05/zoom
+
+        if cb == True:
+            rb = 1 + (1 - data["spin"]**2)**(0.5)
+            theta, phi = np.linspace(0, 2*np.pi), np.linspace(0, np.pi)
+            phi, theta = np.meshgrid(phi, theta)
+            x, y, z = rb*np.sin(theta)*np.sin(phi), rb*np.sin(theta)*np.cos(phi), rb*np.cos(theta)
+            ax.plot_surface(x, y, z, color="black", zorder=2)
+            
+            re = 1 + (1 - (data["spin"]*np.cos(theta))**2)**(0.5)
+            x, y, z = re*np.sin(theta)*np.sin(phi), re*np.sin(theta)*np.cos(phi), re*np.cos(theta)
+            ax.plot_surface(x, y, z, color="darksalmon", zorder=1, alpha = 0.3)
+            
+            al = (azi)*np.pi/180. -np.pi
+            el = (ele)*np.pi/180. - np.pi/2.
+            V = [ np.sin(el) * np.cos(al),np.sin(el) * np.sin(al),np.cos(el)]
+            carts = np.transpose(np.array([X, Y, Z]))
+            r = (X**2 + Y**2 + Z**2)**(0.5)
+            
+            #Hide things behind black hole
+            A = np.pi - np.arctan(20*rbound/(rb*zoom))
+            B_ = A - np.pi/2 + np.arcsin((rb/r)*np.sin(A))
+            cond = (np.arccos(np.dot(carts, V)/r) < np.pi - B_)
+            X, Y, Z = np.transpose(np.array([carts[i] if cond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(cond))]))
+            
+        if scroll == False:
+            ax.set(xlim3d=(-rbound, rbound), xlabel='X')
+            ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
+            ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
+            ax.set_box_aspect((rbound, rbound, rbound))
+        
+        def update_line(num, xdata, ydata, zdata, line):
+            full = int(len(xdata)/num_steps)
+            beg = max(0, int(full*num - first_turn*numturns))
+            #print(len(xdata), num_steps, full, num)
+            #print(beg, full*num, full*num - beg, first_turn)
+            line.set_data_3d(xdata[beg:full*num], ydata[beg:full*num], zdata[beg:full*num])
+            
+            if scroll == True:
+                try:
+                    rbound = max(max((xdata[beg:full*num]**2 + ydata[beg:full*num]**2 + zdata[beg:full*num]**2)**0.5)*1.05, 3)
+                except:
+                    rbound = max(max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05, 3)
+                
+                try:
+                    ax.set(xlim3d=(-rbound, rbound), xlabel='X')
+                    ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
+                    ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
+                    ax.set_box_aspect((rbound, rbound, rbound))
+                except:
+                    pass
+            return line
+    else:
+        fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(8,8))
+        ax2.set_axis_off()
+        line = [ax1.plot([], [])[0], ax3.plot([], [])[0], ax4.plot([], [])[0]]
+        # Setting the axes properties
+        ax1.set(ylabel="Y")
+        ax2.set_axis_off()
+        ax3.set(xlabel="X", ylabel="Z")
+        ax4.set( xlabel="Y")
+        ax2.text(0.5, 0.81, "Orthographic View", fontsize=20, ha="center", va="top", transform=ax2.transAxes)
+        fig.subplots_adjust(wspace=0, hspace=0)
+        legend = fig.legend(loc=(0.75,0.5))
+        hor_ratio = legend.get_window_extent().width/ fig.get_window_extent().width
+        ver_ratio = legend.get_window_extent().height/ fig.get_window_extent().height
+        legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))
+        
+        if scroll == False:
+            rbound = max(data["pos"][to:tf,0])*1.05/zoom
+            ax2.set_xlim(-rbound, rbound)
+            ax2.set_ylim(-rbound, rbound)
+            ax2.set_aspect('equal')
+        
+        def update_line(num, xdata, ydata, zdata, line):
+            full = len(xdata)//num_steps
+            beg = max(0, int(full*num - first_turn*numturns))
+            end = int(np.round(num*len(xdata)/num_steps))
+            line[0].set_data(xdata[beg:end], ydata[beg:end])
+            line[1].set_data(xdata[beg:end], zdata[beg:end])
+            line[2].set_data(ydata[beg:end], zdata[beg:end])
+            
+            if scroll == True:
+                try:
+                    rbound = np.nanmax(np.nanmax((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05, 3) 
+                except:
+                    rbound = np.nanmax(np.nanmax((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05, 3)
+    
+                ax2.set_xlim(-rbound, rbound)
+                ax2.set_ylim(-rbound, rbound)
+                ax2.set_aspect('equal')
+
+            return line
+        
+    # Creating the Animation object
+    
+    #pbar = tqdm(total=num_steps+10, position=0)
+    ani = animation.FuncAnimation(
+        fig, update_line, frames=tqdm(range(num_steps+10), position=0, initial=1), fargs=(X, Y, Z, line), interval=10)
+    
+    #HEY, CAN YOU JUST MAKE MULTIPLE ANIMATION OBJECTS ON THE SAME FIGURE??? EXPERIMENT ON SOMETHING SIMPLE
+    
+    cwd = os.getcwd()
+    f = os.path.join(cwd, name + ".gif")
+    writergif = animation.PillowWriter(fps=10)
+    ani.save(f, writer=writergif, bbox_inches='tight')
+    
+    plt.show()
+    print("\n")
+    print(name + '.gif')
+    return True
+
+def ani_test():
+    # initializing a figure in  
+    # which the graph will be plotted 
+    fig = plt.figure()  
+       
+    # marking the x-axis and y-axis 
+    axis = plt.axes(xlim =(0, 4),  
+                    ylim =(-2, 2))  
+      
+    # initializing a line variable 
+    line, = axis.plot([], [], lw = 3) 
+    line2, = axis.plot([], [], lw = 3) 
+       
+    # data which the line will  
+    # contain (x, y) 
+    def init():  
+        line.set_data([], []) 
+        line2.set_data([], []) 
+        return line, line2
+       
+    def animate(i): 
+        x = np.linspace(0, 4, 1000) 
+       
+        # plots a sine graph 
+        y = np.sin(2 * np.pi * (x - 0.01 * i)) 
+        line.set_data(x, y) 
+        y2 = np.cos(2 * np.pi * (x - 0.03 * i)) 
+        line2.set_data(x, y2) 
+          
+        return line, line2, 
+       
+    anim = animation.FuncAnimation(fig, animate, init_func = init, 
+                         frames = 200, interval = 20, blit = True)  
+       
+    anim.save('continuousSineWave.gif', fps = 30) 
+    return 0
+
 def gimme_startpot(data, rbounds = [-1, 1]):
     a, mu = data["inputs"][1], data["inputs"][2]
     E, L, C = data["energy"][0]/mu, data["phi_momentum"][0]/mu, data["carter"][0]/(mu**2)
@@ -1157,6 +1371,7 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
         ext = True
     if ext == True:
         ax1.legend()
+    plt.show()
     return(R(bloh))
 
 def potentplotter2(cons, a, rbounds=[-1, -1]):

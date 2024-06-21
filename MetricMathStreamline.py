@@ -252,7 +252,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         gamma = 1/np.sqrt(1 - beta**2)
         
         if np.shape(pos) != (4,):
-            r, theta = (1/beta*np.sin(eta)*np.sin(xi))**2, np.pi/2
+            r, theta = (1/beta)**2, np.pi/2
             pos = [0.0, r, theta, 0.0]
         else:
             r, theta = pos[1], pos[2]
@@ -270,7 +270,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         
         tilde = np.array([gamma, gamma*beta*np.cos(eta), -gamma*beta*np.sin(eta)*np.cos(xi), gamma*beta*np.sin(eta)*np.sin(xi)])
         new = np.matmul(tetrad_matrix, tilde)
-        new = np.array([[*pos, *new]])
+        new = np.array([*pos, *new])
     elif (np.shape(vel4) == (4,)) and np.shape(pos) == (4,):
         print("Calculating initial velocity from tetrad component velocities")
         r, theta = pos[1], pos[2]
@@ -294,7 +294,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         tilde = np.array([gamma, gamma*beta*np.cos(eta), -gamma*beta*np.sin(eta)*np.cos(xi), gamma*beta*np.sin(eta)*np.sin(xi)])
         new = np.matmul(tetrad_matrix, tilde)
     elif np.shape(params) == (3,):
-        print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
+        #print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
         cons = schmidtparam3(*params, a)
         if cons == False:
             print("Non-viable parameters")
@@ -305,6 +305,9 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         print("Insufficent information provided, begone")
         new = np.array([0.0, 2000000.0, np.pi/2, 0.0, 7.088812050083354, -0.99, 0.0, 0.0])
     if cons == False:
+        metric, chris = kerr(pos, a)
+        print(pos)
+        print(new[4:])
         energy = -np.matmul(new[4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
         lz = np.matmul(new[4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
         qarter = np.matmul(np.matmul(kill_tensor(new, a), new[4:]), new[4:])    #initial Carter constant Q
@@ -359,7 +362,7 @@ def schmidtparam3(r0, e, i, a):
         tri = r**2 - 2*r + a**2
         f = r**4 + (a**2)*(r*(r + 2) + tri*(z**2))
         g = 2*a*r
-        h = r*(r - 2) + tri*(z**2)/(1 - z**2)
+        h = r*(r - 2) + tri*(z**2)/(max(1e-15, 1 - z**2)) #include a bias for divide by zero error
         d = (r**2 + (a*z)**2)*tri
         return f, g, h, d
     def r_funcs(r):
@@ -377,7 +380,7 @@ def schmidtparam3(r0, e, i, a):
         f2, g2, h2, d2 = rfuncs(ra)
     
     def newC(E, L, a, z):
-        return (z**2)*((a**2)*(1 - E**2) + (L**2)/(1 - z**2))
+        return (z**2)*((a**2)*(1 - E**2) + (L**2)/(max(1e-15, 1 - z**2)))
     
     x, y = sp.symbols("x y", real=True)
     eq1 = sp.Eq(f1*(x**2) - 2*g1*x*y - h1*(y**2), d1)
@@ -827,7 +830,7 @@ def peters_integrate6(states, a, mu, ind1, ind2):
     if (ind2 - ind1) > 2:
         states = np.array(states)
         sphere, time = states[:, 1:4], states[:, 0]
-        int_sphere, int_time = interpolate(sphere, time)
+        int_sphere, int_time = interpolate(sphere, time, False)
         div = np.mean(np.diff(int_time))
         quad = trace_ortholize(int_sphere)
         delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
@@ -882,12 +885,10 @@ def new_recalc_state6(cons, con_derv, state, a):
             
     # Step 3
     dE, dLx, dLy, dLz = con_derv[:4]
-    dL_vec = -np.linalg.norm([dLx, dLy, dLz])
-    if z2 != 1.0 and L0 != 0.0:
-        dC = 2*z2*(L0*dLz/(1-z2) - (a**2)*E0*dE)  
-    else:
-        #Lz/(1-z2) seems to be approximately the total angular momentum, so replace Lz/(1-z2) with sqrt(C) to account for polar orbits
-        dC = 2*z2*(np.sqrt(C0)*dL_vec - (a**2)*E0*dE)  
+    #dL_vec = -np.linalg.norm([dLx, dLy, dLz])
+    dC = 2*z2*(L0*dLz/(1-z2) - (a**2)*E0*dE)  
+    if np.isnan(dC):
+        dC = -2*z2*(a**2)*E0*dE 
 
     # Step 4
     E, L = E0 + dE, L0 + dLz*np.sign(L0) #make sure L0 is going towards 0, not becoming increasingly negative if retrograde

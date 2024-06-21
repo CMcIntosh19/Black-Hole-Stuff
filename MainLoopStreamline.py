@@ -61,7 +61,7 @@ def getLs(state, mu):
     Lmom = np.cross(pos3cart, vel3cart)
     return Lmom
 
-def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
+def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
     '''
     Generates orbit
 
@@ -205,11 +205,8 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
         count += 1
         initE += err_target
         pot_min = viable_cons([initE, initLz, initC], all_states[0], a)
-        if count < 20:
-            print("RAGH", pot_min)
-        elif count < 21:
-            print(inputs)
-        else:
+        if count >= 21:
+            print("Don't trust this!", inputs)
             break
                 
     coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
@@ -301,7 +298,6 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
                 if dTau <= 0.0:
                     dTau = old_dTau
                 first = False
-            
             metric = mm.kerr(new_step, a)[0]
             test = mm.check_interval(mm.kerr, new_step, a)
             looper = 0
@@ -334,7 +330,7 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
                         new_step, ch_cons = mm.new_recalc_state6(constants[-1], dcons, new_step, a)
                         pot_min = viable_cons(ch_cons, new_step, a)
                         while pot_min < -err_target:
-                            print("tick?")
+                            print(dcons, pot_min)
                             Lphi, ro = ch_cons[1], pot_min
                             ch_cons[0] += max(10**(-16), 2*(-pot_min)*((2*ro*((ro**3 + ro*(a**2) + 2*(a**2))*ch_cons[0] - 2*Lphi*a))**(-1)))
                             new_step = mm.recalc_state(ch_cons, new_step, a)
@@ -427,7 +423,7 @@ def EMRIGenerator(a, mu, endflag, mass=1.0, err_target=1e-15, label="default", c
             break
     if verbose == False:
         pbar.close()
-    print(len(issues), len(all_states))
+    #print(len(issues), len(all_states))
     #unit conversion stuff
     if units == "mks":
         G, c = 6.67*(10**-11), 3*(10**8)
