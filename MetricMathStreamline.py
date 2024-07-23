@@ -240,22 +240,17 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             flats = np.sort(flats.real[abs(flats.imag)<1e-14])
             pos = [0.0, flats[-1], np.pi/2, 0.0]
             new = recalc_state(cons, pos, a)
-    elif (np.shape(velorient) == (3,)):
+    elif (np.shape(velorient) == (3,)) and np.shape(pos) == (4,):
         print("Calculating intial velocity from tetrad velocity and orientation")
         beta, eta, xi = velorient
-        #eta is radial angle - 0 degrees is radially outwards, 90 degrees is no radial component
-        #xi is up/down - 0 degrees is along L vector, 90 degrees is no up/down component
+        #eta is radial angle - 0 degrees is radially outwards, 90 degrees is in the phi direction
+        #xi is up/down - 0 degrees is in the theta , 90 degrees is no up/down component
         eta, xi = eta*np.pi/180, xi*np.pi/180
-        if (beta >= 1):
-            print("Velocity greater than or equal to speed of light. Setting beta to 0.05")
+        if (beta > 1):
+            print("Tetrad velocity exceeds c. Normalizing to 0.05")
             beta = 0.05
         gamma = 1/np.sqrt(1 - beta**2)
-        
-        if np.shape(pos) != (4,):
-            r, theta = (1/beta)**2, np.pi/2
-            pos = [0.0, r, theta, 0.0]
-        else:
-            r, theta = pos[1], pos[2]
+        r, theta = pos[1], pos[2]
             
         #various defined values that make math easier
         rho2 = r**2 + (a**2)*(np.cos(theta)**2)
@@ -286,12 +281,18 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
                                   [0,                0,                 1/np.sqrt(rho2), 0],
                                   [w/np.sqrt(al2),   0,                 0,               1/np.sqrt(wu2)]])
         rdot, thetadot, phidot = vel4[1]/vel4[0], vel4[2]/vel4[0], vel4[3]/vel4[0]
-        vel_2 = (rdot**2 + (r * thetadot)**2 + (r * np.sin(theta) * phidot)**2)
+        vel_2 = (rdot**2 + thetadot**2 + phidot**2)
         beta = np.sqrt(vel_2)
+        if beta > 1.0:
+            print("Tetrad velocity exceeds c, Normalizing to 0.05")
+            rdot, thetadot, phidot = np.array([rdot, thetadot, phidot])*(0.05/beta)
+            vel_2 = (rdot**2 + thetadot**2 + phidot**2)
+            beta = np.sqrt(vel_2)
         gamma = 1/np.sqrt(1 - vel_2)
-        eta = np.arccos(np.sqrt((r * np.sin(theta) * phidot)**2)/beta)
-        xi = np.arccos(np.sqrt(rdot**2)/(beta*np.sin(eta)))
-        tilde = np.array([gamma, gamma*beta*np.cos(eta), -gamma*beta*np.sin(eta)*np.cos(xi), gamma*beta*np.sin(eta)*np.sin(xi)])
+        #eta = np.arccos(np.sqrt((r * np.sin(theta) * phidot)**2)/beta)
+        #xi = np.arccos(np.sqrt(rdot**2)/(beta*np.sin(eta)))
+        #tilde = np.array([gamma, gamma*beta*np.cos(eta), -gamma*beta*np.sin(eta)*np.cos(xi), gamma*beta*np.sin(eta)*np.sin(xi)])
+        tilde = np.array([gamma, gamma*rdot, gamma*thetadot, gamma*phidot])
         new = np.matmul(tetrad_matrix, tilde)
     elif np.shape(params) == (3,):
         #print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
@@ -305,9 +306,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         print("Insufficent information provided, begone")
         new = np.array([0.0, 2000000.0, np.pi/2, 0.0, 7.088812050083354, -0.99, 0.0, 0.0])
     if cons == False:
-        metric, chris = kerr(pos, a)
-        print(pos)
-        print(new[4:])
+        metric, chris = kerr(new, a)
         energy = -np.matmul(new[4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
         lz = np.matmul(new[4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
         qarter = np.matmul(np.matmul(kill_tensor(new, a), new[4:]), new[4:])    #initial Carter constant Q
@@ -394,7 +393,7 @@ def schmidtparam3(r0, e, i, a):
         if ene > 0.0 and ene < 1.0: 
             full_sols.append([ene, lel, newC(ene, lel, a, z)])
             E, L, C = [ene, lel, newC(ene, lel, a, z)]
-            if np.product(np.sign([E, L, C])) == np.sign(np.sin(j)):
+            if np.prod(np.sign([E, L, C])) == np.sign(np.sin(j)):
                 break
             else:
                 E, L, C = (1 - (1 - e**2)/p)**0.55, ((1 - z**2)*p)**(0.5), p*(z**2)
@@ -906,6 +905,269 @@ def new_recalc_state6(cons, con_derv, state, a):
     # Step 6
     new_state = recalc_state([E, L, C], state, a)
     return new_state, [E, L, C]
+
+def new_recalc_state7(cons, con_derv, state, a, loop=0):
+    metric, chris = kerr(state, a)
+    E0 = -np.matmul(metric, state[4:])[0]
+    r, theta, phi = state[1:4]
+    sint, cost, sinp, cosp = np.sin(theta), np.cos(theta), np.sin(phi), np.cos(phi)
+    rho2, tri = r**2 + (a**2)*(cost**2), r**2 - 2*r + a**2
+    al2 = (rho2*tri)/(rho2*tri + 2*r*(a**2 + r**2))
+    w = (2*r*a)/(rho2*tri + 2*r*(a**2 + r**2))
+    wbar2 = ((rho2*tri + 2*r*(a**2 + r**2))/rho2)*(sint**2)
+    tet2kerr = np.array([[1/np.sqrt(al2), 0.0,               0.0,             0.0],
+                         [0.0,            np.sqrt(tri/rho2), 0.0,             0.0],
+                         [0.0,            0.0,               1/np.sqrt(rho2), 0.0],
+                         [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
+    tetrad = np.linalg.solve(tet2kerr, state[4:])
+    tetcart = np.array([*tetrad[:2], tetrad[3], -tetrad[2]])
+    vel, cartpos = tetcart[1:]/tetcart[0], np.array([r*sint*cosp, r*sint*sinp, r*cost])
+    L0 = np.cross(cartpos, vel)
+    A, eps = np.zeros((4,3)), np.max(abs(con_derv))
+    #print("---")
+    #print(con_derv)
+    #print(eps)
+    if eps == 0.0:
+        eps = 1e-7
+    #print(eps)
+    
+    def getNewCons(j):
+        intvel = np.array([0.0,0.0,0.0])
+        intvel[j] += eps
+        intL, gamma = np.cross(cartpos, intvel+vel), 1/np.sqrt(1 - np.linalg.norm(intvel + vel)**2)
+        inttetrad = gamma*np.array([1, intvel[0], -intvel[2], intvel[1]])
+        intkerr = np.matmul(tet2kerr, inttetrad)
+        intE = -np.matmul(metric, intkerr)[0]
+        return np.array([intE - E0, *(intL - L0)])/eps
+    
+    A[:,0], A[:,1], A[:,2] = getNewCons(0), getNewCons(1), getNewCons(2)
+    try:
+        #print("org")
+        bigD = np.linalg.inv(np.matmul(np.transpose(A), A))
+        dvel = np.matmul(bigD, np.matmul(np.transpose(A), con_derv[:4]))
+    except:
+        print(A)
+        print(np.matmul(np.transpose(A), A))
+        dvel = np.linalg.solve(np.matmul(np.transpose(A), A), np.matmul(np.transpose(A), con_derv[:4]))
+    #print(dvel)
+    newvel = vel + dvel
+    gamma = 1/np.sqrt(1 - np.linalg.norm(newvel)**2)
+    newtetrad = gamma*np.array([1, newvel[0], -newvel[2], newvel[1]])
+    newkerr = np.matmul(tet2kerr, newtetrad)
+    holdstate = np.array([*state[0:4], *newkerr])
+    newE = -np.matmul(metric, newkerr)[0]        #initial energy
+    newLz = np.matmul(metric, newkerr)[3]        #initial angular momentum
+    newQ = np.matmul(np.matmul(kill_tensor(holdstate, a), newkerr), newkerr)
+    newC = newQ - (a*newE - newLz)**2  
+    #print(con_derv)
+    #print([newE - E0, *(np.cross(cartpos, newvel) - L0)])
+    #print(con_derv)
+    #print(con_derv - np.array([newE - E0, *(np.cross(cartpos, newvel) - L0)]))
+    #print(np.linalg.norm(con_derv - np.array([newE - E0, *(np.cross(cartpos, newvel) - L0)])))
+    #print([newE, newLz, newC])
+    #print("-----")
+    #print(np.linalg.norm(con_derv - np.array([newE - E0, *(np.cross(cartpos, newvel) - L0)])))
+    #if loop < 10 and np.linalg.norm(con_derv - np.array([newE - E0, *(np.cross(cartpos, newvel) - L0)])) >= 1e-15:
+        #print("HELLO WAIT WHAT")
+        #print(np.linalg.norm(con_derv - np.array([newE - E0, *(np.cross(cartpos, newvel) - L0)])))
+        #holdstate, [newE, newLz, newC] = new_recalc_state7([newE, newLz, newC], np.array([newE - E0, *(np.cross(cartpos, newvel) - L0)]), holdstate, a, loop=loop+1)
+    return holdstate, [newE, newLz, newC]
+
+def new_recalc_state8(cons, con_derv, state, a):
+    metric, chris = kerr(state, a)
+    E0 = -np.matmul(metric, state[4:])[0]
+    
+    r, theta, phi = state[1:4]
+    sint, cost, sinp, cosp = np.sin(theta), np.cos(theta), np.sin(phi), np.cos(phi)
+    rho2, tri = r**2 + (a**2)*(cost**2), r**2 - 2*r + a**2
+    al2 = (rho2*tri)/(rho2*tri + 2*r*(a**2 + r**2))
+    w = (2*r*a)/(rho2*tri + 2*r*(a**2 + r**2))
+    wbar2 = ((rho2*tri + 2*r*(a**2 + r**2))/rho2)*(sint**2)
+    tet2kerr = np.array([[1/np.sqrt(al2), 0.0,               0.0,             0.0],
+                         [0.0,            np.sqrt(tri/rho2), 0.0,             0.0],
+                         [0.0,            0.0,               1/np.sqrt(rho2), 0.0],
+                         [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
+    
+    tetrad = np.linalg.solve(tet2kerr, state[4:])
+    tetcart = np.array([*tetrad[:2], tetrad[3], -tetrad[2]])
+    vel, cartpos = tetcart[1:]/tetcart[0], np.array([r*sint*cosp, r*sint*sinp, r*cost])
+    hold = con_derv
+    L0 = np.cross(cartpos, vel)
+    A = np.zeros((4,3))
+    loop = -1
+    print(con_derv)
+    sol_list = [vel]
+    hold_derv = con_derv
+    target = np.array([E0, *L0]) + con_derv
+    thing = 1e10
+    tog = 0
+    #print(target)
+    while np.linalg.norm(hold) > 6e-15:
+        thing = np.linalg.norm(hold)
+        eps = 1e-8 #np.sqrt(abs(max(hold)))
+
+        def getNewCons(j):
+            intvel = np.array([0.0,0.0,0.0])
+            intvel[j] += eps
+            intL, gamma = np.cross(cartpos, intvel+vel), 1/np.sqrt(1 - np.linalg.norm(intvel + vel)**2)
+            inttetrad = gamma*np.array([1, intvel[0], -intvel[2], intvel[1]])
+            intkerr = np.matmul(tet2kerr, inttetrad)
+            intE = -np.matmul(metric, intkerr)[0]
+            return np.array([intE - E0, *(intL - L0)])/eps
+    
+        A[:,0], A[:,1], A[:,2] = getNewCons(0), getNewCons(1), getNewCons(2)
+        dvel = np.linalg.solve(np.matmul(np.transpose(A), A), np.matmul(np.transpose(A), hold_derv[:4]))
+        #print(dvel)
+        vel = vel + dvel + tog*np.random.randn(3)*1e-17
+        sol_list.append(vel)
+        L1 = np.cross(cartpos, vel)
+        gamma = 1/np.sqrt(1 - np.linalg.norm(vel)**2)
+        newtetrad = gamma*np.array([1, vel[0], -vel[2], vel[1]])
+        newkerr = np.matmul(tet2kerr, newtetrad)
+        E1 = -np.matmul(metric, newkerr)[0]
+        hold = (np.array([E1 - E0, *(L1 - L0)]) - con_derv)
+        loop += 1
+        print(hold, np.linalg.norm(hold))
+        hold_derv = target - np.array([E1, *L1])
+        #if np.linalg.norm(hold) > thing:
+        #    tog = 1
+            #print("KACHOW")
+        #else:
+        #    tog = 0
+        if loop > 100:
+            #print("oop!")
+            #print(con_derv)
+            #print(np.array([E1 - E0, *(L1 - L0)]))
+            #print(hold)
+            break
+    print(np.array([E1 - E0, *(L1 - L0)]))
+    #print(100*(np.array([E1 - E0, *(L1 - L0)]) - con_derv)/con_derv)
+    newstate = np.array([*state[0:4], *newkerr])
+    newLz = np.matmul(metric, newkerr)[3]        #initial angular momentum
+    newQ = np.matmul(np.matmul(kill_tensor(newstate, a), newkerr), newkerr)
+    newC = newQ - (a*E1 - newLz)**2 
+    return newstate, [E1, newLz, newC]
+
+def new_recalc_state9(cons, con_derv, state, a):
+    '''
+    Calculates new state vector from current state and change in orbital constants
+
+    Parameters
+    ----------
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass
+    con_derv : 4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    new_state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment after correction
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass after correction
+    '''
+    # Step 1
+    E0, L0, C0 = cons
+    metric, chris = kerr(state, a)
+    theta = state[2]
+    fmom = np.matmul(metric, state[4:])
+    L = np.sqrt(fmom[2]**2 + (fmom[3]**2)/(np.sin(theta)**2))
+    # Step 2
+    if a == 0:
+        z2 = C0/(L0**2 + C0)
+    else:
+        A = (a**2)*(1 - E0**2)
+        z2 = ((A + L0**2 + C0) - ((A + L0**2 + C0)**2 - 4*A*C0)**(1/2))/(2*A)
+    cosz, sinz = np.sqrt(np.abs(z2)), np.sqrt(1 - np.abs(z2))
+    # Step 3
+    dE, dLx, dLy, dLz = con_derv[:4]
+    dL_vec = -np.linalg.norm([dLx, dLy, dLz])
+    #dC = 2*z2*(L0*dLz/(1-z2) - (a**2)*E0*dE)  
+    #if np.isnan(dC):
+    #    dC = -2*z2*(a**2)*E0*dE 
+    dC = 2*(L*dL_vec - L0*dLz - (a**2)*cosz*(sinz*state[6]*(1 - E0**2) + cosz*E0*dE))
+    #dC = 2*(L0 - a*E0*np.sin(theta)**2)*(dLz - a*dE*np.sin(theta)**2 - 2*a*E0*np.sin(theta)*np.cos(theta)*state[6])*np.sin(theta)**2
+    #dC -= 2*np.sin(theta)*np.cos(theta)*(L0 - a*E0*np.sin(theta)**2)*state[6]
+    #dC /= np.sin(theta)**4
+    #dC -=2*(a**2)*np.cos(theta)*np.sin(theta)*state[6]
+    #dC += 2*(state[1]**2 + (a*np.cos(theta))**2)*(2*state[1]*state[5] - 2*(a**2)*np.sin(theta)*np.cos(theta)*state[6])*(state[6]**2)
+
+    # Step 4
+    E, L = E0 + dE, L0 + dLz*np.sign(L0) #make sure L0 is going towards 0, not becoming increasingly negative if retrograde
+    
+    # Step 5
+    C = C0 + dC
+    potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
+    test = max(np.roots(np.polyder(potent)))
+    while (np.polyval(potent, test) < 0.0):
+        dR = -np.polyval(potent, test)
+        E += max(dR*(( 2*test*((test**3 + (a**2)*test + 2*(a**2))*E - 2*L*a))**(-1)), 10**(-16))
+        potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
+        test = max(np.roots(np.polyder(potent)))
+    
+    # Step 6
+    new_state = recalc_state([E, L, C], state, a)
+    return new_state, [E, L, C]
+
+def new_recalc_state10(cons, con_derv, state, a):
+    metric, chris = kerr(state, a)
+    E0 = -np.matmul(metric, state[4:])[0]
+    r, theta, phi = state[1:4]
+    sint, cost, sinp, cosp = np.sin(theta), np.cos(theta), np.sin(phi), np.cos(phi)
+    rho2, tri = r**2 + (a**2)*(cost**2), r**2 - 2*r + a**2
+    al2 = (rho2*tri)/(rho2*tri + 2*r*(a**2 + r**2))
+    w = (2*r*a)/(rho2*tri + 2*r*(a**2 + r**2))
+    wbar2 = ((rho2*tri + 2*r*(a**2 + r**2))/rho2)*(sint**2)
+    tet2kerr = np.array([[1/np.sqrt(al2), 0.0,               0.0,             0.0],
+                         [0.0,            np.sqrt(tri/rho2), 0.0,             0.0],
+                         [0.0,            0.0,               1/np.sqrt(rho2), 0.0],
+                         [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
+    tetrad = np.linalg.solve(tet2kerr, state[4:])
+    tetcart = np.array([*tetrad[:2], tetrad[3], -tetrad[2]])
+    vel, cartpos = tetcart[1:]/tetcart[0], np.array([r*sint*cosp, r*sint*sinp, r*cost])
+    L0 = np.cross(cartpos, vel)
+    A, eps = np.zeros((4,3)), 1e-7
+    loop, err, target = 0, 100, np.array([E0, *L0]) + con_derv
+    print(con_derv)
+    #print(np.linalg.norm(con_derv)**2)
+    print(np.array([E0, *L0]))
+    diff = con_derv
+    
+    def getNewCons(j, vel, eps):
+        intvel = np.array([0.0,0.0,0.0])
+        intvel[j] += eps
+        intL, gamma = np.cross(cartpos, intvel+vel), 1/np.sqrt(1 - np.linalg.norm(intvel + vel)**2)
+        inttetrad = gamma*np.array([1, intvel[0], -intvel[2], intvel[1]])
+        intkerr = np.matmul(tet2kerr, inttetrad)
+        intE = -np.matmul(metric, intkerr)[0]
+        return np.array([intE - E0, *(intL - L0)])/eps
+    
+    while err > 1e-5 and loop < 100:
+        A[:,0], A[:,1], A[:,2] = getNewCons(0, vel, eps), getNewCons(1, vel, eps), getNewCons(2, vel, eps)
+        dvel = np.linalg.solve(np.matmul(np.transpose(A), A), np.matmul(np.transpose(A), diff))
+        vel = vel + dvel
+        gamma, newL = 1/np.sqrt(1 - np.linalg.norm(vel)**2), np.cross(cartpos, vel)
+        newtetrad = gamma*np.array([1, vel[0], -vel[2], vel[1]])
+        newkerr = np.matmul(tet2kerr, newtetrad)
+        newE = -np.matmul(metric, newkerr)[0]        #initial energy
+        err = 100*np.linalg.norm((np.array([newE, *newL]) - target)/target)
+        print(np.array([newE, *newL]), err)
+        loop += 1
+        diff = target - np.array([newE, *newL])
+    print("___")
+    print(target)
+    #print(np.array([newE, *newL]))
+    print(np.linalg.norm(con_derv)**2)
+    holdstate = np.array([*state[0:4], *newkerr])
+    newLz = np.matmul(metric, newkerr)[3]        #initial angular momentum
+    newQ = np.matmul(np.matmul(kill_tensor(holdstate, a), newkerr), newkerr)
+    newC = newQ - (a*newE - newLz)**2  
+
+    return holdstate, [newE, newLz, newC]
 
 def Jfunc(x, r0, e, i, a, E, L, C):
     '''

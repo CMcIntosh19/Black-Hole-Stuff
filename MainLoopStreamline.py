@@ -29,6 +29,7 @@ def getEnergy(state, a):
     metric, chris = mm.kerr(state, a)
     stuff = np.matmul(metric, state[4:])
     ene = -stuff[0]
+    #print(stuff)
     return ene
     
 def getLs(state, mu):
@@ -61,7 +62,7 @@ def getLs(state, mu):
     Lmom = np.cross(pos3cart, vel3cart)
     return Lmom
 
-def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False):
+def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False, eps=1e-5, conch=6):
     '''
     Generates orbit
 
@@ -298,6 +299,8 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                 if dTau <= 0.0:
                     dTau = old_dTau
                 first = False
+            if np.nan in new_step:
+                print("HEY")
             metric = mm.kerr(new_step, a)[0]
             test = mm.check_interval(mm.kerr, new_step, a)
             looper = 0
@@ -319,7 +322,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             R0, ECC = 0.5*(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
             compl, comph = np.arccos(-ECC), 2*np.pi - np.arccos(-ECC)
             S1, S2 = get_true_anom(state, R0, ECC), get_true_anom(new_step, R0, ECC)
-            if (np.sign(new_step[1] - pot_min) != orbitside) or ((S2-compl)*(compl-S1) > 0 or (S2-comph)*(comph-S1) > 0):
+            if (np.sign(new_step[1] - pot_min) != orbitside):# or ((S2-compl)*(compl-S1) > 0 or (S2-comph)*(comph-S1) > 0):
                 if (i - tracker[-1][-1] > 10):
                     update = True
                     if ( np.sign(new_step[1] - pot_min) != orbitside):
@@ -327,7 +330,16 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     if mu != 0.0:
                         condate = True
                         dcons = mm.peters_integrate6(all_states[tracker[-1][-1]:i], a, mu, tracker[-1][-1], i)
-                        new_step, ch_cons = mm.new_recalc_state6(constants[-1], dcons, new_step, a)
+                        if conch == 6:
+                            new_step, ch_cons = mm.new_recalc_state6(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
+                        elif conch == 7:
+                            new_step, ch_cons = mm.new_recalc_state7(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
+                        elif conch == 8:
+                            new_step, ch_cons = mm.new_recalc_state8(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1
+                        elif conch == 10:
+                            new_step, ch_cons = mm.new_recalc_state10(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1
+                        else:
+                            new_step, ch_cons = mm.new_recalc_state9(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
                         pot_min = viable_cons(ch_cons, new_step, a)
                         while pot_min < -err_target:
                             print(dcons, pot_min)
@@ -375,7 +387,6 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                 if True in np.iscomplex(tracker[-1]):
                     compErr += 1
                     issues.append((i, new_step[0]))  
-            
             interval.append(mm.check_interval(mm.kerr, new_step, a))
             false_constants.append([getEnergy(new_step, a), *getLs(new_step, mu)])
             dTau_change.append(old_dTau)
@@ -436,7 +447,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
         #so it gives actual numbers for pure geodesics
         mu = 1.0
         
-    constants = np.array([entry*np.array([mass*mu*(c**2), mass*mass*mu*G/c, (mass*mass*mu*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
+    constants = np.array([entry*np.array([mass*(c**2), mass*mass*G/c, (mass*mass*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
     false_constants = np.array(false_constants)
     qarter = np.array(qarter)
     freqs = np.array(freqs)*(c**3)/(G*mass)

@@ -235,7 +235,12 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
                     "qarter": [data["qarter"], "Carter Constant (Unnormalized)"],
                     "l_momentumx": [data["Lx_momentum"], "Specific Angular Momentum (x-component)"],
                     "l_momentumy": [data["Ly_momentum"], "Specific Angular Momentum (y-component)"],
-                    "l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)"]}
+                    "l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)"],
+                    "interval": [data["interval"], "Spacetime Interval"],
+                    "energy2": [data["energy2"], "other energy"],
+                    "CartLx": [data["Lx_momentum"], "cartLx"],
+                    "CartLy": [data["Ly_momentum"], "cartLy"],
+                    "CartLz": [data["Lz_momentum"], "cartLz"]}
         
         if (type(value) == str) and (value in termdict):
             if len(termdict[value][0]) == len(data["time"]):
@@ -288,7 +293,7 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
             if linefit == True:
                 stuff = np.polyfit(xvals, yvals, 1)
                 ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[thing%len(colors)])
-                ax.legend()
+                ax.legend(title="Linear Fit")
         
         else:
             print("Not a valid plottable. Chose one of the following:")
@@ -1324,8 +1329,8 @@ def ani_test():
 
 def gimme_startpot(data, rbounds = [-1, 1]):
     a, mu = data["inputs"][1], data["inputs"][2]
-    E, L, C = data["energy"][0]/mu, data["phi_momentum"][0]/mu, data["carter"][0]/(mu**2)
-    print(E, L,C)
+    E, L, C = data["energy"][0], data["phi_momentum"][0], data["carter"][0]
+    print(E, L, C)
     potentplotter(E, L, C, a, rbounds)
 
 def potentplotter(E, L, C, a, rbounds=[-1, -1]):
@@ -1336,19 +1341,11 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
     else:
         E, L, C = np.array([E]), np.array([L]), np.array([C])
         
-    thetbounds = np.linspace(0.0, 2*np.pi, num=180)
-
     R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
-    T = lambda t: C - ((1 - E**2)*(a**2) + (L**2)/(np.sin(t)**2))*(np.cos(t)**2)
-        
-    
     rx, rn, blah, blee = np.transpose(np.array([np.roots([E[i]**2 - 1, 2, (a**2)*(E[i]**2 - 1) - L[i]**2 - C[i], 2*((a*E[i] - L[i])**2 + C[i]), -(a**2)*C[i]]) for i in range(len(E))]))
     r0, bloh, bluh = np.transpose(np.array([np.roots([4*(E[i]**2 - 1), 6, 2*((a**2)*(E[i]**2 - 1) - L[i]**2 - C[i]), 2*((a*E[i] - L[i])**2 + C[i])]) for i in range(len(E))]))
-    ecc = (rx - rn)/(rx + rn)
-    print(rx, rn, ecc)
-    print(r0, bloh, bluh)
+
     if -1 in rbounds:
-        p = 1/(1 - E**2)
         rbounds = np.linspace(0.0, rx*1.05, num=100)
     else:
         rbounds = np.linspace(rbounds[0]*np.ones((len(rn))), rbounds[-1]*np.ones((len(rx))), num=100)
@@ -1359,7 +1356,6 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
     #ax1.set_title("Effective Potential")
     ax1.plot(rbounds, rbounds*0.0)
     ax1.plot(rbounds, -R(rbounds))
-    print(R(np.array([r0, bloh, bluh])))
     ext = False
     if r0 >= rbounds[0]:
         ax1.vlines(r0, -R(r0), 0)
@@ -1392,11 +1388,46 @@ def potentplotter2(cons, a, rbounds=[-1, -1]):
             rbounds2 = np.linspace(rn*0.95, rx*1.05, num=100)
         else:
             rbounds2 = np.linspace(rbounds[0], rbounds[-1], num=100)
-        print("zah",rbounds2[0],rbounds2[-1])
+        #print("zah",rbounds2[0],rbounds2[-1])
         maxbounds = [min(maxbounds[0], rbounds2[0]), max(maxbounds[1], rbounds2[-1])]
-        print(maxbounds)
+        #print(maxbounds)
         ax1.plot(rbounds2, R(rbounds2))
     ax1.hlines(0.0, maxbounds[0], maxbounds[-1], color="black", zorder=1)
+
+def potentplotter3(cons, a, rbounds=[-1, -1]):
+    if len(np.shape(cons)) == 1:
+        cons = [cons]
+    fig1, ax1 = plt.subplots()
+    maxbounds = [1e12, -1e12]
+    for E, L, C in cons:   
+        R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
+        rx, rn, blah, blee = np.transpose(np.array([np.roots([E[i]**2 - 1, 2, (a**2)*(E[i]**2 - 1) - L[i]**2 - C[i], 2*((a*E[i] - L[i])**2 + C[i]), -(a**2)*C[i]]) for i in range(len(E))]))
+        r0, bloh, bluh = np.transpose(np.array([np.roots([4*(E[i]**2 - 1), 6, 2*((a**2)*(E[i]**2 - 1) - L[i]**2 - C[i]), 2*((a*E[i] - L[i])**2 + C[i])]) for i in range(len(E))]))
+    
+        if -1 in rbounds:
+            rbounds = np.linspace(0.0, rx*1.05, num=100)
+        else:
+            rbounds = np.linspace(rbounds[0]*np.ones((len(rn))), rbounds[-1]*np.ones((len(rx))), num=100)
+
+    fig1, ax1 = plt.subplots()
+    ax1.set_xlabel("Radius (Geometric Units)")
+    ax1.set_ylabel("Effective Potential")
+    #ax1.set_title("Effective Potential")
+    ax1.plot(rbounds, rbounds*0.0)
+    ax1.plot(rbounds, -R(rbounds))
+    ext = False
+    if r0 >= rbounds[0]:
+        ax1.vlines(r0, -R(r0), 0)
+        ax1.scatter(r0, 0.0, label="Potential Minimum")
+        ext = True
+    if bloh >= rbounds[0] and abs(R(bloh)) < 1e-5:
+        ax1.vlines(bloh, -R(bloh), 0)
+        ax1.scatter(bloh, 0.0, marker="*", label="Unstable Circular orbit")
+        ext = True
+    if ext == True:
+        ax1.legend()
+    plt.show()
+    return(R(bloh))
 
 def fouriercountourthing(data, wavedis, num=1000):
     from scipy.fft import rfft, rfftfreq
@@ -1567,7 +1598,7 @@ def orth_and_fourier(data, start=0, end=-1, filename=False):
     ax2.set_yscale('log')
     ax2.set_xscale('log')
     ax2.grid()
-    ax2.legend()
+    ax2.legend(title=data["name"])
     if filename == False:
         plt.show()
     else:
