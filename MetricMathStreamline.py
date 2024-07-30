@@ -1169,6 +1169,80 @@ def new_recalc_state10(cons, con_derv, state, a):
 
     return holdstate, [newE, newLz, newC]
 
+def new_recalc_state11(cons, con_derv, state, a, mu, path):
+    '''
+    Calculates new state vector from current state and change in orbital constants
+
+    Parameters
+    ----------
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass
+    con_derv : 4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    new_state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment after correction
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass after correction
+    '''
+    # Step 1
+    E0, L0, C0 = cons
+    cosi = L0/np.sqrt(L0**2 + C0)
+    p = L0**2 + C0
+    path = np.array(path)
+    #print(path[0,1])
+    if path[0,5] < 0:
+     #   print("hey")
+        e = 1 - min(path[:,1])/max(path[:,1]) 
+    else:
+      #  print("ho")
+        e = max(path[:,1])/min(path[:,1]) - 1
+    #print("no")
+    #e = 1 - min(path[:,1])/max(path[:,1]) if path[0,5] < 0 else max(path[:,1])/min(path[:,1]) - 1
+    R = lambda r: (E0**2 - 1.0)*(r**4) + 2.0*(r**3) + ((a**2)*(E0**2 - 1.0) - L0**2 - C0)*(r**2) + 2*((a*E0 - L0)**2 + C0)*r - C0*(a**2)
+    #print("a")
+    turns = optimize.fsolve(R, [(a**2)*C0, (0.3*(a**2)*C0 + 0.7*p/(1 + e)), p/(1 + e), p/(1 - e)])
+    #print("b")
+    #print(turns)
+    e = (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+    #print("c")
+    p = np.sqrt(turns[-1]*turns[-2]*(1 - e**2))
+    #print("hello")
+    f1 = lambda x: 1 + (73/24)*(e**2) + (37/96)*(e**4)
+    f2 = lambda x: 73/12 + (823/24)*(e**2) + (949/32)*(e**4) + (491/192)*(e**6)
+    f3 = lambda x: 1 + (7/8)*(e**2)
+    f4 = lambda x: 61/24 + (63/8)*(e**2) + (94/64)*(e**4)
+    f5 = lambda x: 61/8 + (91/4)*(e**2) + (461/64)*(e**4)
+    f6 = lambda x: 97/12 + (37/2)*(e**2) + (211/32)*(e**4)
+    
+    r0 = p/(1 - e**2)
+    
+    dE = (mu**(-1))*(path[-1,0] - path[0,0])*((-32/5)*(mu**2)*(p**(-5))*((1 - e**2)**(3/2))*(f1(e) - r0*(p**(-3/2))*cosi*f2(e)))
+    dL = (mu**(-1))*(path[-1,0] - path[0,0])*((-32/5)*(mu**2)*(p**(-7/2))*((1 - e**2)**(3/2))*(cosi*f3(e) + r0*(p**(-3/2))*(f4(e) - (cosi**2)*f5(e))))
+    dC = (mu**(-2))*(path[-1,0] - path[0,0])*((-64/5)*(mu**3)*(p**(-3))*((1 - e**2)**(3/2))*(f3(e) - r0*(p**(-3/2))*cosi*f6(e)))
+    #print(path[-1,0] - path[0,0])
+    #print("no")
+    E, L, C = E0 + dE, L0 + dL, C0 + dC
+    #print(E)
+    '''
+    R2 = lambda r: (E**2 - 1.0)*(r**4) + 2.0*(r**3) + ((a**2)*(E**2 - 1.0) - L**2 - C)*(r**2) + 2*((a*E - L)**2 + C)*r - C*(a**2)
+    test = optimize.fsolve(R2, turns)
+    while R2(max(test)) < 0.0:
+        dR = -np.polyval(potent, test)
+        E += max(dR*(( 2*test*((test**3 + (a**2)*test + 2*(a**2))*E - 2*L*a))**(-1)), 10**(-16))
+        potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
+        test = max(np.roots(np.polyder(potent)))
+    '''
+    # Step 6
+    new_state = recalc_state([E, L, C], state, a)
+    return new_state, [E, L, C]
+
 def Jfunc(x, r0, e, i, a, E, L, C):
     '''
     Supplementary function for freqs_finder. Separated because it uses recursion to iterate

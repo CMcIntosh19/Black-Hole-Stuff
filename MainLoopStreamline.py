@@ -338,6 +338,8 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                             new_step, ch_cons = mm.new_recalc_state8(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1
                         elif conch == 10:
                             new_step, ch_cons = mm.new_recalc_state10(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1
+                        elif conch == 11:
+                            new_step, ch_cons = mm.new_recalc_state11(constants[-1], dcons, new_step, a, mu, all_states[tracker[-1][-1]:i])
                         else:
                             new_step, ch_cons = mm.new_recalc_state9(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
                         pot_min = viable_cons(ch_cons, new_step, a)
@@ -458,16 +460,18 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
     ind = argrelmin(all_states[:,1])[0]
     omega, otime = all_states[ind,3] - 2*np.pi*np.arange(len(ind)), all_states[ind,0]
     asc_node, asc_node_time = np.array([]), np.array([])
+    des_node, des_node_time = np.array([]), np.array([])
     true_anom = np.array(true_anom)
     if max(all_states[:,2]) - min(all_states[:,2]) > 1e-15:
         theta_derv = np.interp(all_states[:,0], 0.5*(all_states[:,0][:-1] + all_states[:,0][1:]), np.diff(all_states[:,2])/np.diff(all_states[:,0]))
         ind2 = argrelmin(theta_derv)[0] #indices for the ascending node
         ind3 = argrelmin(-theta_derv)[0] #indices for the descending node
         asc_node, asc_node_time = all_states[ind2,3] - 2*np.pi*np.arange(len(ind2)), all_states[ind2,0] #subtract the normal phi advancement
+        des_node, des_node_time = all_states[ind3,3] - 2*np.pi*np.arange(len(ind3)), all_states[ind3,0] #subtract the normal phi advancement
         try:
-            if ind2[0] > ind3[0]: #if the ascending node occurs after the descending node
+            #if ind2[0] > ind3[0]: #if the ascending node occurs after the descending node
                 #ascending node should be first because of how the program starts on default
-                asc_node = asc_node - np.ones(len(ind2))*2*np.pi #subtract a bit more for when comparing
+            #    asc_node = asc_node - np.ones(len(ind2))*2*np.pi #subtract a bit more for when comparing
             if type(asc_node) != np.ndarray:
                 asc_node, asc_node_time = np.array([asc_node]), np.array([asc_node_time])
         except:
@@ -506,6 +510,8 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
              "otime": otime,
              "asc_node": asc_node,
              "asc_node_time": asc_node_time,
+             "des_node": des_node,
+             "des_node_time": des_node_time,
              "stop": stop,
              "plunge": plunge,
              "issues": issues}
