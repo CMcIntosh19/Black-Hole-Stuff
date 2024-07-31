@@ -322,7 +322,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             R0, ECC = 0.5*(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
             compl, comph = np.arccos(-ECC), 2*np.pi - np.arccos(-ECC)
             S1, S2 = get_true_anom(state, R0, ECC), get_true_anom(new_step, R0, ECC)
-            if (np.sign(new_step[1] - pot_min) != orbitside):# or ((S2-compl)*(compl-S1) > 0 or (S2-comph)*(comph-S1) > 0):
+            if ((S2-compl) > 0 and (compl-S1) > 0) or ((S2-comph) > 0 and (comph-S1) > 0):
                 if (i - tracker[-1][-1] > 10):
                     update = True
                     if ( np.sign(new_step[1] - pot_min) != orbitside):
@@ -344,7 +344,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                             new_step, ch_cons = mm.new_recalc_state9(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
                         pot_min = viable_cons(ch_cons, new_step, a)
                         while pot_min < -err_target:
-                            print(dcons, pot_min)
+                            #print(dcons, pot_min)
                             Lphi, ro = ch_cons[1], pot_min
                             ch_cons[0] += max(10**(-16), 2*(-pot_min)*((2*ro*((ro**3 + ro*(a**2) + 2*(a**2))*ch_cons[0] - 2*Lphi*a))**(-1)))
                             new_step = mm.recalc_state(ch_cons, new_step, a)

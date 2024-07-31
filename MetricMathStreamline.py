@@ -825,7 +825,7 @@ def peters_integrate6(states, a, mu, ind1, ind2):
      4-element numpy array of floats
         change in orbital characteristics (energy, cartesian components of L) per unit mass 
     '''
-    dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
+    #dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
     if (ind2 - ind1) > 2:
         states = np.array(states)
         sphere, time = states[:, 1:4], states[:, 0]
@@ -1193,26 +1193,28 @@ def new_recalc_state11(cons, con_derv, state, a, mu, path):
     '''
     # Step 1
     E0, L0, C0 = cons
+    print("uh")
     cosi = L0/np.sqrt(L0**2 + C0)
-    p = L0**2 + C0
+    #r0 = min(path[:,1])
     path = np.array(path)
-    #print(path[0,1])
-    if path[0,5] < 0:
-     #   print("hey")
-        e = 1 - min(path[:,1])/max(path[:,1]) 
-    else:
-      #  print("ho")
-        e = max(path[:,1])/min(path[:,1]) - 1
+    e = 1 - min(path[:,1])/max(path[:,1]) if path[0,5] < 0 else max(path[:,1])/min(path[:,1]) - 1
+    r0 = max(path[:,1]) if path[0,5] < 0 else min(path[:,1])
+    p = r0*(1 - e**2)
+    print("HEY0", E0, L0, C0)
+    print("HEY", e)
+    print("HEY2", p)
     #print("no")
     #e = 1 - min(path[:,1])/max(path[:,1]) if path[0,5] < 0 else max(path[:,1])/min(path[:,1]) - 1
     R = lambda r: (E0**2 - 1.0)*(r**4) + 2.0*(r**3) + ((a**2)*(E0**2 - 1.0) - L0**2 - C0)*(r**2) + 2*((a*E0 - L0)**2 + C0)*r - C0*(a**2)
     #print("a")
     turns = optimize.fsolve(R, [(a**2)*C0, (0.3*(a**2)*C0 + 0.7*p/(1 + e)), p/(1 + e), p/(1 - e)])
     #print("b")
-    #print(turns)
+    print("HEY3", turns)
     e = (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
     #print("c")
     p = np.sqrt(turns[-1]*turns[-2]*(1 - e**2))
+    print("HEY4", e, p)
+    print("HEY5", state)
     #print("hello")
     f1 = lambda x: 1 + (73/24)*(e**2) + (37/96)*(e**4)
     f2 = lambda x: 73/12 + (823/24)*(e**2) + (949/32)*(e**4) + (491/192)*(e**6)
@@ -1223,12 +1225,18 @@ def new_recalc_state11(cons, con_derv, state, a, mu, path):
     
     r0 = p/(1 - e**2)
     
-    dE = (mu**(-1))*(path[-1,0] - path[0,0])*((-32/5)*(mu**2)*(p**(-5))*((1 - e**2)**(3/2))*(f1(e) - r0*(p**(-3/2))*cosi*f2(e)))
-    dL = (mu**(-1))*(path[-1,0] - path[0,0])*((-32/5)*(mu**2)*(p**(-7/2))*((1 - e**2)**(3/2))*(cosi*f3(e) + r0*(p**(-3/2))*(f4(e) - (cosi**2)*f5(e))))
-    dC = (mu**(-2))*(path[-1,0] - path[0,0])*((-64/5)*(mu**3)*(p**(-3))*((1 - e**2)**(3/2))*(f3(e) - r0*(p**(-3/2))*cosi*f6(e)))
+    dE = (path[-1,0] - path[0,0])*((-32/5)*(mu**2)*(p**(-5))*((1 - e**2)**(3/2))*(f1(e) - a*(p**(-3/2))*cosi*f2(e)))
+    dL = (path[-1,0] - path[0,0])*((-32/5)*(mu**2)*(p**(-7/2))*((1 - e**2)**(3/2))*(cosi*f3(e) + a*(p**(-3/2))*(f4(e) - (cosi**2)*f5(e))))
+    dQ = (path[-1,0] - path[0,0])*((-64/5)*(mu**3)*(p**(-3))*((1 - e**2)**(3/2))*(f3(e) - a*(p**(-3/2))*cosi*f6(e)))
+    dC = dQ - 2*L0*dL
+    #print(dQ, dC)
+    #print(dC, dC + 2*L0*dL, dC - 2*L0*dL)
+    
     #print(path[-1,0] - path[0,0])
     #print("no")
     E, L, C = E0 + dE, L0 + dL, C0 + dC
+    print("HEY", E0, L0, C0)
+    print("HEY", E, L, C)
     #print(E)
     '''
     R2 = lambda r: (E**2 - 1.0)*(r**4) + 2.0*(r**3) + ((a**2)*(E**2 - 1.0) - L**2 - C)*(r**2) + 2*((a*E - L)**2 + C)*r - C*(a**2)
