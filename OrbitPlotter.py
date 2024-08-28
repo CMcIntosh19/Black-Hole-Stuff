@@ -205,7 +205,7 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
                     "radius": [data["pos"][:,0], "Radius"],
                     "theta": [data["pos"][:,1], "Theta"],
                     "phase": [data["pos"][:,2]/(2*np.pi), "Phase"],
-                    "true_anom": [data["true_anom"], "True Anomaly"],
+                    "true_anom": [data["true_anom"]/(2*np.pi), "True Anomaly"],
                     "r0": [data["r0"], "Semimajor Axis"],
                     "pot_min": [data["pot_min"], "Effective Potential Minimum"],
                     "ecc": [data["e"], "Eccentricity"],
@@ -1367,8 +1367,45 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
         ext = True
     if ext == True:
         ax1.legend()
-    plt.show()
+    #plt.show()
     return(R(bloh))
+
+def potentplotter4(E, L, C, a, rbounds=[-1, -1]):
+    if type(E) == np.ndarray:
+        pass
+    elif type(E) == list:
+        E, L, C = np.array(E), np.array(L), np.array(C)
+    else:
+        E, L, C = np.array([E]), np.array([L]), np.array([C])
+        
+    R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
+    rx, rn, blah, blee = np.transpose(np.array([np.roots([E[i]**2 - 1, 2, (a**2)*(E[i]**2 - 1) - L[i]**2 - C[i], 2*((a*E[i] - L[i])**2 + C[i]), -(a**2)*C[i]]) for i in range(len(E))]))
+    r0, bloh, bluh = np.transpose(np.array([np.roots([4*(E[i]**2 - 1), 6, 2*((a**2)*(E[i]**2 - 1) - L[i]**2 - C[i]), 2*((a*E[i] - L[i])**2 + C[i])]) for i in range(len(E))]))
+
+    if -1 in rbounds:
+        rbounds = np.linspace(0.0, rx*1.05, num=100)
+    else:
+        rbounds = np.linspace(rbounds[0]*np.ones((len(rn))), rbounds[-1]*np.ones((len(rx))), num=100)
+
+    #fig1, ax1 = plt.subplots()
+    #ax1.set_xlabel("Radius (Geometric Units)")
+    #ax1.set_ylabel("Effective Potential")
+    #ax1.set_title("Effective Potential")
+    #ax1.plot(rbounds, rbounds*0.0)
+    #ax1.plot(rbounds, -R(rbounds))
+    #ext = False
+    #if r0 >= rbounds[0]:
+        #ax1.vlines(r0, -R(r0), 0)
+        #ax1.scatter(r0, 0.0, label="Potential Minimum")
+     #   ext = True
+    #if bloh >= rbounds[0] and abs(R(bloh)) < 1e-5:
+        #ax1.vlines(bloh, -R(bloh), 0)
+        #ax1.scatter(bloh, 0.0, marker="*", label="Unstable Circular orbit")
+     #   ext = True
+    #if ext == True:
+     #   ax1.legend()
+    #plt.show()
+    return(rbounds, -R(rbounds))
 
 def potentplotter2(cons, a, rbounds=[-1, -1]):
     if len(np.shape(cons)) == 1:

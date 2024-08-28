@@ -625,12 +625,15 @@ def recalc_state(constants, state, a):
         new_state[:4] = state[:4]
     else:
         roots = np.sort(np.roots(r_r))
+        '''
         #If current radius is between the inner and outer turning points, maintain direction
         if (rad - roots[-2])*(roots[-1] - rad) > 0:
             direc = np.sign(state[5])
         #If current radius is somehow outside that range, follow the potential to go back in
         else:
             direc = np.sign(np.polyval(np.polyder(r_r), rad))
+        '''
+        direc = np.sign(state[5])
         rtau = abs(rtau) * direc
         thetau = abs(thetau) * np.sign(state[6])
         new_state = np.copy(state)
@@ -668,6 +671,11 @@ def interpolate(data, time, supress=True):
             rad = data[0,0]
         new_time = np.arange(time[0], time[-1], min(2*np.pi*np.sqrt(rad**3)/20, (time[-1] - time[0])/10000))
     else:
+        #print("\n", time)
+        #print(time[0])
+        #print(time[-1])
+        #print("hahshdh")
+        #print(time[0], time[-1], max(len(time), int(time[-1] - time[0])))
         new_time = np.linspace(time[0], time[-1], max(len(time), int(time[-1] - time[0])))
     try:
         r_poly = spi.CubicSpline(time, data[:,0])
@@ -849,6 +857,107 @@ def peters_integrate6(states, a, mu, ind1, ind2):
         dldt = (-2/5)*np.einsum("ijk, ljm, lkm -> li", levciv, dt2, dt3)
         dE = np.sum(dedt*div)*mu
         dLx, dLy, dLz = np.sum(dldt*div, axis=0)*mu
+        #print(dE, np.sqrt(dLx**2 + dLy**2 + dLz**2))
+    return np.array([dE, dLx, dLy, dLz])
+    #return quad
+
+def peters_integrate7(states, a, mu, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    path = np.array(states)
+    #print(path)
+    int_time = np.arange(int(path[0, 0]), int(path[-1, 0] + 1))
+    #print(int_time)
+    path = np.transpose([np.interp(int_time, path[:,0], path[:,1]),
+                         np.interp(int_time, path[:,0], path[:,2]),
+                         np.interp(int_time, path[:,0], path[:,3])])
+    cartpath = np.transpose([path[:,0]*np.sin(path[:,1])*np.cos(path[:,2]), 
+                             path[:,0]*np.sin(path[:,1])*np.sin(path[:,2]),
+                             path[:,0]*np.cos(path[:,1])])
+    quad = mu*np.einsum("ij, ik -> ijk", cartpath, cartpath)
+    dt2 = matrix_derive(quad, int_time, 2)
+    dt3 = matrix_derive(quad, int_time, 3)
+    levciv = np.array([[[0, 0, 0],   #Levi-civita tensor - np.array([[[int(not((i+1)*(j+1)*(k+1)-6))*(int(j-i==1)*2-1) for k in range(3)] for j in range(3)] for i in range(3)])
+                        [0, 0, 1],
+                        [0, -1, 0]],
+                       [[0, 0, -1],
+                        [0, 0, 0],
+                        [1, 0, 0]],
+                       [[0, 1, 0],
+                        [-1, 0, 0],
+                        [0, 0, 0]]])
+    #dE = -(1/2)*np.sum(np.transpose([[dt3[:,i,j]**2 - (1/3)*dt3[:,i,i]*dt3[:,j,j] for j in range(3)] for i in range(3)]))
+    #dL = np.transpose([[[[levciv[i,j,k]*dt2[:,j,m]*dt3[:,k,m] for m in range(3)] for k in range(3)] for j in range(3)] for i in range(3)])
+    dE = (-1/5)*(np.einsum("ijk, ijk", dt3, dt3) - (1/3)*np.einsum("ijj, ikk", dt3, dt3))
+    dL = -(2/5)*(np.einsum("ijk, ljm, lkm -> i", levciv, dt2, dt3))
+    return np.array([dE, dL[0], dL[1], dL[2]])
+    #return quad
+    
+def peters_integrate8(states, a, mu, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    #dedt, dldt = 0, np.array([0.0, 0.0, 0.0])
+    if (ind2 - ind1) > 2:
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0]
+        int_sphere, int_time = interpolate(sphere, time, False)
+        div = np.mean(np.diff(int_time))
+        quad = mu*trace_ortholize(int_sphere)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = quad #- (1/3)*np.einsum('i, jk -> ijk', np.einsum('ijj -> i', quad), delta)
+        dt2 = matrix_derive(coolquad, int_time, 2)
+        dt3 = matrix_derive(coolquad, int_time, 3)
+        levciv = np.array([[[0, 0, 0],   #Levi-civita tensor
+                            [0, 0, 1],
+                            [0, -1, 0]],
+                           [[0, 0, -1],
+                            [0, 0, 0],
+                            [1, 0, 0]],
+                           [[0, 1, 0],
+                            [-1, 0, 0],
+                            [0, 0, 0]]])
+        dedt = (-1/5)*(np.einsum('ijk,ijk -> i', dt3, dt3) - (1/3)*np.einsum('ijj, ikk -> i', dt3, dt3))
+        dldt = (-2/5)*np.einsum("ijk, ljm, lkm -> li", levciv, dt2, dt3)
+        dE = np.sum(dedt*div)
+        dLx, dLy, dLz = np.sum(dldt*div, axis=0)
     return np.array([dE, dLx, dLy, dLz])
 
 def new_recalc_state6(cons, con_derv, state, a):
@@ -894,14 +1003,17 @@ def new_recalc_state6(cons, con_derv, state, a):
     
     # Step 5
     C = C0 + dC
+    #print(dE, dLz, dC)
     potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
     test = max(np.roots(np.polyder(potent)))
+    count = 0
     while (np.polyval(potent, test) < 0.0):
+        count += 1
         dR = -np.polyval(potent, test)
         E += max(dR*(( 2*test*((test**3 + (a**2)*test + 2*(a**2))*E - 2*L*a))**(-1)), 10**(-16))
         potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
         test = max(np.roots(np.polyder(potent)))
-    
+    #print(count)
     # Step 6
     new_state = recalc_state([E, L, C], state, a)
     return new_state, [E, L, C]
@@ -1193,50 +1305,105 @@ def new_recalc_state11(cons, con_derv, state, a, mu, path):
     '''
     # Step 1
     E0, L0, C0 = cons
-    print("uh")
+
     cosi = L0/np.sqrt(L0**2 + C0)
-    #r0 = min(path[:,1])
     path = np.array(path)
     e = 1 - min(path[:,1])/max(path[:,1]) if path[0,5] < 0 else max(path[:,1])/min(path[:,1]) - 1
     r0 = max(path[:,1]) if path[0,5] < 0 else min(path[:,1])
     p = r0*(1 - e**2)
-    print("HEY0", E0, L0, C0)
-    print("HEY", e)
-    print("HEY2", p)
-    #print("no")
-    #e = 1 - min(path[:,1])/max(path[:,1]) if path[0,5] < 0 else max(path[:,1])/min(path[:,1]) - 1
     R = lambda r: (E0**2 - 1.0)*(r**4) + 2.0*(r**3) + ((a**2)*(E0**2 - 1.0) - L0**2 - C0)*(r**2) + 2*((a*E0 - L0)**2 + C0)*r - C0*(a**2)
-    #print("a")
     turns = optimize.fsolve(R, [(a**2)*C0, (0.3*(a**2)*C0 + 0.7*p/(1 + e)), p/(1 + e), p/(1 - e)])
-    #print("b")
-    print("HEY3", turns)
     e = (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
-    #print("c")
     p = np.sqrt(turns[-1]*turns[-2]*(1 - e**2))
-    print("HEY4", e, p)
-    print("HEY5", state)
-    #print("hello")
-    f1 = lambda x: 1 + (73/24)*(e**2) + (37/96)*(e**4)
-    f2 = lambda x: 73/12 + (823/24)*(e**2) + (949/32)*(e**4) + (491/192)*(e**6)
-    f3 = lambda x: 1 + (7/8)*(e**2)
-    f4 = lambda x: 61/24 + (63/8)*(e**2) + (94/64)*(e**4)
-    f5 = lambda x: 61/8 + (91/4)*(e**2) + (461/64)*(e**4)
-    f6 = lambda x: 97/12 + (37/2)*(e**2) + (211/32)*(e**4)
+    f1 = lambda x: 1 + (73/24)*(x**2) + (37/96)*(x**4)
+    f2 = lambda x: 73/12 + (823/24)*(x**2) + (949/32)*(x**4) + (491/192)*(x**6)
+    f3 = lambda x: 1 + (7/8)*(x**2)
+    f4 = lambda x: 61/24 + (63/8)*(x**2) + (94/64)*(x**4)
+    f5 = lambda x: 61/8 + (91/4)*(x**2) + (461/64)*(x**4)
+    f6 = lambda x: 97/12 + (37/2)*(x**2) + (211/32)*(x**4)
     
     r0 = p/(1 - e**2)
     
-    dE = (path[-1,0] - path[0,0])*((-32/5)*(mu**2)*(p**(-5))*((1 - e**2)**(3/2))*(f1(e) - a*(p**(-3/2))*cosi*f2(e)))
-    dL = (path[-1,0] - path[0,0])*((-32/5)*(mu**2)*(p**(-7/2))*((1 - e**2)**(3/2))*(cosi*f3(e) + a*(p**(-3/2))*(f4(e) - (cosi**2)*f5(e))))
-    dQ = (path[-1,0] - path[0,0])*((-64/5)*(mu**3)*(p**(-3))*((1 - e**2)**(3/2))*(f3(e) - a*(p**(-3/2))*cosi*f6(e)))
-    dC = dQ - 2*L0*dL
+    dEdt = ((-32/5)*(mu**2)*(p**(-5))*((1 - e**2)**(3/2))*(f1(e) - a*(p**(-3/2))*cosi*f2(e)))
+    dLdt = ((-32/5)*(mu**2)*(p**(-7/2))*((1 - e**2)**(3/2))*(cosi*f3(e) + a*(p**(-3/2))*(f4(e) - (cosi**2)*f5(e))))
+    dQdt = ((-64/5)*(mu**3)*(p**(-3))*((1 - e**2)**(3/2))*(f3(e) - a*(p**(-3/2))*cosi*f6(e)))
+    dCdt = dQdt - 2*L0*dLdt
+    dt = path[-1,0] - path[0,0]
     #print(dQ, dC)
     #print(dC, dC + 2*L0*dL, dC - 2*L0*dL)
     
     #print(path[-1,0] - path[0,0])
     #print("no")
-    E, L, C = E0 + dE, L0 + dL, C0 + dC
-    print("HEY", E0, L0, C0)
-    print("HEY", E, L, C)
+    #print(r0*(1-e), r0*(1+e), r0, e)
+    E, L, C = E0 + dEdt*dt, L0 + dLdt*dt, C0 + 0*dCdt*dt
+    #print("HEY", E0, L0, C0)
+    #print("HEY", E, L, C)
+    #print(E)
+    '''
+    R2 = lambda r: (E**2 - 1.0)*(r**4) + 2.0*(r**3) + ((a**2)*(E**2 - 1.0) - L**2 - C)*(r**2) + 2*((a*E - L)**2 + C)*r - C*(a**2)
+    test = optimize.fsolve(R2, turns)
+    while R2(max(test)) < 0.0:
+        dR = -np.polyval(potent, test)
+        E += max(dR*(( 2*test*((test**3 + (a**2)*test + 2*(a**2))*E - 2*L*a))**(-1)), 10**(-16))
+        potent = np.array([(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -C*(a**2)])
+        test = max(np.roots(np.polyder(potent)))
+    '''
+    # Step 6
+    new_state = recalc_state([E, L, C], state, a)
+    return new_state, [E, L, C]
+
+def new_recalc_state12(cons, con_derv, state, a, mu, path):
+    '''
+    Calculates new state vector from current state and change in orbital constants
+
+    Parameters
+    ----------
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass
+    con_derv : 4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    new_state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment after correction
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass after correction
+    '''
+    # Step 1
+    E0, L0, C0 = cons
+    
+    roots = root_getter(E0, L0, C0, a)[0]
+    e = (roots[-1] - roots[-2])/(roots[-1] + roots[-2])
+    p = 0.5*(roots[-1] + roots[-2])*(1 - e**2)
+    cosi = L0/np.sqrt(L0**2 + C0)
+
+    f1 = lambda x: 1 + (73/24)*(x**2) + (37/96)*(x**4)
+    f2 = lambda x: 73/12 + (823/24)*(x**2) + (949/32)*(x**4) + (491/192)*(x**6)
+    f3 = lambda x: 1 + (7/8)*(x**2)
+    f4 = lambda x: 61/24 + (63/8)*(x**2) + (94/64)*(x**4)
+    f5 = lambda x: 61/8 + (91/4)*(x**2) + (461/64)*(x**4)
+    f6 = lambda x: 97/12 + (37/2)*(x**2) + (211/32)*(x**4)
+    
+    dEdt = ((-32/5)*(mu**2)*(p**(-5))*((1 - e**2)**(3/2))*(f1(e) - a*(p**(-3/2))*cosi*f2(e)))
+    dLdt = ((-32/5)*(mu**2)*(p**(-7/2))*((1 - e**2)**(3/2))*(cosi*f3(e) + a*(p**(-3/2))*(f4(e) - (cosi**2)*f5(e))))
+    dQdt = ((-64/5)*(mu**3)*(p**(-3))*((1 - e**2)**(3/2))*(f3(e) - a*(p**(-3/2))*cosi*f6(e)))
+    dCdt = dQdt - 2*L0*dLdt
+    dt = path[-1][0] - path[0][0]
+    #print(dQ, dC)
+    #print(dC, dC + 2*L0*dL, dC - 2*L0*dL)
+    
+    #print(path[-1,0] - path[0,0])
+    #print("no")
+    #print(r0*(1-e), r0*(1+e), r0, e)
+
+    E, L, C = E0 + dEdt*dt/mu, L0 + dLdt*dt/mu, C0 + 0*dCdt*dt/mu
+    #print("HEY", E0, L0, C0)
+    #print("HEY", E, L, C)
     #print(E)
     '''
     R2 = lambda r: (E**2 - 1.0)*(r**4) + 2.0*(r**3) + ((a**2)*(E**2 - 1.0) - L**2 - C)*(r**2) + 2*((a*E - L)**2 + C)*r - C*(a**2)
@@ -1398,3 +1565,35 @@ def seper_locator(r0, inc, a):
         e_list.append(e)
         loops += 1
     return [E, L, C], e
+
+def root_getter(E, L, C, spin):
+    a, b, c, d, e = np.array([(E**2 - 1.0), 2.0, ((spin**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - spin*E)**2) + 2*C), -(spin**2)*C]).astype(complex)
+    p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
+    p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
+    p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
+    p4 = ((b**2)/(4*(a**2)) - (2*c)/(3*a) + p3)**(0.5)
+    p5 = (b**2)/(2*(a**2)) - (4*c)/(3*a) - p3
+    p6 = (-(b**3)/(a**3) + (4*b*c)/(a**2) - 8*d/a)/(4*p4)
+    x1 = -b/(4*a) - p4/2 - 0.5*((p5 - p6)**0.5)
+    x2 = -b/(4*a) - p4/2 + 0.5*((p5 - p6)**0.5)
+    x3 = -b/(4*a) + p4/2 - 0.5*((p5 + p6)**0.5)
+    x4 = -b/(4*a) + p4/2 + 0.5*((p5 + p6)**0.5) 
+    turns = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-12 else num for num in [x1, x2, x3, x4]]).astype(complex)
+    
+    flats = np.roots([a,b,c,d])
+    flats = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-12 else num for num in flats]).astype(complex)
+    
+    a, b, c, d, e = np.array([(a**2)*(1 - E**2), 0.0, -(C + (a**2)*(1 - E**2) + L**2), 0.0, C]).astype(complex)
+    p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
+    p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
+    p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
+    p4 = ((b**2)/(4*(a**2)) - (2*c)/(3*a) + p3)**(0.5)
+    p5 = (b**2)/(2*(a**2)) - (4*c)/(3*a) - p3
+    p6 = (-(b**3)/(a**3) + (4*b*c)/(a**2) - 8*d/a)/(4*p4)
+    x1 = -b/(4*a) - p4/2 - 0.5*((p5 - p6)**0.5)
+    x2 = -b/(4*a) - p4/2 + 0.5*((p5 - p6)**0.5)
+    x3 = -b/(4*a) + p4/2 - 0.5*((p5 + p6)**0.5)
+    x4 = -b/(4*a) + p4/2 + 0.5*((p5 + p6)**0.5) 
+    zs = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-5 else num for num in [x1, x2, x3, x4]]).astype(complex)
+    
+    return np.sort(turns), np.sort(flats), np.sort(zs)
