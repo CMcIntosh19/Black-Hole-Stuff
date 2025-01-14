@@ -1678,3 +1678,247 @@ def EGTimer(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="defa
              "issues": issues,
              "diag_times": diag_times}
     return final
+
+def guessmaker2(cons, old_state, a):
+    import scipy.interpolate as interp
+    state = mm.recalc_state(cons, old_state[:4], a)
+    #state[5] *= -1
+    freqs = mm.freqs_finder(*cons, a)
+    turns, flats, zs = mm.root_getter(*cons, a)
+    #print(turns)
+    vals = np.sort(np.arccos(zs))
+    #print(vals)
+    p, e, inc = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2]), vals[1]
+    r_min, r_max, r0 = p/(1+e), p/(1-e), p/(1-e**2)
+    #print(p,e,inc)
+    
+    ano1 = np.real(np.arccos((1/e)*(p/state[1] - 1))*180/np.pi)
+    thetano1 = np.real(np.arcsin((2*state[2] - np.pi)/(2*inc - np.pi))) if inc != np.pi/2 else 0.0
+    ano1 = 360 - ano1 if state[5] < 0 else ano1
+    thetano1 = thetano1%(2*np.pi) if state[6] < 0 else (thetano1 + np.pi)%(2*np.pi)
+    theta_cor = not(state[2] == np.pi/2 and np.abs(state[6]) < 1e-15)
+    print(theta_cor)
+
+    if state[1] > p or (state[1] == p and state[5] >= 0):                 #outer orbit
+        anomaly = np.linspace(ano1, 270, int(270 - ano1) + 1)*np.pi/180   #true anomaly
+        rads = p/(1 + e*np.cos(anomaly))                                  #radial position
+        thetanoms = thetano1 + anomaly - anomaly[0]                       #theta anomaly
+        thets = np.pi/2 - (inc - np.pi/2)*np.sin(thetanoms)*theta_cor               #theta position
+        uph = (((1 + e*np.cos(anomaly))/(1 - e**2))**2)/(r0**(3/2) + a)
+        #kep2con = 0.5*(state[1]**2)*np.sqrt(state[7]**2 + state[6]**2)    #approx "area per unit time" (keplers 2nd law)
+        ut = (1 - 2*rads/(rads**2 + (a**2)*(np.cos(thets))))**(-1)
+        #times = (np.cumsum(ut) - ut[0])*np.pi*(((p/(1-e))**(3/2)))/np.sum(ut) + state[0]
+
+    elif state[1] < p or (state[1] == p and state[5] < 0):                #inner orbit (bound)
+        #print("this?")
+        print(inc)
+        anomaly = np.linspace(ano1, 450, int(450 - ano1) + 1)*np.pi/180
+        rads = p/(1 + e*np.cos(anomaly))
+        thetanoms = thetano1 + anomaly - anomaly[0]                       #theta anomaly
+        #print(inc, np.pi/2 - inc)
+        thets = np.pi/2 - (inc - np.pi/2)*np.sin(thetanoms)*theta_cor               #theta position
+        uph = (((1 + e*np.cos(anomaly))/(1 - e**2))**2)/(r0**(3/2) + a)    
+        #approx ratio between frequencies: r0 circular orbit/r_min circular orbit
+        ut = (1 - 2*rads/(rads**2 + (a**2)*(np.cos(thets))))**(-1)
+        #times = (np.cumsum(ut) - ut[0])*np.pi*(((p/(1+e))**(3/2)))/np.sum(ut) + state[0]
+        
+    hold = np.arange(len(rads))
+    
+    #np.cumsum(ut - ut[0])*(np.pi*((p)**(3/2)))/np.sum(ut) + state[0]
+    #print((np.pi*((p)**(3/2))))
+    #print(np.sum(ut))
+    #print((np.cumsum(ut) - ut[0])[-1])
+    ut *= state[4]/ut[0]
+    uth = interp.CubicSpline(hold, thets)(hold, 1)
+    #uph = interp.CubicSpline(hold, phis)(hold, 1)
+    times = np.append([0], np.cumsum(ut)[:-1])*np.pi*(((p/(1+e))**(3/2)))/np.sum(ut[:-1]) + state[0]
+    print(np.imag(times))
+    phis = np.cumsum(np.append(uph[:-1]*np.diff(times), uph[-1]*np.diff(times)[-1])) + state[3]
+    ur = interp.CubicSpline(hold, rads)(hold, 1)/(np.diff(times)/np.diff(hold))[0]
+    #print(uth)
+    #ut *= state[4]/ut[0] if not(np.isinf(1/ut[0])) else 
+    #ur *= state[5]/ur[0]
+    #uth *= state[6]/uth[0]
+    #uph *= state[7]/uph[0] 
+    #plt.plot(gtt)
+    #plt.plot(ut)
+    return np.real(np.transpose([times, rads, thets, phis, ut, ur, uth, uph]))
+
+def corrector(cons, guess, a): #doesn't work
+    new = guess.copy()
+    def dervs(cons, state, a):
+        E, L, C = cons
+        r, T = state[1], state[2]
+        sint, cost = np.sin(T), np.cos(T)
+        sig, delt = r**2 + (a*cost)**2, r**2 - 2*r + a**2
+        u0, u2, u3 = state[4], state[6], state[7]
+        dEdr = -2*(a*(sint**2)*u3 - u0)*(r**2 - (a*cost)**2)/(sig**2)
+        dEdT = 4*a*r*((r**2 + a**2)*u3 - a*u0)*cost*sint/(sig**2)
+        dLdr = (2*(sint**2)/(sig**2))*(a*(r**2 - (a*cost)**2)*u0 + (r**5 + 2*(a**2)*(r**3) - (a*r*sint)**2 + r*((a*cost)**4) + (a**4)*((sint*cost)**2))*u3)
+        dLdT = (2*sint*cost/(sig**2))*(-2*a*r*(r**2 + a**2)*u0 + (delt*((a*sint)**2)*((a*sint)**2 - 2*(r**2 + a**2)) + (r**2 + a**2)**3)*u3)
+        dQdr = (2/sint**2)*(dLdr - a*dEdr*(sint**2))*(L - a*E*(sint**2)) + 4*r*sig*(u2**2)
+        dQdT = (1/(sint**3))*(2*(dLdT - a*(dEdT*(sint**2) + 2*E*sint*cost))*(L - a*E*(sint**2))*sint - 2*cost*((L - a*E*(sint**2))**2)) - 2*(a**2)*sint*cost - 4*(a**2)*sint*cost*sig*(u2**2)
+        dCdr = dQdr - 2*(a*E - L)*(a*dEdr - dLdr)
+        dCdT = dQdT - 2*(a*E - L)*(a*dEdT - dLdT)
+        return np.array([dEdr, dLdr, dCdr, dEdT, dLdT, dCdT])
+        
+    def intderv(state, a):
+        #print(state)
+        r, T = state[1], state[2]
+        sint, cost = np.sin(T), np.cos(T)
+        sig, delt = r**2 + (a*cost)**2, r**2 - 2*r + a**2
+        u0, u1, u2, u3 = state[4:]
+        #print(r, T, sig, u0, a, sint, sig, u3)
+        du0 = -2*(1 - 2*r/sig)*u0 - (4*a*r*(sint**2)/sig)*u3
+        du1 = 2*(sig/delt)*u1
+        du2 = 2*sig*u2
+        du3 = 2*(r**2 + a**2 + 2*r*((a*sint)**2)/sig)*(sint**2)*u3
+        return np.array([du0, du1, du2, du3])
+    #print(new[:2])
+    dcons = np.array([np.array(cons) - getCons(state, a) for state in new])
+    print(dcons[0:2])
+    print(input("hhhe"))
+    dervs = np.array([dervs(cons, state, a) for state in new])
+    print(dervs[:2])
+    dervs = np.where(np.isinf(1/dervs), 0.0, 1/dervs)
+    #return dervs[0]
+
+    print(dervs[:2])
+    print(input("hhhe"))
+    delt_r, delt_T = np.sum(dcons*dervs[:,:3], axis=1), np.sum(dcons*dervs[:,3:], axis=1)
+    print(dervs[0,:3]*dcons[0])
+    print(dervs[0,3:]*dcons[0])
+    print(input("check this"))
+    
+    print(delt_r[:2])
+    print(delt_T[:2])
+    #print(delt_T[:2]%(
+    
+    new[:, 1] += delt_r
+    new[:, 2] += delt_T
+    new[:, 2] = np.arccos(np.cos(new[:, 2]))
+    int_diffs = -1 - np.array([mm.check_interval(mm.kerr, i, a) for i in new])
+    int_dervs = np.array([intderv(state, a) for state in new])
+    delt_vel = np.array([(-1 - mm.check_interval(mm.kerr, state, a))/intderv(state, a) for state in new])
+    #new[:, 4:] += delt_vel
+    return new
+
+def corrector2(cons, guess, a):
+    dcons = np.array([cons - getCons(state) for state in guess])
+    #rho, z
+    def dervs(state, a):
+        E, L, C = getCons(state, a)
+        r, T = state[1], state[2]
+        sint, cost = np.sin(T), np.cos(T)
+        sig, delt = r**2 + (a*cost)**2, r**2 - 2*r + a**2
+        u0, u2, u3 = state[4], state[6], state[7]
+        dEdr = -2*(a*(sint**2)*u3 - u0)*(r**2 - (a*cost)**2)/(sig**2)
+        dEdT = 4*a*r*((r**2 + a**2)*u3 - a*u0)*cost*sint/(sig**2)
+        dLdr = (2*(sint**2)/(sig**2))*(a*(r**2 - (a*cost)**2)*u0 + (r**5 + 2*(a**2)*(r**3) - (a*r*sint)**2 + r*((a*cost)**4) + (a**4)*((sint*cost)**2))*u3)
+        dLdT = (2*sint*cost/(sig**2))*(-2*a*r*(r**2 + a**2)*u0 + (delt*((a*sint)**2)*((a*sint)**2 - 2*(r**2 + a**2)) + (r**2 + a**2)**3)*u3)
+        dQdr = (2/sint**2)*(dLdr - a*dEdr*(sint**2))*(L - a*E*(sint**2)) + 4*r*sig*(u2**2)
+        dQdT = (1/(sint**3))*(2*(dLdT - a*(dEdT*(sint**2) + 2*E*sint*cost))*(L - a*E*(sint**2))*sint - 2*cost*((L - a*E*(sint**2))**2)) - 2*(a**2)*sint*cost - 4*(a**2)*sint*cost*sig*(u2**2)
+        dCdr = dQdr - 2*(a*E - L)*(a*dEdr - dLdr)
+        dCdT = dQdT - 2*(a*E - L)*(a*dEdT - dLdT)
+        return np.array([[dEdr, dEdT],
+                         [dLdr, dLdT],
+                         [dCdr, dCdT]])
+        def dervs(state, a0):
+            E0, L0, C0 = getCons(state, a0)
+            r, T, a, u0, u2, u3 = sp.symbols('r T a u0 u2 u3', real=True)
+            sig = r**2 + (a*sp.cos(T))**2
+            delt = r**2 - 2*r + a**2
+            E = (1 - 2*r/sig)*u0 + 2*a*r*(sp.sin(T)**2)*u3/sig
+            L = -2*a*r*(sp.sin(T)**2)*u0/sig + ((r**2 + a**2)**2 - delt*((a*sp.sin(T))**2))*(sp.sin(T)**2)*u3/sig
+            Q = ((L - a*E*(sp.sin(T)**2))**2)/(sp.sin(T)**2) + (a*sp.cos(T))**2 + (sig*u2)**2
+            C = Q - (a*E - L)**2
+            
+            dEdr, dLdr, dCdr = sp.diff(E, r), sp.diff(L, r), sp.diff(C, r)
+            dEdT, dLdT, dCdT = sp.diff(E, T), sp.diff(L, T), sp.diff(C, T)
+            d2Edr2, d2Ldr2, d2Cdr2 = sp.diff(dEdr, r), sp.diff(dLdr, r), sp.diff(dCdr, r)
+            d2EdT2, d2LdT2, d2CdT2 = sp.diff(dEdT, T), sp.diff(dLdT, T), sp.diff(dCdT, T)
+            d2EdrdT, d2LdrdT, d2CdrdT = sp.diff(dEdr, T), sp.diff(dLdr, T), sp.diff(dCdr, T)
+            
+            #d1_block = np.array([
+
+            dEdr = -2*(a*(sint**2)*u3 - u0)*(r**2 - (a*cost)**2)/(sig**2)
+            dEdT = 4*a*r*((r**2 + a**2)*u3 - a*u0)*cost*sint/(sig**2)
+            dLdr = (2*(sint**2)/(sig**2))*(a*(r**2 - (a*cost)**2)*u0 + (r**5 + 2*(a**2)*(r**3) - (a*r*sint)**2 + r*((a*cost)**4) + (a**4)*((sint*cost)**2))*u3)
+            dLdT = (2*sint*cost/(sig**2))*(-2*a*r*(r**2 + a**2)*u0 + (delt*((a*sint)**2)*((a*sint)**2 - 2*(r**2 + a**2)) + (r**2 + a**2)**3)*u3)
+            dQdr = (2/sint**2)*(dLdr - a*dEdr*(sint**2))*(L - a*E*(sint**2)) + 4*r*sig*(u2**2)
+            dQdT = (1/(sint**3))*(2*(dLdT - a*(dEdT*(sint**2) + 2*E*sint*cost))*(L - a*E*(sint**2))*sint - 2*cost*((L - a*E*(sint**2))**2)) - 2*(a**2)*sint*cost - 4*(a**2)*sint*cost*sig*(u2**2)
+            dCdr = dQdr - 2*(a*E - L)*(a*dEdr - dLdr)
+            dCdT = dQdT - 2*(a*E - L)*(a*dEdT - dLdT)
+            return np.array([[dEdr, dEdT],
+                             [dLdr, dLdT],
+                             [dCdr, dCdT]])
+    Amat = np.array([dervs(cons, state, a) for state in guess])
+    Atrans = np.transpose(Amat, axes=(0,2,1))
+    Dblock = np.einsum("ijk, ikl -> ijl", Atrans, Amat)
+    Amat = np.transpose(np.append([dcons], [dcons], axis=0), axes=(1,2,0))/1e-7
+    #this looks weird? Shouldn't Amat bet the derivatives?
+
+def clean_continue(data, endflag = False, verbose=False):
+    #continue from the last crossing, I think?
+    verbose_new = verbose
+    mass, a, mu, endflag_old, err_target, label_old, cons, velorient, vel4, params, pos, units = data["inputs"]
+    if endflag == False:
+        endflag = endflag_old
+    #inputs = [mass, a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, units]          #Grab initial input in case you want to run the continue function
+    lastcross = int(data["trackix"][-1])
+    if units == "mks":
+        G, c = 6.67*(10**-11), 3*(10**8)
+    elif units == "cgs":
+        G, c = 6.67*(10**-8),  3*(10**10)
+    else:
+        G, mass, c = 1.0, 1.0, 1.0
+    
+    newstart = data["raw"][lastcross]/np.array([(G*mass)/(c**3), (G*mass)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*mass), (c**3)/(G*mass)])
+    pos_new, vel_new = newstart[:4], newstart[4:]
+    newdata = EMRIGenerator(a, mu, endflag, mass, err_target, label=label_old, pos=pos_new, veltrue=vel_new, verbose=verbose_new)
+    
+    final = {"name": label_old,
+             "raw": np.concatenate((data["raw"][:lastcross], newdata["raw"])),
+             "inputs": data["inputs"],
+             "pos": np.concatenate((data["pos"][:lastcross], newdata["pos"])),
+             "all_vel": np.concatenate((data["all_vel"][:lastcross], newdata["all_vel"])), 
+             "time": np.concatenate((data["time"][:lastcross], newdata["time"])),
+             "interval": np.concatenate((data["interval"][:lastcross], newdata["interval"])),
+             "vel": np.concatenate((data["vel"][:lastcross], newdata["vel"])),
+             "dTau_change": np.concatenate((data["dTau_change"][:lastcross], newdata["dTau_change"])),
+             "energy": np.concatenate((data["energy"], newdata["energy"])),
+             "phi_momentum": np.concatenate((data["phi_momentum"], newdata["phi_momentum"])),
+             "carter": np.concatenate((data["carter"], newdata["carter"])),
+             "qarter": np.concatenate((data["qarter"], newdata["qarter"])),
+             "energy2": np.concatenate((data["energy2"], newdata["energy2"])),
+             "Lx_momentum": np.concatenate((data["Lx_momentum"], newdata["Lx_momentum"])),
+             "Ly_momentum": np.concatenate((data["Ly_momentum"], newdata["Ly_momentum"])),
+             "Lz_momentum": np.concatenate((data["Lz_momentum"], newdata["Lz_momentum"])),
+             "spin": a,
+             "freqs": np.concatenate((data["freqs"], newdata["freqs"])),
+             "pot_min":np.concatenate((data["pot_min"], newdata["pot_min"])),
+             "e": np.concatenate((data["e"], newdata["e"])),
+             "inc": np.concatenate((data["inc"], newdata["inc"])),
+             "it": np.concatenate((data["it"], newdata["it"])),
+             "ot": np.concatenate((data["ot"], newdata["ot"])),
+             "r0": np.concatenate((data["r0"], newdata["r0"])),
+             "tracktime": np.concatenate((data["tracktime"], newdata["tracktime"])),
+             "trackix": np.concatenate((data["trackix"], newdata["trackix"])),
+             "omega": np.concatenate((data["omega"][:lastcross], newdata["omega"] - 2*np.pi*len(data["omega"][:lastcross]))),
+             "otime": np.concatenate((data["otime"][:lastcross], newdata["otime"])),
+             "asc_node": np.concatenate((data["asc_node"][:lastcross], newdata["asc_node"] - 2*np.pi*len(data["asc_node"][:lastcross]))),
+             "asc_node_time": np.concatenate((data["asc_node_time"][:lastcross], newdata["asc_node_time"])),
+             "stop": newdata["stop"],
+             "plunge": newdata["plunge"],
+             "issues": np.concatenate((data["issues"], newdata["issues"]))}
+    return final
+
+def dict_saver(data, filename):
+    np.save(filename, data) 
+    return True
+        
+def dict_from_file(filename):
+    if ".npy" not in filename:
+        filename = filename+".npy"
+    data = np.load(filename, allow_pickle='TRUE').item()
+    return data
