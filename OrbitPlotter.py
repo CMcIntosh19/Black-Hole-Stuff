@@ -13,7 +13,7 @@ import os
 from scipy.fftpack import fft
 import time
 import matplotlib.animation as animation
-import pywt
+#import pywt
 from tqdm import tqdm
 
 def get_index(array, time):
@@ -32,7 +32,7 @@ def get_index(array, time):
     ind : int
         index of the value in array closest to time
     '''
-    idx = np.abs(array - time).argmin()
+    idx = np.nanargmin(np.abs(array - time))
     val = array.flat[idx]
     return np.where(array == val)[0][0]
 
@@ -205,7 +205,7 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
                     "radius": [data["pos"][:,0], "Radius"],
                     "theta": [data["pos"][:,1], "Theta"],
                     "phase": [data["pos"][:,2]/(2*np.pi), "Phase"],
-                    "true_anom": [data["true_anom"], "True Anomaly"],
+                    "true_anom": [data["true_anom"]/(2*np.pi), "True Anomaly"],
                     "r0": [data["r0"], "Semimajor Axis"],
                     "pot_min": [data["pot_min"], "Effective Potential Minimum"],
                     "ecc": [data["e"], "Eccentricity"],
@@ -220,7 +220,7 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
                     "asc_node": [data["asc_node"], "Phi Position of Ascending Node", "asc_node_time"],
                     "asc_node_time": [data["asc_node_time"], "Time of Ascending Node", "asc_node_time"],
                     "semi_maj": [0.5*(data["it"] + data["ot"]), "Semimajor Axis"],
-                    "semi_lat": [0.5*(data["it"] + data["ot"])*(1 - data["e"]**2), "Semilatus Rectum"],
+                    "semi_lat": [data["p"], "Semilatus Rectum"],
                     "radial_v": [data["all_vel"][:,1], "Radial Velocity"],
                     "theta_v": [data["all_vel"][:,2], "Theta Velocity"],
                     "phi_v": [data["all_vel"][:,3], "Phi Velocity"],
@@ -304,6 +304,142 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
     ax.set_xscale(xscale)
     ax.set_yscale(yscale)
     ax.set_title(title)
+    if filename == False:
+        plt.show()
+    else:
+        plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
+
+def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, end=False, xscale='linear', yscale='linear', filename=False, derv=0):
+    '''
+    Parameters
+    ----------
+    data : single dict OR list/array of dicts
+        orbit dictionar(y/ies). Inputting a single dict will turn it into a list.
+    xvalue : string, optional
+        variable to plot along the x-axis. Defaults to time
+    yvalue : string, optional
+        variable to plot along the y-axis. Defaults to semimajor axis
+    linefit : bool, optional
+        toggle linear fitting. Defaults to True
+    start : bool/int, optional
+        desired starting value of xvalue. The default is False, which corresponds to the initial value
+    end : bool/int, optional
+        desired ending value of xvalue. The default is False, which corresponds to the final value
+    xscale : string, optional
+        scaling for x-axis, matches options for matplotlib.set_xscale(). Defaults to linear
+    yscale : string, optional
+        scaling for y-axis, matches options for matplotlib.set_yscale(). Defaults to linear
+    filename : bool/string, optional
+        Saves the output as a png file if a string is provided. Defaults to False
+
+    Returns
+    -------
+    bool
+        True!
+
+    '''
+    # The time thing becomes an issue, since I'm using geometric time that could be different for each orbit
+    # Although now that I think about it that's been an issue from the beginning
+    # Hadn't even considered it until now
+    # Actually it's all based on the central body so?? Shut up??
+    
+    if type(datalist) != list:
+        datalist = [datalist]
+    fig, ax = plt.subplots()
+    colors = list(mcolors.TABLEAU_COLORS)
+    for thing in range(len(datalist)):
+        data = datalist[thing]
+        # ["value": [location in data dict, Value name, extra bit if timing is weird]]
+        termdict = {"time": [data["time"], "Coordinate Time", data["time"]],
+                    "tracktime": [data["tracktime"], "Coordinate Time", data["tracktime"]],
+                    "radius": [data["pos"][:,0], "Radius", data["time"]],
+                    "theta": [data["pos"][:,1], "Theta", data["time"]],
+                    "phase": [data["pos"][:,2]/(2*np.pi), "Phase", data["time"]],
+                    "true_anom": [data["true_anom"]/(2*np.pi), "True Anomaly", data["tracktime"]],
+                    "r0": [data["r0"], "Semimajor Axis", data["tracktime"]],
+                    "pot_min": [data["pot_min"], "Effective Potential Minimum", data["tracktime"]],
+                    "ecc": [data["e"], "Eccentricity", data["tracktime"]],
+                    "semilat": [data["r0"]*(1 - data["e"]**2), "Semilatus-Rectum", data["tracktime"]],
+                    "inc": [data["inc"], "Inclination", data["tracktime"]],
+                    "periapse": [data["it"], "Periapse", data["tracktime"]],
+                    "apoapse": [data["ot"], "Apoapse", data["tracktime"]],
+                    "omega": [data["omega"], "Phi Position of Periapse", "otime"],
+                    "otime": [data["otime"], "Time of Periapse", "otime"],
+                    "omegadot": [np.diff(data["omega"])/np.diff(data["otime"]), "Advance of Periapse", "odottime"],
+                    "odottime": [0.5*data["otime"][:-1] + 0.5*data["otime"][1:], "Periadvance time", "odottime"],
+                    "asc_node": [data["asc_node"], "Phi Position of Ascending Node", "asc_node_time"],
+                    "asc_node_time": [data["asc_node_time"], "Time of Ascending Node", "asc_node_time"],
+                    "semi_maj": [0.5*(data["it"] + data["ot"]), "Semimajor Axis", data["tracktime"]],
+                    "semi_lat": [data["p"], "Semilatus Rectum", data["tracktime"]],
+                    "radial_v": [data["all_vel"][:,1], "Radial Velocity", data["time"]],
+                    "theta_v": [data["all_vel"][:,2], "Theta Velocity", data["time"]],
+                    "phi_v": [data["all_vel"][:,3], "Phi Velocity", data["time"]],
+                    "total_v": [data["vel"], "Velocity", data["time"]],
+                    "radial_freq": [data["freqs"][:, 0], "Radial Frequency", data["tracktime"]],
+                    "theta_freq": [data["freqs"][:, 1], "Theta Frequency", data["tracktime"]],
+                    "phi_freq": [data["freqs"][:, 2], "Phi Frequency", data["tracktime"]],
+                    "all_freq": [data["freqs"], "All Frequencies", data["tracktime"]],
+                    "energy": [data["energy"], "Specific Energy", data["tracktime"]],
+                    "L_z": [data["phi_momentum"], "Specific Axial Angular Momentum", data["tracktime"]],
+                    "carter": [data["carter"], "Carter Constant", data["tracktime"]],
+                    "qarter": [data["qarter"], "Carter Constant (Unnormalized)", data["tracktime"]],
+                    "approx_L": [np.sqrt(data["carter"] + data["phi_momentum"]**2), "Full Angular Momentum sqrt(C + L\u2080\u00B2)", data["tracktime"]],
+                    "l_momentumx": [data["Lx_momentum"], "Specific Angular Momentum (x-component)", data["time"]],
+                    "l_momentumy": [data["Ly_momentum"], "Specific Angular Momentum (y-component)", data["time"]],
+                    "l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)", data["time"]],
+                    "interval": [data["interval"], "Spacetime Interval", data["time"]],
+                    "energy2": [data["energy2"], "other energy", data["time"]]}
+        
+        if ((type(xvalue) == str) and (xvalue in termdict)) and ((type(yvalue) == str) and (yvalue in termdict)):
+            title = "%s vs %s"%(termdict[yvalue][1], termdict[xvalue][1])
+            title_add = ""
+            if len(termdict[xvalue][0]) == len(termdict[yvalue][0]):
+                #if the values have the same length, just grab the data
+                xo = 0 if start==False else get_index(termdict[xvalue][0], start)
+                xf = len(termdict[xvalue][0]) if end==False else get_index(termdict[xvalue][0], end)
+                xvals, yvals = termdict[xvalue][0][xo:xf], termdict[yvalue][0][xo:xf]
+            else: 
+                #if the values don't have the same length, interpolate using time
+                xvals, yvals = termdict[xvalue][0], termdict[yvalue][0]
+                if len(xvals) != len(data["time"]):
+                    xvals = np.interp(data["time"], termdict[xvalue][2], termdict[xvalue][0])
+                if len(yvals) != len(data["time"]):
+                    yvals = np.interp(data["time"], termdict[yvalue][2], termdict[yvalue][0])
+                xo = 0 if start==False else get_index(xvals, start)
+                xf = len(xvals) if end==False else get_index(xvals, end)
+                xvals, yvals = xvals[xo:xf], yvals[xo:xf]
+            if derv > 0:
+                try:
+                    title_add = " (%s%s derivative)"%(derv, ["st", "nd", "rd"][derv-1] if derv%10 < 4 else "th")
+                    xvals_sub = np.copy(xvals)
+                    yvals_sub = np.copy(yvals)
+                    for i in range(derv):
+                        yvals_sub = np.diff(yvals_sub)/np.diff(xvals_sub)
+                        xvals_sub = 0.5*(xvals_sub[0:-1] + xvals_sub[1:])
+                    #yvals = np.interp(xvals, xvals_sub, yvals_sub)
+                    yvals = yvals_sub
+                    xvals = xvals_sub
+                except:
+                    print("Could not calculate derivative! Maybe use a different x value?")
+                    title_add = ""
+            ax.plot(xvals, yvals, color=colors[thing%len(colors)])
+            if linefit == True:
+                try:
+                    stuff = np.polyfit(xvals, yvals, 1)
+                    ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[thing%len(colors)])
+                    ax.legend(title="Linear Fit")
+                except:
+                    print("Could not plot linear fit.")
+        
+        else:
+            print("Not a valid plottable. Chose one of the following:")
+            for name in termdict:
+                print("'" + name + "':", termdict[name][1])
+            return False
+        
+    ax.set_xscale(xscale)
+    ax.set_yscale(yscale)
+    ax.set_title(title+title_add)
     if filename == False:
         plt.show()
     else:
@@ -1082,6 +1218,8 @@ def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scr
         
         def update_line(num, xdata, ydata, zdata, line):
             full = len(xdata)//num_steps
+            turn_ind = np.where(datalist[i]["pos"][:,2] > 2*np.pi)[0][0]
+            first_turn = get_index(paths[i][-1], datalist[i]["time"][turn_ind])
             beg = max(0, int(full*num - first_turn*numturns))
             end = int(np.round(num*len(xdata)/num_steps))
             line[0].set_data(xdata[beg:end], ydata[beg:end])
@@ -1367,8 +1505,45 @@ def potentplotter(E, L, C, a, rbounds=[-1, -1]):
         ext = True
     if ext == True:
         ax1.legend()
-    plt.show()
+    #plt.show()
     return(R(bloh))
+
+def potentplotter4(E, L, C, a, rbounds=[-1, -1]):
+    if type(E) == np.ndarray:
+        pass
+    elif type(E) == list:
+        E, L, C = np.array(E), np.array(L), np.array(C)
+    else:
+        E, L, C = np.array([E]), np.array([L]), np.array([C])
+        
+    R = lambda r: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
+    rx, rn, blah, blee = np.transpose(np.array([np.roots([E[i]**2 - 1, 2, (a**2)*(E[i]**2 - 1) - L[i]**2 - C[i], 2*((a*E[i] - L[i])**2 + C[i]), -(a**2)*C[i]]) for i in range(len(E))]))
+    r0, bloh, bluh = np.transpose(np.array([np.roots([4*(E[i]**2 - 1), 6, 2*((a**2)*(E[i]**2 - 1) - L[i]**2 - C[i]), 2*((a*E[i] - L[i])**2 + C[i])]) for i in range(len(E))]))
+
+    if -1 in rbounds:
+        rbounds = np.linspace(0.0, rx*1.05, num=100)
+    else:
+        rbounds = np.linspace(rbounds[0]*np.ones((len(rn))), rbounds[-1]*np.ones((len(rx))), num=100)
+
+    #fig1, ax1 = plt.subplots()
+    #ax1.set_xlabel("Radius (Geometric Units)")
+    #ax1.set_ylabel("Effective Potential")
+    #ax1.set_title("Effective Potential")
+    #ax1.plot(rbounds, rbounds*0.0)
+    #ax1.plot(rbounds, -R(rbounds))
+    #ext = False
+    #if r0 >= rbounds[0]:
+        #ax1.vlines(r0, -R(r0), 0)
+        #ax1.scatter(r0, 0.0, label="Potential Minimum")
+     #   ext = True
+    #if bloh >= rbounds[0] and abs(R(bloh)) < 1e-5:
+        #ax1.vlines(bloh, -R(bloh), 0)
+        #ax1.scatter(bloh, 0.0, marker="*", label="Unstable Circular orbit")
+     #   ext = True
+    #if ext == True:
+     #   ax1.legend()
+    #plt.show()
+    return(rbounds, -R(rbounds))
 
 def potentplotter2(cons, a, rbounds=[-1, -1]):
     if len(np.shape(cons)) == 1:
@@ -1647,7 +1822,7 @@ def justfourier(data, start=0, end=-1, filename=False):
     else:
         plt.savefig("%s.png"%(filename), bbox_inches="tight")
     
-
+'''
 def wavelething(data):
     #It hates you and it's not even what you want, leave it alone
     rad = data["pos"][0,0]
@@ -1679,7 +1854,8 @@ def wavelething(data):
     plt.xlabel('Time (GU)')
     plt.show()
     return(coef)
-
+'''
+    
 def peters_compare(data, plot=True):
     timen = data["tracktime"]
     mu = data["inputs"][2]
