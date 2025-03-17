@@ -116,7 +116,7 @@ def new_rot(vec, angle):
     new_ph_p = (ph_t*(ca/(cp**2)) + (th_t/st - ph_t*ct*sp/cp)*(sa/(st*cp)))/(gam**2 + 1)
     return np.array([t, r, new_th, new_ph, t_t, r_t, new_th_t, new_ph_p])
 
-def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=False, eps=1e-5, conch=6, trigger=2, override=False, bonk=1, bonk2=True):
+def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, conch=6, trigger=2, override=False, bonk=1, bonk2=True):
     '''
     Generates orbit
 
@@ -158,8 +158,11 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             'grav' - Geometric units, with G, c, and M (central body mass) all set to 1.0.
             'mks' - Standard SI units, with G = 6.67e-11 N*m^2*kg^-2, c = 3e8 m*s^-1, and M in kg
             'cgs' - Standard cgs units, with G = 6.67e-8 dyn*cm^2*g^-2, c = 3e11 cm*s^-1, and M in g
-    verbose : bool, optional
-        Toggle for progress updates as program runs. The default is False.
+    verbose : int, optional
+        Toggle for progress updates as program runs. The default is 1.
+        0 - No output
+        1 - progress bar
+        2 - full output
 
     Returns
     -------
@@ -229,46 +232,30 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
     interval = [mm.check_interval(mm.kerr, all_states[0], a)]           #create interval tracker
     metric = mm.kerr(all_states[0], a)[0]                                      #initial metric
     
-    def viable_cons(constants, state, a, scream=False):
+    def viable_cons(new_cons, old_cons, state, a, scream=False):
         #print("----")
-        energy, lz, cart = constants
-        coeff = np.array([energy**2 - 1, 2, (a**2)*(energy**2 - 1) - lz**2 - cart, 2*((a*energy - lz)**2 + cart), -cart*(a**2)])
-        coeff2 = np.polyder(coeff)
-        coeff_2 = lambda r: 4*(energy**2 - 1)*(r**3) + 6*(r**2) + 2*((a**2)*(energy**2 - 1) - lz**2 - cart)*r +  2*((a*energy - lz)**2 + cart)
-        flats = np.roots(coeff2)
-        #op.plt.plot(np.linspace(9.9, 10.1), np.polyval(coeff2, np.linspace(9.9,10.1)))
-        #op.plt.plot(np.linspace(9.9, 10.1), np.polyval(coeff, np.linspace(9.9,10.1)))
-        #op.plt.hlines(0, 9.9, 10.1)
+        E1, L1, C1 = old_cons
+        E2, L2, C2 = new_cons
+        R = lambda r, E, L, C, a: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
         if scream == True:
-            print(flats)
-            print(np.real(flats))
-            print(coeff2)
-            try:
-                flat_check = optimize.fsolve(coeff_2, np.real(flats))
-            except:
-                flat_check = "arg!!"
-            print(flat_check)
-            print("sta")
-        #print(flats)
-        #flat_check = optimize.fsolve(coeff_2, flats)
-        #print(flat_check)
-        flats = flats.real[abs(flats.imag)<1e-11]
-        #print(flats)
-        if len(flats) == 0:
-            return 0
-        try:
-            pot_min = max(flats)
-        except:
-            print("HELLOP")
-            print(constants)
-            op.potentplotter(energy, lz, cart, a)
-        if scream == True:
-            print(pot_min, flats)
-            print("ROOTER")
-            print(mm.root_getter(energy, lz, cart, a))
-        pot_min = mm.root_getter(energy, lz, cart, a)[1][-1]
-        #print(pot_min, "hellur?")
-        potential_min = np.polyval(coeff, pot_min)
+            import matplotlib.pyplot as plt
+            turns1, flats1, zs1 = mm.root_getter(E1, L1, C1, a)
+            turns2, flats2, zs2 = mm.root_getter(E2, L2, C2, a)
+            low, high = min(turns1[-2], turns2[-2]), max(turns1[-1], turns2[-1])
+            low_b, high_b = low - 0.01*(high - low), high + 0.01*(high - low) 
+            r_vals = np.linspace(low_b, high_b, num=100)
+            fig, ax = plt.subplots()
+            ax.hlines(0, r_vals[0], r_vals[-1])
+            ax.plot(r_vals, R(r_vals, *old_cons, a))
+            ax.plot(r_vals, R(r_vals, *new_cons, a))
+            ax.scatter(state[1], R(state[1], *old_cons, a))
+            ax.scatter(state[1], R(state[1], *new_cons, a))
+            #print(turns1)
+            #print(turns2)
+            #print(old_cons)
+            #print(new_cons)
+            #print(new_cons - old_cons)
+        potential_min = R(mm.root_getter(*new_cons, a)[1][-1], *new_cons, a)
         return potential_min
     
     def bl2cart_oof(state, a):
@@ -295,12 +282,12 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
         initLz = np.matmul(all_states[0][4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
         initQ = np.matmul(np.matmul(mm.kill_tensor(all_states[0], a), all_states[0][4:]), all_states[0][4:])    #initial Carter constant Q
         initC = initQ - (a*initE - initLz)**2                                          #initial adjusted Carter constant 
-    pot_min = viable_cons([initE, initLz, initC], all_states[0], a)
+    pot_min = viable_cons([initE, initLz, initC], [initE, initLz, initC], all_states[0], a)
     count = 0
     while pot_min < 0.0:
         count += 1
         initE += err_target
-        pot_min = viable_cons([initE, initLz, initC], all_states[0], a)
+        pot_min = viable_cons([initE, initLz, initC], [initE, initLz, initC], all_states[0], a)
         if count >= 21:
             print("Don't trust this!", inputs)
             break
@@ -325,6 +312,15 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
         z2 = ((A + initLz**2 + initC) - ((A + initLz**2 + initC)**2 - 4*A*initC)**(1/2))/(2*A) if A != 0 else initC/(initLz**2 + initC)
         inc = np.arccos(np.sqrt(z2))
         tracker = [[pot_min, e, inc, inner_turn, outer_turn, all_states[0][0], 0]]
+
+    #basically change how I handle all of this??
+    turns, flats, zs = mm.root_getter(initE, initLz, initC, a)
+    pot_min = flats[-1]
+    inner_turn, outer_turn = turns[-2:]
+    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+    inc = np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
+    tracker = [[pot_min, e, inc, inner_turn, outer_turn, all_states[0][0], 0]]
+
     constants = [ np.array([initE,      #energy   
                             initLz,      #angular momentum (axial)
                             initC]) ]    #Carter constant (C)
@@ -358,9 +354,9 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
     def anglething(angle):
         return 0.5*np.pi - np.abs(angle%np.pi - np.pi/2)
 
-    if verbose == False:
+    if verbose == 1:
         pbar = tqdm(total = 10000000, position=0)
-        pbar.set_postfix_str("Semilat: %s, Ecc %s" %(np.round( 0.5*(tracker[0][3] + tracker[0][4])*(1 - tracker[0][1]**2), 3), np.round(tracker[0][1], 3)))
+        pbar.set_postfix_str("Semilat: %s, Ecc %s, Peri: %s" %(np.round( 0.5*(tracker[0][3] + tracker[0][4])*(1 - tracker[0][1]**2), 3), np.round(tracker[0][1], 3), np.round(tracker[0][3], 3)))
     progress = 0
     while (not(eval(newflag)) and (i < 10**7 or override)):
         try:
@@ -380,7 +376,14 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             if (state[1] >= (1 + np.sqrt(1 - a**2))*1e15):
                 unbind = True
                 break
-          
+
+            #break if something stops making sense
+            if (np.nan in state or constants[-1][0] < 0) or (np.isnan(state[0])):
+                print("HEWWO")
+                plunge = True
+                unbind = True
+                break
+
             #Runge-Kutta update using geodesic
             old_dTau = dTau
             skip = False
@@ -427,13 +430,205 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     mod_r = np.array([*garp[1:3], *garp[4:]])
                     err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
         
-                E, L, C = constants[-1]
-                # if (high inclination) AND ((very close to pole AND approaching pole) OR (dTau is very small AND dTau is monotonically non-increasing))
-                if np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.5*(np.pi/180) and np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change):
-                    new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
-                    new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
-                    new_step[6] = -new_step[6]
-                    break
+                if "tweak" not in label:
+                    E, L, C = constants[-1]
+                    # if (high inclination) AND ((very close to pole AND approaching pole) OR (dTau is very small AND dTau is monotonically non-increasing))
+                    if np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.5*(np.pi/180) and np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change):
+                        new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
+                        new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
+                        new_step[6] = -new_step[6]
+                        #break
+                elif "tweaker" not in label:
+                    #if (dTau is very small AND keeps getting smaller) and (particle will be within 0.5 degrees of the pole soon)
+                    if (dTau < 0.1*np.mean(dTau_change) and 1 not in np.sign(np.diff(dTau_change[-10:]))) and (np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.99*(np.pi/180)):
+                        #Convert to cartesian coordinates
+                        x = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.cos(new_step[3])
+                        y = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.sin(new_step[3])
+                        z = new_step[1] * np.cos(new_step[2])
+                        x_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.cos(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.cos(new_step[3]) - np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.sin(new_step[3]))
+                        y_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.cos(new_step[3]))
+                        z_dot = (new_step[5] * np.cos(new_step[2]) - new_step[1] * new_step[6] * np.cos(new_step[2]))
+                        #Find how long it will take for the particle to cross to the other side of the cone defined by theta (Tau, not t)
+                        dT = np.roots([x_dot**2 + y_dot**2 - (z_dot*np.tan(new_step[2]))**2, 2*(x*x_dot + y*y_dot - z*z_dot*(np.tan(new_step[2]))**2), x**2 + y**2 - (z*np.tan(new_step[2]))**2])[0]
+                        #Add that to cartesian coords
+                        new_t = new_step[0] + new_step[4]*dT
+                        new_x = x + x_dot*dT
+                        new_y = y + y_dot*dT
+                        new_z = z + z_dot*dT
+                        #convert those back to BL
+                        new_r = np.sqrt(new_x**2 + new_y**2 + new_z**2 - (a*np.sin(new_step[2]))**2)
+                        new_thet = new_step[2]
+                        new_phi = np.atan(new_y/new_x) + (np.pi if new_x*new_y < 0 else 0) + (np.pi if new_y < 0 else 0)
+                        old_phi = np.atan(y/x) + (np.pi if x*y < 0 else 0) + (np.pi if y < 0 else 0)
+                        if (new_phi - old_phi)/new_step[7] >= 0:
+                            new_phi = new_step[3] + (new_phi - old_phi)
+                        else:
+                            new_phi = new_step[3] + (2*np.pi - abs(new_phi - old_phi))
+                        #print(new_step[3], new_x, new_y, new_phi, new_step[0], i)
+                        #plug stuff back in to set_u_kerr to get approriate velocities there
+                        #print(new_step)
+                        old_vs = new_step[4:]
+                        new_step = mm.recalc_state(constants[-1], [new_t, new_r, new_thet, new_phi], a)
+                        new_step[5] = np.sign(old_vs[1])*np.abs(new_step[5])
+                        new_step[6] = -np.sign(old_vs[2])*np.abs(new_step[6])
+                        #print(new_step)
+                        #print("----")
+                        break
+                elif "tweakerly" not in label:
+                    #if (dTau is very small AND keeps getting smaller) and (particle will be within 0.5 degrees of the pole soon)
+                    if (dTau < 0.1*np.mean(dTau_change) and 1 not in np.sign(np.diff(dTau_change[-10:]))) and (np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.99*(np.pi/180)):
+                        #Convert to cartesian coordinates (make z quadratic because?? just to see)
+                        x = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.cos(new_step[3])
+                        y = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.sin(new_step[3])
+                        z = new_step[1] * np.cos(new_step[2])
+                        x_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.cos(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.cos(new_step[3]) - np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.sin(new_step[3]))/new_step[4]
+                        y_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.cos(new_step[3]))/new_step[4]
+                        z_dot = (new_step[5] * np.cos(new_step[2]) - new_step[1] * new_step[6] * np.cos(new_step[2]))/new_step[4]
+                        r_d_dot = np.polyfit(np.array(all_states)[-10:, 0], np.array(all_states)[-10:, 1], 2)[0]
+                        thet_d_dot = np.polyfit(np.array(all_states)[-10:, 0], np.array(all_states)[-10:, 1], 2)[0]
+                        #import matplotlib.pyplot as plt
+                        #fig1, ax1 = plt.subplots()
+                        #ax1.plot(np.array(all_states)[-100:, 0], np.polyval(np.polyfit(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 1], 2), np.array(all_states)[-100:, 0]))
+                        #ax1.scatter(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 1], c="k")
+                        #fig2, ax2 = plt.subplots()
+                        #ax2.plot(np.array(all_states)[-100:, 0], np.polyval(np.polyfit(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 2], 2), np.array(all_states)[-100:, 0]))
+                        #ax2.scatter(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 2], c="k")
+                        #plt.show()
+                        z_d_dot = r_d_dot*np.cos(new_step[2]) - 2*new_step[5]*new_step[6]*np.sin(new_step[2])/(new_step[4]**2) - new_step[1]*thet_d_dot*np.sin(new_step[2]) - new_step[1]*((new_step[6]/new_step[4])**2)*np.cos(new_step[2]) 
+                        #Find how long it will take for the particle to cross to the other side of the cone defined by theta (t, not Tau)
+                        C = np.tan(new_step[2])**2
+                        #print("ha!", [0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])
+                        dt = np.sort(np.roots([0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2]))[2]
+                        #Add that to cartesian coords
+                        new_t = new_step[0] + dt
+                        new_x = x + x_dot*dt
+                        new_y = y + y_dot*dt
+                        new_z = z + z_dot*dt + 0.5*z_d_dot*dt*dt
+                        #print("HEY", new_step[0], x, y, z)
+                        #print("HUY", new_t, new_x, new_y, new_z)
+                        #print("HUG", x_dot, y_dot, z_dot, z_d_dot, dt)
+                        #print("HUR", [0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])
+                        #print("HUN", [x_dot**2 + y_dot**2 - (z_dot*np.tan(new_step[2]))**2, 2*(x*x_dot + y*y_dot - z*z_dot*(np.tan(new_step[2]))**2), x**2 + y**2 - (z*np.tan(new_step[2]))**2])
+                        #print("GUH", np.sort(np.roots([0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])))
+                        #print("-----")
+                        #convert those back to BL
+                        new_r = np.sqrt(new_x**2 + new_y**2 + new_z**2 - (a*np.sin(new_step[2]))**2)
+                        new_thet = new_step[2]
+                        new_phi = np.atan(new_y/new_x) + (np.pi if new_x*new_y < 0 else 0) + (np.pi if new_y < 0 else 0)
+                        old_phi = np.atan(y/x) + (np.pi if x*y < 0 else 0) + (np.pi if y < 0 else 0)
+                        if (new_phi - old_phi)/new_step[7] >= 0:
+                            new_phi = new_step[3] + (new_phi - old_phi)
+                        else:
+                            new_phi = new_step[3] + (2*np.pi - abs(new_phi - old_phi))
+                        #print(new_step[3], new_x, new_y, new_phi, new_step[0], i)
+                        #plug stuff back in to set_u_kerr to get approriate velocities there
+                        #print(new_step)
+                        old_vs = new_step[4:]
+                        new_step = mm.recalc_state(constants[-1], [new_t, new_r, new_thet, new_phi], a)
+                        new_step[5] = np.sign(old_vs[1])*np.abs(new_step[5])
+                        new_step[6] = -np.sign(old_vs[2])*np.abs(new_step[6])
+                        #print(new_step)
+                        #print("----")
+                        break
+                elif "tweakerlylo" not in label:
+                    E, L, C = constants[-1]
+                    # if (high inclination) AND ((very close to pole AND approaching pole) OR (dTau is very small AND dTau is monotonically non-increasing))
+                    if np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.5*(np.pi/180) and np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change):
+                        new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
+                        new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
+                        old_vs = new_step[4:]
+                        new_step = mm.recalc_state(constants[-1], new_step[:4], a)
+                        new_step[5] = np.sign(old_vs[1])*np.abs(new_step[5])
+                        new_step[6] = -np.sign(old_vs[2])*np.abs(new_step[6])
+                        #break
+                elif "tweakerlylone" not in label:
+                    #if (dTau is very small AND keeps getting smaller) and (particle will be within 0.5 degrees of the pole soon)
+                    if (dTau < 0.1*np.mean(dTau_change) and 1 not in np.sign(np.diff(dTau_change[-10:]))) and (np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.99*(np.pi/180)):
+                        #Convert to cartesian coordinates
+                        x = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.cos(new_step[3])
+                        y = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.sin(new_step[3])
+                        z = new_step[1] * np.cos(new_step[2])
+                        x_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.cos(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.cos(new_step[3]) - np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.sin(new_step[3]))
+                        y_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.cos(new_step[3]))
+                        z_dot = (new_step[5] * np.cos(new_step[2]) - new_step[1] * new_step[6] * np.cos(new_step[2]))
+                        #Find how long it will take for the particle to cross to the other side of the cone defined by theta (Tau, not t)
+                        dT = np.roots([x_dot**2 + y_dot**2 - (z_dot*np.tan(new_step[2]))**2, 2*(x*x_dot + y*y_dot - z*z_dot*(np.tan(new_step[2]))**2), x**2 + y**2 - (z*np.tan(new_step[2]))**2])[0]
+                        #Add that to cartesian coords
+                        new_t = new_step[0] + new_step[4]*dT
+                        new_x = x + x_dot*dT
+                        new_y = y + y_dot*dT
+                        new_z = z + z_dot*dT
+                        #convert those back to BL
+                        new_r = np.sqrt(new_x**2 + new_y**2 + new_z**2 - (a*np.sin(new_step[2]))**2)
+                        new_thet = new_step[2]
+                        new_phi = np.atan(new_y/new_x) + (np.pi if new_x*new_y < 0 else 0) + (np.pi if new_y < 0 else 0)
+                        old_phi = np.atan(y/x) + (np.pi if x*y < 0 else 0) + (np.pi if y < 0 else 0)
+                        if (new_phi - old_phi)/new_step[7] >= 0:
+                            new_phi = new_step[3] + (new_phi - old_phi)
+                        else:
+                            new_phi = new_step[3] + (2*np.pi - abs(new_phi - old_phi))
+                        #print(new_step[3], new_x, new_y, new_phi, new_step[0], i)
+                        #plug stuff back in to set_u_kerr to get approriate velocities there
+                        #print(new_step)
+                        new_step[:4] = [new_t, new_r, new_thet, new_phi]
+                        new_step[6] *= -1
+                        #print(new_step)
+                        #print("----")
+                        break
+                else:
+                    #if (dTau is very small AND keeps getting smaller) and (particle will be within 0.5 degrees of the pole soon)
+                    if (dTau < 0.1*np.mean(dTau_change) and 1 not in np.sign(np.diff(dTau_change[-10:]))) and (np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.99*(np.pi/180)):
+                        #Convert to cartesian coordinates (make z quadratic because?? just to see)
+                        x = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.cos(new_step[3])
+                        y = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.sin(new_step[3])
+                        z = new_step[1] * np.cos(new_step[2])
+                        x_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.cos(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.cos(new_step[3]) - np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.sin(new_step[3]))/new_step[4]
+                        y_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.cos(new_step[3]))/new_step[4]
+                        z_dot = (new_step[5] * np.cos(new_step[2]) - new_step[1] * new_step[6] * np.cos(new_step[2]))/new_step[4]
+                        r_d_dot = np.polyfit(np.array(all_states)[-10:, 0], np.array(all_states)[-10:, 1], 2)[0]
+                        thet_d_dot = np.polyfit(np.array(all_states)[-10:, 0], np.array(all_states)[-10:, 1], 2)[0]
+                        #import matplotlib.pyplot as plt
+                        #fig1, ax1 = plt.subplots()
+                        #ax1.plot(np.array(all_states)[-100:, 0], np.polyval(np.polyfit(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 1], 2), np.array(all_states)[-100:, 0]))
+                        #ax1.scatter(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 1], c="k")
+                        #fig2, ax2 = plt.subplots()
+                        #ax2.plot(np.array(all_states)[-100:, 0], np.polyval(np.polyfit(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 2], 2), np.array(all_states)[-100:, 0]))
+                        #ax2.scatter(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 2], c="k")
+                        #plt.show()
+                        z_d_dot = r_d_dot*np.cos(new_step[2]) - 2*new_step[5]*new_step[6]*np.sin(new_step[2])/(new_step[4]**2) - new_step[1]*thet_d_dot*np.sin(new_step[2]) - new_step[1]*((new_step[6]/new_step[4])**2)*np.cos(new_step[2]) 
+                        #Find how long it will take for the particle to cross to the other side of the cone defined by theta (t, not Tau)
+                        C = np.tan(new_step[2])**2
+                        #print("ha!", [0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])
+                        dt = np.sort(np.roots([0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2]))[2]
+                        #Add that to cartesian coords
+                        new_t = new_step[0] + dt
+                        new_x = x + x_dot*dt
+                        new_y = y + y_dot*dt
+                        new_z = z + z_dot*dt + 0.5*z_d_dot*dt*dt
+                        #print("HEY", new_step[0], x, y, z)
+                        #print("HUY", new_t, new_x, new_y, new_z)
+                        #print("HUG", x_dot, y_dot, z_dot, z_d_dot, dt)
+                        #print("HUR", [0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])
+                        #print("HUN", [x_dot**2 + y_dot**2 - (z_dot*np.tan(new_step[2]))**2, 2*(x*x_dot + y*y_dot - z*z_dot*(np.tan(new_step[2]))**2), x**2 + y**2 - (z*np.tan(new_step[2]))**2])
+                        #print("GUH", np.sort(np.roots([0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])))
+                        #print("-----")
+                        #convert those back to BL
+                        new_r = np.sqrt(new_x**2 + new_y**2 + new_z**2 - (a*np.sin(new_step[2]))**2)
+                        new_thet = new_step[2]
+                        new_phi = np.atan(new_y/new_x) + (np.pi if new_x*new_y < 0 else 0) + (np.pi if new_y < 0 else 0)
+                        old_phi = np.atan(y/x) + (np.pi if x*y < 0 else 0) + (np.pi if y < 0 else 0)
+                        if (new_phi - old_phi)/new_step[7] >= 0:
+                            new_phi = new_step[3] + (new_phi - old_phi)
+                        else:
+                            new_phi = new_step[3] + (2*np.pi - abs(new_phi - old_phi))
+                        #print(new_step[3], new_x, new_y, new_phi, new_step[0], i)
+                        #plug stuff back in to set_u_kerr to get approriate velocities there
+                        #print(new_step)
+                        new_step[:4] = [new_t, new_r, new_thet, new_phi]
+                        new_step[6] *= -1
+                        #print(new_step)
+                        #print("----")
+                        break
                 
                 speed = np.sqrt(new_step[5]**2 + (new_step[1]**2)*(new_step[6]**2 + (np.sin(new_step[2])*new_step[7])**2))
                 old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
@@ -516,6 +711,12 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                         elif "wunk" in label:
                             #print("hello")
                             dcons = mm.peters_integrate6_5(all_states[tracker[-1][-1]:i], a, mu, tracker[-1][-1], i)
+                        elif "wenk" in label:
+                            #print("hello")
+                            dcons = mm.peters_integrate6_6(all_states[tracker[-1][-1]:i], a, mu, tracker[-1][-1], i)
+                        elif "wynk" in label:
+                            #print("hello")
+                            dcons = mm.peters_integrate6_7(all_states[tracker[-1][-1]:i], a, mu, tracker[-1][-1], i)
                         else:
                             dcons = mm.peters_integrate6(all_states[tracker[-1][-1]:i], a, mu, tracker[-1][-1], i)
                         if conch == 5:
@@ -540,16 +741,19 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                             new_step, ch_cons = mm.new_recalc_state14(constants[-1], dcons, new_step, a)
                         elif conch == 15:
                             new_step, ch_cons = mm.new_recalc_state15(constants[-1], dcons, new_step, a)
+                        elif conch == 16:
+                            new_step, ch_cons = mm.new_recalc_state9b(constants[-1], dcons, new_step, a)
                         else:
                             new_step, ch_cons = mm.new_recalc_state9(constants[-1], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        pot_min = viable_cons(ch_cons, new_step, a)
+                        #print(ch_cons, label, i)
+                        pot_min = viable_cons(ch_cons, constants[-1], new_step, a)
                         subcount = 0
                         while pot_min < -err_target:
-                            viable_cons(ch_cons, new_step, a, True)
-                            print(pot_min, -err_target, "whoops")
-                            op.potentplotter(*constants[-1], a)
-                            op.potentplotter(*ch_cons, a)
-                            raise KeyboardInterrupt
+                            viable_cons(ch_cons, constants[-1], new_step, a, True)
+                            #print(pot_min, -err_target, "whoops")
+                            #op.potentplotter(*constants[-1], a)
+                            #op.potentplotter(*ch_cons, a)
+                            raise KeyError
                             if (subcount < 10) or subcount%10000000 == 0:
                                 print(dcons, pot_min, "HEWWO??", subcount)
                             Lphi, ro = ch_cons[1], pot_min
@@ -580,6 +784,13 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     A = (a**2)*(1 - newE**2)
                     z2 = ((A + newLz**2 + newC) - ((A + newLz**2 + newC)**2 - 4*A*newC)**(1/2))/(2*A) if A != 0 else newC/(newLz**2 + newC)
                     inc = np.arccos(np.sqrt(z2))
+                    ###
+                    turns, flats, zs = mm.root_getter(newE, newLz, newC, a)
+                    pot_min = flats[-1]
+                    inner_turn, outer_turn = turns[-2:]
+                    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+                    inc = np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
+                    ###
                     tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
                     constants.append([newE, newLz, newC])
                     qarter.append(newQ)
@@ -595,10 +806,17 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     A = (a**2)*(1 - ch_cons[0]**2)
                     z2 = ((A + ch_cons[1]**2 + ch_cons[2]) - ((A + ch_cons[1]**2 + ch_cons[2])**2 - 4*A*ch_cons[2])**(1/2))/(2*A) if A != 0 else ch_cons[2]/(ch_cons[1]**2 + ch_cons[2])
                     inc = np.arccos(np.sqrt(z2))
+                    ###
+                    turns, flats, zs = mm.root_getter(*ch_cons, a)
+                    pot_min = flats[-1]
+                    inner_turn, outer_turn = turns[-2:]
+                    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+                    inc = np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
+                    ###
                     tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
                     freqs.append(mm.freqs_finder(*ch_cons, a))
-                    if verbose == False:
-                        pbar.set_postfix_str("Semilat: %s, Ecc %s" %(np.round( 0.5*(tracker[-1][3] + tracker[-1][4])*(1 - tracker[-1][1]**2), 3), np.round(tracker[-1][1], 3)))
+                    if verbose == 1:
+                        pbar.set_postfix_str("Semilat: %s, Ecc %s, Peri: %s" %(np.round( 0.5*(tracker[-1][3] + tracker[-1][4])*(1 - tracker[-1][1]**2), 3), np.round(tracker[-1][1], 3), np.round(tracker[-1][3], 3)))
                 if True in np.iscomplex(tracker[-1]):
                     compErr += 1
                     issues.append((i, new_step[0]))  
@@ -613,12 +831,12 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                 orbCount += 1
             true_anom.append(anomval)
             i += 1
-            if verbose == True:
+            if verbose == 2:
                 progress = max( abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i/(10**7)) * 100
                 if (progress >= milestone):
                     print("Program has completed " + str(round(eval(termdict[terms[0]]), 2)), ",", str(round(progress, 4)) + "% of maximum run: Index = " + str(i))
                     milestone = int(progress) + 1
-            else:
+            elif verbose == 1:
                 val = max( (10**7)*abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i) - progress
                 if val > 0:
                     pbar.update(val)
@@ -636,6 +854,17 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             qarter = qarter[:cap]
             freqs = freqs[:cap]
             break
+        except KeyError:
+            print("\nEnding program")
+            cap = len(all_states) - 1
+            all_states = all_states[:cap]
+            interval = interval[:cap]
+            dTau_change = dTau_change[:cap]
+            constants = constants[:cap]
+            qarter = qarter[:cap]
+            freqs = freqs[:cap]
+            break
+        
         '''
         except Exception as e:
             print("\nEnding program - ERROR")
@@ -650,7 +879,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             freqs = freqs[:cap]
             break
         '''
-    if verbose == False:
+    if verbose == 1:
         pbar.close()
     #print(len(issues), len(all_states))
     #unit conversion stuff
@@ -692,7 +921,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                 asc_node, asc_node_time = np.array([asc_node]), np.array([asc_node_time])
         except:
             pass
-    if verbose == True:
+    if verbose == 2:
         print("There were " + str(compErr) + " issues with complex roots/turning points.")
     final = {"name": label,
              "raw": all_states,
@@ -1297,10 +1526,12 @@ def EGTimer(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="defa
     plunge, unbind = False, False
     def anglething(angle):
         return 0.5*np.pi - np.abs(angle%np.pi - np.pi/2)
+    '''
     if bonk == True:
         print("old")
     else:
         print("new")
+    '''
     if verbose == False:
         pbar = tqdm(total = 10000000, position=0)
     progress = 0
@@ -1316,11 +1547,12 @@ def EGTimer(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="defa
             state = all_states[i]  
             pot_min = tracker[-1][0]   
           
-            #Break if you fall inside event horizon, or if you get really far away (orbit is unbound)
+            #Break if you fall inside event horizon
             if (state[1] <= (1 + np.sqrt(1 - a**2))*1.0001):
                 plunge = True
                 break
             
+            #break if you get really far away (orbit is unbound)
             if (state[1] >= (1 + np.sqrt(1 - a**2))*1e15):
                 unbind = True
                 break

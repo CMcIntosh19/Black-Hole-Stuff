@@ -350,7 +350,8 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
     for thing in range(len(datalist)):
         data = datalist[thing]
         # ["value": [location in data dict, Value name, extra bit if timing is weird]]
-        termdict = {"time": [data["time"], "Coordinate Time", data["time"]],
+        termdict = {"index": [np.arange(len(data["time"])), "Index", np.arange(len(data["time"]))],
+                    "time": [data["time"], "Coordinate Time", data["time"]],
                     "tracktime": [data["tracktime"], "Coordinate Time", data["tracktime"]],
                     "radius": [data["pos"][:,0], "Radius", data["time"]],
                     "theta": [data["pos"][:,1], "Theta", data["time"]],
