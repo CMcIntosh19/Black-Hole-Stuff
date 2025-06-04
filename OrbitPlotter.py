@@ -376,20 +376,20 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
                     "theta_v": [data["all_vel"][:,2], "Theta Velocity", data["time"]],
                     "phi_v": [data["all_vel"][:,3], "Phi Velocity", data["time"]],
                     "total_v": [data["vel"], "Velocity", data["time"]],
-                    "radial_freq": [data["freqs"][:, 0], "Radial Frequency", data["tracktime"]],
-                    "theta_freq": [data["freqs"][:, 1], "Theta Frequency", data["tracktime"]],
-                    "phi_freq": [data["freqs"][:, 2], "Phi Frequency", data["tracktime"]],
-                    "all_freq": [data["freqs"], "All Frequencies", data["tracktime"]],
+                    #"radial_freq": [data["freqs"][:, 0], "Radial Frequency", data["tracktime"]],
+                    #"theta_freq": [data["freqs"][:, 1], "Theta Frequency", data["tracktime"]],
+                    #"phi_freq": [data["freqs"][:, 2], "Phi Frequency", data["tracktime"]],
+                    #"all_freq": [data["freqs"], "All Frequencies", data["tracktime"]],
                     "energy": [data["energy"], "Specific Energy", data["tracktime"]],
                     "L_z": [data["phi_momentum"], "Specific Axial Angular Momentum", data["tracktime"]],
                     "carter": [data["carter"], "Carter Constant", data["tracktime"]],
                     "qarter": [data["qarter"], "Carter Constant (Unnormalized)", data["tracktime"]],
                     "approx_L": [np.sqrt(data["carter"] + data["phi_momentum"]**2), "Full Angular Momentum sqrt(C + L\u2080\u00B2)", data["tracktime"]],
-                    "l_momentumx": [data["Lx_momentum"], "Specific Angular Momentum (x-component)", data["time"]],
-                    "l_momentumy": [data["Ly_momentum"], "Specific Angular Momentum (y-component)", data["time"]],
-                    "l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)", data["time"]],
-                    "interval": [data["interval"], "Spacetime Interval", data["time"]],
-                    "energy2": [data["energy2"], "other energy", data["time"]]}
+                    #"l_momentumx": [data["Lx_momentum"], "Specific Angular Momentum (x-component)", data["time"]],
+                    #"l_momentumy": [data["Ly_momentum"], "Specific Angular Momentum (y-component)", data["time"]],
+                    #"l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)", data["time"]],
+                    "interval": [data["interval"], "Spacetime Interval", data["time"]]}
+                    #"energy2": [data["energy2"], "other energy", data["time"]]}
         
         if ((type(xvalue) == str) and (xvalue in termdict)) and ((type(yvalue) == str) and (yvalue in termdict)):
             title = "%s vs %s"%(termdict[yvalue][1], termdict[xvalue][1])
