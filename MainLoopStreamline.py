@@ -203,7 +203,7 @@ def fast_err_with_constants2(state1, state2, a):
 
 import statistics as st
 import time
-def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, conch=100, trigger=2, override=False, bonk=3, bonk2=True, skip_tar=0, nofix=True):
+def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, trigger=2, override=False, bonk2=True, skip_tar=0, nofix=True):
     '''
     Generates orbit
 
@@ -310,6 +310,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
         return 0
     
     inputs = [mass, a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, veltrue, units]          #Grab initial input in case you want to run the continue function
+    inputs = [entry.tolist() if type(entry) == np.ndarray else entry for entry in inputs]                           #Convert numpy arrays to lists so that JSON doesn't complain
     all_states = [[np.zeros(8)]]                                                  #Grab that initial state         
     err_calc = 1 
     i = 0                                                                         #initialize step counter
@@ -328,6 +329,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
         E1, L1, C1 = old_cons
         E2, L2, C2 = new_cons
         R = lambda r, E, L, C, a: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
+        Rpoly = lambda E, L, C, a: np.array([(E**2 - 1.0), 2.0*np.ones_like(E), ((a**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - a*E)**2) + 2*C), -(a**2)*C])
         if scream == True:
             import matplotlib.pyplot as plt
             turns1, flats1, zs1 = mm.root_getter(E1, L1, C1, a)
@@ -337,16 +339,16 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             r_vals = np.linspace(low_b, high_b, num=100)
             fig, ax = plt.subplots()
             ax.hlines(0, r_vals[0], r_vals[-1])
-            ax.plot(r_vals, R(r_vals, *old_cons, a))
-            ax.plot(r_vals, R(r_vals, *new_cons, a))
-            ax.scatter(state[1], R(state[1], *old_cons, a))
-            ax.scatter(state[1], R(state[1], *new_cons, a))
+            ax.plot(r_vals, np.polyval(Rpoly(*old_cons, a), r_vals))
+            ax.plot(r_vals, np.polyval(Rpoly(*new_cons, a), r_vals))
+            ax.scatter(state[1], np.polyval(Rpoly(*old_cons, a), state[1]))
+            ax.scatter(state[1], np.polyval(Rpoly(*new_cons, a), state[1]))
             #print(turns1)
             #print(turns2)
             #print(old_cons)
             #print(new_cons)
             #print(new_cons - old_cons)
-        potential_min = R(mm.root_getter(*new_cons, a)[1][-1], *new_cons, a)
+        potential_min = np.polyval(Rpoly(*new_cons, a), mm.root_getter(*new_cons, a)[1][-1])
         return potential_min
     
     def bl2cart_oof(state, a):
@@ -505,329 +507,24 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             skip = False
             rkcount = time.time()
             while ((err_calc >= err_target) or (first == True)) and (skip == False):
-                if "njit" in label:
-                    new_step = mm.gen_RK2(*mm.ck4_2, mm.kerr_2, state, dTau, a)
-                    step_check = mm.gen_RK2(*mm.ck5_2, mm.kerr_2, state, dTau, a) 
-                else:
-                    new_step = mm.gen_RK(mm.ck4, mm.kerr, state, dTau, a)
-                    step_check = mm.gen_RK(mm.ck5, mm.kerr, state, dTau, a) 
-                if bonk == 0:
-                    #preferred for long time? jeremy thing
-                    delt = new_step - step_check
-                    mod_r = np.array([*new_step[1:3], *new_step[4:]])
-                    err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
-                    #angle = np.random.rand()*np.pi #some random angle between 0 and pi radians
-                    #new_step_morph, step_check_morph = new_rot(new_step, angle), new_rot(step_check, angle)   
-                    #err_calc = abs(1 - np.dot(new_step_morph, step_check_morph)/np.dot(new_step_morph, new_step_morph))
-                elif bonk == 1:
-                    err_calc = abs(1 - np.dot(new_step, step_check)/np.dot(new_step, new_step))
-                elif bonk == 2:
-                    #Halfway thing between original (bonk1) and jeremy (bonk2)
-                    #Actually it's definitely closer to the original than jeremy
-                    #but jeremy's takes forever for whatever reason?
-                    err_calc = abs(1 - np.sqrt(np.dot(new_step[1:], step_check[1:])/np.dot(new_step[1:], new_step[1:])))
-                elif bonk == 3:
-                    #jeremy with mods
-                    mod_new = np.array([*new_step[1:3], *new_step[4:]])
-                    mod_check = np.array([*step_check[1:3], *step_check[4:]])
-                    delt = mod_new - mod_check
-                    mod_r = np.array([*new_step[1:3], *new_step[4:]])
-                    err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
-                elif bonk == 4:
-                    #my thing with long time mods? and a tweak
-                    mod_new = np.array([*new_step[1:3], *new_step[4:]])
-                    mod_check = np.array([*step_check[1:3], *step_check[4:]])
-                    err_calc = abs(1 - np.sqrt(np.dot(mod_new, mod_check)/np.dot(mod_new, mod_new)))
-                elif bonk == 5:
-                    #try a new thing
-                    r, thet = state[1], state[2]
-                    opp = (new_step - step_check)*np.array([1, 1, r, r*np.sin(thet), dTau, dTau, r*dTau, r*np.sin(thet)*dTau])
-                    hyp = (new_step - state)*np.array([1, 1, r, r*np.sin(thet), dTau, dTau, r*dTau, r*np.sin(thet)*dTau])
-                    err_calc = 100*abs(np.arcsin(np.linalg.norm(opp)/np.linalg.norm(hyp)) - np.linalg.norm(opp)/np.linalg.norm(hyp))/np.linalg.norm(opp)/np.linalg.norm(hyp)
-                elif bonk == 6:
-                    #preferred for long time? jeremy thing carted??
-                    delt = bl2cart_oof(new_step, a) - bl2cart_oof(step_check, a)
-                    garp = bl2cart_oof(new_step, a)
-                    mod_r = np.array([*garp[1:3], *garp[4:]])
-                    err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
-                elif bonk == 7:
-                    #jeremy with mods2
-                    mod_new = np.array([*new_step[1:3], *new_step[4:]])
-                    mod_check = np.array([*step_check[1:3], *step_check[4:]])
-                    delt = mod_new - mod_check
-                    mod_r = np.array([*new_step[1:3], *new_step[4:]])
-                    err_calc = (np.dot(delt, delt)/np.dot(mod_r, mod_r))**(1/3)
-                elif bonk == 8:
-                    #crime
-                    # Extract new and check values (excluding t and phi)
-                    mod_new = np.array([*new_step[1:3], *new_step[4:]])
-                    mod_check = np.array([*step_check[1:3], *step_check[4:]])
-                    delt = mod_new - mod_check
-
-                    # Assign scaling factors for each component
-                    # (tune these empirically or based on expected value ranges)
-                    scales = np.array([
-                        1e1,   # r (tens of M)
-                        1e-1,  # theta (radians)
-                        1e0,   # ut
-                        1e-1,  # ur
-                        1e-1,  # utheta
-                        1e0    # uphi
-                    ])
-
-                    # Compute scaled error
-                    component_error = delt / scales
-
-                    # Weighted root mean square
-                    err_calc = np.sqrt(np.mean(component_error**2))
-                elif bonk == 9:
-                    #more crime
-                    # Extract new and check values (excluding t and phi)
-                    mod_new = np.array([*new_step[1:3], *new_step[4:]])
-                    mod_check = np.array([*step_check[1:3], *step_check[4:]])
-                    delt = mod_new - mod_check
-
-                    # Assign scaling factors for each component
-                    # (tune these empirically or based on expected value ranges)
-                    scales = np.array([
-                        1e1,   # r (tens of M)
-                        1e-1,  # theta (radians)
-                        1e0,   # ut
-                        1e-1,  # ur
-                        1e-1,  # utheta
-                        1e0    # uphi
-                    ])
-
-                    # Compute scaled error
-                    component_error = delt / scales
-
-                    # Weighted root mean square
-                    err_calc = np.min(component_error)
-                elif bonk == 10:
-                    err_calc = fast_err_with_constants(new_step, step_check, a)
-                elif bonk == 11:
-                    # Step 1: Extract position and velocity components (excluding t and phi)
-                    err_calc = fast_err_with_constants2(new_step, step_check, a)
-                elif bonk == 12:
-                    #jeremy with mods, mods are now diff
-                    mod_new = np.array([new_step[0] - state[0], *new_step[1:3], new_step[3] - state[3], *new_step[4:]])
-                    mod_check = np.array([step_check[0] - state[0], *step_check[1:3], step_check[3] - state[3], *step_check[4:]])
-                    delt = mod_new - mod_check
-                    mod_r = np.array([new_step[0] - state[0], *new_step[1:3], new_step[3] - state[3], *new_step[4:]])
-                    err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
-                elif bonk == 13:
-                    #jeremy with mods
-                    new_step_cart = new_sph2cart(new_step, a)
-                    step_check_cart = new_sph2cart(step_check, a)
-                    mod_new = new_step_cart[1:]
-                    mod_check = step_check_cart[1:]
-                    delt = mod_new - mod_check
-                    mod_r = new_step_cart[1:]
-                    err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
-
-                if "tweak" not in label:
-                    E, L, C = constants[j]
-                    # if (high inclination) AND ((very close to pole AND approaching pole) OR (dTau is very small AND dTau is monotonically non-increasing))
-                    if np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.5*(np.pi/180) and np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change):
-                        new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
-                        new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
-                        new_step[6] = -new_step[6]
-                        #break
-                elif "tweaker" not in label:
-                    #if (dTau is very small AND keeps getting smaller) and (particle will be within 0.5 degrees of the pole soon)
-                    if (dTau < 0.1*np.mean(dTau_change) and 1 not in np.sign(np.diff(dTau_change[-10:]))) and (np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.99*(np.pi/180)):
-                        #Convert to cartesian coordinates
-                        x = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.cos(new_step[3])
-                        y = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.sin(new_step[3])
-                        z = new_step[1] * np.cos(new_step[2])
-                        x_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.cos(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.cos(new_step[3]) - np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.sin(new_step[3]))
-                        y_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.cos(new_step[3]))
-                        z_dot = (new_step[5] * np.cos(new_step[2]) - new_step[1] * new_step[6] * np.cos(new_step[2]))
-                        #Find how long it will take for the particle to cross to the other side of the cone defined by theta (Tau, not t)
-                        dT = np.roots([x_dot**2 + y_dot**2 - (z_dot*np.tan(new_step[2]))**2, 2*(x*x_dot + y*y_dot - z*z_dot*(np.tan(new_step[2]))**2), x**2 + y**2 - (z*np.tan(new_step[2]))**2])[0]
-                        #Add that to cartesian coords
-                        new_t = new_step[0] + new_step[4]*dT
-                        new_x = x + x_dot*dT
-                        new_y = y + y_dot*dT
-                        new_z = z + z_dot*dT
-                        #convert those back to BL
-                        new_r = np.sqrt(new_x**2 + new_y**2 + new_z**2 - (a*np.sin(new_step[2]))**2)
-                        new_thet = new_step[2]
-                        new_phi = np.atan(new_y/new_x) + (np.pi if new_x*new_y < 0 else 0) + (np.pi if new_y < 0 else 0)
-                        old_phi = np.atan(y/x) + (np.pi if x*y < 0 else 0) + (np.pi if y < 0 else 0)
-                        if (new_phi - old_phi)/new_step[7] >= 0:
-                            new_phi = new_step[3] + (new_phi - old_phi)
-                        else:
-                            new_phi = new_step[3] + (2*np.pi - abs(new_phi - old_phi))
-                        #print(new_step[3], new_x, new_y, new_phi, new_step[0], i)
-                        #plug stuff back in to set_u_kerr to get approriate velocities there
-                        #print(new_step)
-                        old_vs = new_step[4:]
-                        new_step = mm.recalc_state(constants[j], [new_t, new_r, new_thet, new_phi], a)
-                        new_step[5] = np.sign(old_vs[1])*np.abs(new_step[5])
-                        new_step[6] = -np.sign(old_vs[2])*np.abs(new_step[6])
-                        #print(new_step)
-                        #print("----")
-                        break
-                elif "tweakerly" not in label:
-                    #if (dTau is very small AND keeps getting smaller) and (particle will be within 0.5 degrees of the pole soon)
-                    if (dTau < 0.1*np.mean(dTau_change) and 1 not in np.sign(np.diff(dTau_change[-10:]))) and (np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.99*(np.pi/180)):
-                        #Convert to cartesian coordinates (make z quadratic because?? just to see)
-                        x = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.cos(new_step[3])
-                        y = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.sin(new_step[3])
-                        z = new_step[1] * np.cos(new_step[2])
-                        x_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.cos(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.cos(new_step[3]) - np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.sin(new_step[3]))/new_step[4]
-                        y_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.cos(new_step[3]))/new_step[4]
-                        z_dot = (new_step[5] * np.cos(new_step[2]) - new_step[1] * new_step[6] * np.cos(new_step[2]))/new_step[4]
-                        r_d_dot = np.polyfit(np.array(all_states)[-10:, 0], np.array(all_states)[-10:, 1], 2)[0]
-                        thet_d_dot = np.polyfit(np.array(all_states)[-10:, 0], np.array(all_states)[-10:, 1], 2)[0]
-                        #import matplotlib.pyplot as plt
-                        #fig1, ax1 = plt.subplots()
-                        #ax1.plot(np.array(all_states)[-100:, 0], np.polyval(np.polyfit(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 1], 2), np.array(all_states)[-100:, 0]))
-                        #ax1.scatter(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 1], c="k")
-                        #fig2, ax2 = plt.subplots()
-                        #ax2.plot(np.array(all_states)[-100:, 0], np.polyval(np.polyfit(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 2], 2), np.array(all_states)[-100:, 0]))
-                        #ax2.scatter(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 2], c="k")
-                        #plt.show()
-                        z_d_dot = r_d_dot*np.cos(new_step[2]) - 2*new_step[5]*new_step[6]*np.sin(new_step[2])/(new_step[4]**2) - new_step[1]*thet_d_dot*np.sin(new_step[2]) - new_step[1]*((new_step[6]/new_step[4])**2)*np.cos(new_step[2]) 
-                        #Find how long it will take for the particle to cross to the other side of the cone defined by theta (t, not Tau)
-                        C = np.tan(new_step[2])**2
-                        #print("ha!", [0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])
-                        dt = np.sort(np.roots([0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2]))[2]
-                        #Add that to cartesian coords
-                        new_t = new_step[0] + dt
-                        new_x = x + x_dot*dt
-                        new_y = y + y_dot*dt
-                        new_z = z + z_dot*dt + 0.5*z_d_dot*dt*dt
-                        #print("HEY", new_step[0], x, y, z)
-                        #print("HUY", new_t, new_x, new_y, new_z)
-                        #print("HUG", x_dot, y_dot, z_dot, z_d_dot, dt)
-                        #print("HUR", [0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])
-                        #print("HUN", [x_dot**2 + y_dot**2 - (z_dot*np.tan(new_step[2]))**2, 2*(x*x_dot + y*y_dot - z*z_dot*(np.tan(new_step[2]))**2), x**2 + y**2 - (z*np.tan(new_step[2]))**2])
-                        #print("GUH", np.sort(np.roots([0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])))
-                        #print("-----")
-                        #convert those back to BL
-                        new_r = np.sqrt(new_x**2 + new_y**2 + new_z**2 - (a*np.sin(new_step[2]))**2)
-                        new_thet = new_step[2]
-                        new_phi = np.atan(new_y/new_x) + (np.pi if new_x*new_y < 0 else 0) + (np.pi if new_y < 0 else 0)
-                        old_phi = np.atan(y/x) + (np.pi if x*y < 0 else 0) + (np.pi if y < 0 else 0)
-                        if (new_phi - old_phi)/new_step[7] >= 0:
-                            new_phi = new_step[3] + (new_phi - old_phi)
-                        else:
-                            new_phi = new_step[3] + (2*np.pi - abs(new_phi - old_phi))
-                        #print(new_step[3], new_x, new_y, new_phi, new_step[0], i)
-                        #plug stuff back in to set_u_kerr to get approriate velocities there
-                        #print(new_step)
-                        old_vs = new_step[4:]
-                        new_step = mm.recalc_state(constants[j], [new_t, new_r, new_thet, new_phi], a)
-                        new_step[5] = np.sign(old_vs[1])*np.abs(new_step[5])
-                        new_step[6] = -np.sign(old_vs[2])*np.abs(new_step[6])
-                        #print(new_step)
-                        #print("----")
-                        break
-                elif "tweakerlylo" not in label:
-                    E, L, C = constants[j]
-                    # if (high inclination) AND ((very close to pole AND approaching pole) OR (dTau is very small AND dTau is monotonically non-increasing))
-                    if np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.5*(np.pi/180) and np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change):
-                        new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
-                        new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
-                        old_vs = new_step[4:]
-                        new_step = mm.recalc_state(constants[j], new_step[:4], a)
-                        new_step[5] = np.sign(old_vs[1])*np.abs(new_step[5])
-                        new_step[6] = -np.sign(old_vs[2])*np.abs(new_step[6])
-                        #break
-                elif "tweakerlylone" not in label:
-                    #if (dTau is very small AND keeps getting smaller) and (particle will be within 0.5 degrees of the pole soon)
-                    if (dTau < 0.1*np.mean(dTau_change) and 1 not in np.sign(np.diff(dTau_change[-10:]))) and (np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.99*(np.pi/180)):
-                        #Convert to cartesian coordinates
-                        x = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.cos(new_step[3])
-                        y = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.sin(new_step[3])
-                        z = new_step[1] * np.cos(new_step[2])
-                        x_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.cos(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.cos(new_step[3]) - np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.sin(new_step[3]))
-                        y_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.cos(new_step[3]))
-                        z_dot = (new_step[5] * np.cos(new_step[2]) - new_step[1] * new_step[6] * np.cos(new_step[2]))
-                        #Find how long it will take for the particle to cross to the other side of the cone defined by theta (Tau, not t)
-                        dT = np.roots([x_dot**2 + y_dot**2 - (z_dot*np.tan(new_step[2]))**2, 2*(x*x_dot + y*y_dot - z*z_dot*(np.tan(new_step[2]))**2), x**2 + y**2 - (z*np.tan(new_step[2]))**2])[0]
-                        #Add that to cartesian coords
-                        new_t = new_step[0] + new_step[4]*dT
-                        new_x = x + x_dot*dT
-                        new_y = y + y_dot*dT
-                        new_z = z + z_dot*dT
-                        #convert those back to BL
-                        new_r = np.sqrt(new_x**2 + new_y**2 + new_z**2 - (a*np.sin(new_step[2]))**2)
-                        new_thet = new_step[2]
-                        new_phi = np.atan(new_y/new_x) + (np.pi if new_x*new_y < 0 else 0) + (np.pi if new_y < 0 else 0)
-                        old_phi = np.atan(y/x) + (np.pi if x*y < 0 else 0) + (np.pi if y < 0 else 0)
-                        if (new_phi - old_phi)/new_step[7] >= 0:
-                            new_phi = new_step[3] + (new_phi - old_phi)
-                        else:
-                            new_phi = new_step[3] + (2*np.pi - abs(new_phi - old_phi))
-                        #print(new_step[3], new_x, new_y, new_phi, new_step[0], i)
-                        #plug stuff back in to set_u_kerr to get approriate velocities there
-                        #print(new_step)
-                        new_step[:4] = [new_t, new_r, new_thet, new_phi]
-                        new_step[6] *= -1
-                        #print(new_step)
-                        #print("----")
-                        break
-                else:
-                    #if (dTau is very small AND keeps getting smaller) and (particle will be within 0.5 degrees of the pole soon)
-                    if (dTau < 0.1*np.mean(dTau_change) and 1 not in np.sign(np.diff(dTau_change[-10:]))) and (np.sign(new_step[6])*(np.pi/2 - new_step[2]%np.pi) <= -89.99*(np.pi/180)):
-                        #Convert to cartesian coordinates (make z quadratic because?? just to see)
-                        x = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.cos(new_step[3])
-                        y = np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * np.sin(new_step[3])
-                        z = new_step[1] * np.cos(new_step[2])
-                        x_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.cos(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.cos(new_step[3]) - np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.sin(new_step[3]))/new_step[4]
-                        y_dot = (new_step[5]*new_step[1]/(np.sqrt(new_step[1]**2 + a**2)) * np.sin(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * new_step[6]*np.cos(new_step[2]) * np.sin(new_step[3]) + np.sqrt(new_step[1]**2 + a**2) * np.sin(new_step[2]) * new_step[7] * np.cos(new_step[3]))/new_step[4]
-                        z_dot = (new_step[5] * np.cos(new_step[2]) - new_step[1] * new_step[6] * np.cos(new_step[2]))/new_step[4]
-                        r_d_dot = np.polyfit(np.array(all_states)[-10:, 0], np.array(all_states)[-10:, 1], 2)[0]
-                        thet_d_dot = np.polyfit(np.array(all_states)[-10:, 0], np.array(all_states)[-10:, 1], 2)[0]
-                        #import matplotlib.pyplot as plt
-                        #fig1, ax1 = plt.subplots()
-                        #ax1.plot(np.array(all_states)[-100:, 0], np.polyval(np.polyfit(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 1], 2), np.array(all_states)[-100:, 0]))
-                        #ax1.scatter(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 1], c="k")
-                        #fig2, ax2 = plt.subplots()
-                        #ax2.plot(np.array(all_states)[-100:, 0], np.polyval(np.polyfit(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 2], 2), np.array(all_states)[-100:, 0]))
-                        #ax2.scatter(np.array(all_states)[-100:, 0], np.array(all_states)[-100:, 2], c="k")
-                        #plt.show()
-                        z_d_dot = r_d_dot*np.cos(new_step[2]) - 2*new_step[5]*new_step[6]*np.sin(new_step[2])/(new_step[4]**2) - new_step[1]*thet_d_dot*np.sin(new_step[2]) - new_step[1]*((new_step[6]/new_step[4])**2)*np.cos(new_step[2]) 
-                        #Find how long it will take for the particle to cross to the other side of the cone defined by theta (t, not Tau)
-                        C = np.tan(new_step[2])**2
-                        #print("ha!", [0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])
-                        dt = np.sort(np.roots([0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2]))[2]
-                        #Add that to cartesian coords
-                        new_t = new_step[0] + dt
-                        new_x = x + x_dot*dt
-                        new_y = y + y_dot*dt
-                        new_z = z + z_dot*dt + 0.5*z_d_dot*dt*dt
-                        #print("HEY", new_step[0], x, y, z)
-                        #print("HUY", new_t, new_x, new_y, new_z)
-                        #print("HUG", x_dot, y_dot, z_dot, z_d_dot, dt)
-                        #print("HUR", [0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])
-                        #print("HUN", [x_dot**2 + y_dot**2 - (z_dot*np.tan(new_step[2]))**2, 2*(x*x_dot + y*y_dot - z*z_dot*(np.tan(new_step[2]))**2), x**2 + y**2 - (z*np.tan(new_step[2]))**2])
-                        #print("GUH", np.sort(np.roots([0.25*C*(z_d_dot**2), C*z_dot*z_d_dot, C*(z_dot**2 + z*z_d_dot) - x_dot**2 - y_dot**2, 2*(C*z*z_dot - x*x_dot - y*y_dot), C*(z**2) - x**2 - y**2])))
-                        #print("-----")
-                        #convert those back to BL
-                        new_r = np.sqrt(new_x**2 + new_y**2 + new_z**2 - (a*np.sin(new_step[2]))**2)
-                        new_thet = new_step[2]
-                        new_phi = np.atan(new_y/new_x) + (np.pi if new_x*new_y < 0 else 0) + (np.pi if new_y < 0 else 0)
-                        old_phi = np.atan(y/x) + (np.pi if x*y < 0 else 0) + (np.pi if y < 0 else 0)
-                        if (new_phi - old_phi)/new_step[7] >= 0:
-                            new_phi = new_step[3] + (new_phi - old_phi)
-                        else:
-                            new_phi = new_step[3] + (2*np.pi - abs(new_phi - old_phi))
-                        #print(new_step[3], new_x, new_y, new_phi, new_step[0], i)
-                        #plug stuff back in to set_u_kerr to get approriate velocities there
-                        #print(new_step)
-                        new_step[:4] = [new_t, new_r, new_thet, new_phi]
-                        new_step[6] *= -1
-                        #print(new_step)
-                        #print("----")
-                        break
-                
-                speed = np.sqrt(new_step[5]**2 + (new_step[1]**2)*(new_step[6]**2 + (np.sin(new_step[2])*new_step[7])**2))
+                # Generate 4th and 5th order calculations for next step
+                new_step = mm.gen_RK2(*mm.ck4_2, mm.kerr_2, state, dTau, a)
+                step_check = mm.gen_RK2(*mm.ck5_2, mm.kerr_2, state, dTau, a) 
+                # Calculate the error
+                mod_new = np.array([*new_step[1:3], *new_step[4:]])
+                mod_check = np.array([*step_check[1:3], *step_check[4:]])
+                delt = mod_new - mod_check
+                mod_r = np.array([*new_step[1:3], *new_step[4:]])
+                err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
+                # Correct for pole effects
+                E, L, C = constants[j]
+                # if ((within ~0.5 degrees of pole) and (moving closer to pole)) and (average of last few dTau_change values is much smaller than the average):
+                if ((np.sin(new_step[2])**2 <= 8e-5) and np.sign(new_step[6]*np.cos(new_step[2])) < 0) and (np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change)):
+                    new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
+                    new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
+                    new_step[6] = -new_step[6]
+                # Get new dTau value 
                 old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
-                #old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2/speed)
                 if dTau <= 0.0:
                     err_calc = 1
                     dTau = old_dTau
@@ -846,13 +543,10 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     if "x" in oof:
                         err_calc = 1
                 if np.isnan(np.sum(new_step)):
-                    #print("BAD")
                     err_calc = 1
                     dTau = old_dTau*0.9
                 first = False
             rkfull.append(time.time() - rkcount)
-            #if np.nan in new_step:
-            #    print("HEY")
             metric = mm.kerr(new_step, a)[0]
             test = mm.check_interval(mm.kerr, new_step, a)
             looper = 0
@@ -874,21 +568,12 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                 issues.append((i, new_step[0]))
 
             #constant modifying section
-            #Whenever you pass from one side of pot_min to the other, mess with the effective potential.
-            #if ( np.sign(new_step[1] - pot_min) != orbitside) or ((new_step[3] - all_states[int(tracker[j][-1])][3] > np.pi*(3/2)) and (np.std([state[1] for state in all_states[int(tracker[j][-1]):]]) < 0.01*np.mean([state[1] for state in all_states[int(tracker[j][-1]):]]))):
             R0, ECC = 0.5*(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
             compl, comph = np.arccos(-ECC), 2*np.pi - np.arccos(-ECC)
             S1, S2 = get_true_anom(state, R0, ECC), get_true_anom(new_step, R0, ECC)
-            #if ((S2-compl) > 0 and (compl-S1) > 0) or ((S2-comph) > 0 and (comph-S1) > 0):   #cross the r0 on both sides
-            
-            #print(int(tracker[j][-1]), tracker[j])
-            smooth = np.all(np.diff(true_anom[int(tracker[j][-1]):]) > 0)
-            #if cond[trigger] == True:
-            #if (smooth and cond[trigger]) or (not smooth and (state[3]%(2*np.pi) < np.pi and new_step[3]%(2*np.pi) > np.pi)):
-
-            # (chosen trigger is true AND it has been it least 11 steps)
+            # if (chosen trigger evals true) AND (it has been it least 11 steps since the last constant modification)
             if (eval(cond[trigger]) and i - int(tracker[j][-1] > 10)):
-                if skip_count >= skip_tar:
+                if skip_count >= skip_tar:  #Allows you to average over some integer number of orbit
                     skip_count = 0
                     update = True
                     concount = time.time()
@@ -896,92 +581,8 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                         orbitside *= -1
                     if mu != 0.0:
                         condate = True
-                        if "wonk" in label:
-                            dcons = mm.peters_integrate6_3(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        elif "wink" in label:
-                            #print("hello")
-                            dcons = mm.peters_integrate6_4(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        elif "wunk" in label:
-                            #print("hello")
-                            dcons = mm.peters_integrate6_5(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        elif "wenk" in label:
-                            #print("hello")
-                            dcons = mm.peters_integrate6(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        elif "wynk" in label:
-                            #print("hello")
-                            dcons = mm.peters_integrate6_7(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        elif "whynk" in label:
-                            #print("hello")
-                            dcons = mm.peters_integrate6_7_2(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        elif "whink" in label:
-                            try:
-                                max_len = max(len(all_states[int(tracker[j][-1]):i]), max_len)
-                            except:
-                                max_len = len(all_states[int(tracker[j][-1]):i])
-
-                            padded_input = np.zeros((max_len, 8))
-                            real_len = len(all_states[int(tracker[j][-1]):i])
-                            #print(max_len, real_len)
-                            padded_input[:real_len] = all_states[int(tracker[j][-1]):i]
-                            dcons = mm.peters_integrate6_6_2(padded_input, real_len, a, mu, int(tracker[j][-1]), i)
-                            #print(dcons, "oog")
-                            #dcons = mm.peters_integrate6_6_2(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        elif "whunk" in label:
-                            try:
-                                max_len = max(len(all_states[int(tracker[j][-1]):i]), max_len)
-                            except:
-                                max_len = len(all_states[int(tracker[j][-1]):i])
-
-                            padded_input = np.zeros((max_len, 8))
-                            real_len = len(all_states[int(tracker[j][-1]):i])
-                            #print(max_len, real_len)
-                            padded_input[:real_len] = all_states[int(tracker[j][-1]):i]
-                            dcons = mm.peters_integrate6_6_3(padded_input, real_len, a, mu, int(tracker[j][-1]), i)
-                            #print(dcons, "oog")
-                            #dcons = mm.peters_integrate6_6_2(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        else:
-                            #THIS WORKS BEST SO FAR
-                            dcons = mm.peters_integrate6_6(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                            #print(dcons, "ag")
-                        if conch == 5:
-                            new_step, ch_cons = mm.new_recalc_state5(constants[j], dcons, new_step, a)
-                        elif conch == 6:
-                            new_step, ch_cons = mm.new_recalc_state6(constants[j], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        elif conch == 7:
-                            new_step, ch_cons = mm.new_recalc_state7(constants[j], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        elif conch == 8:
-                            new_step, ch_cons = mm.new_recalc_state8(constants[j], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1
-                        elif conch == 9:
-                            new_step, ch_cons = mm.new_recalc_state9a(constants[j], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        elif conch == 10:
-                            new_step, ch_cons = mm.new_recalc_state10(constants[j], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1
-                        elif conch == 11:
-                            new_step, ch_cons = mm.new_recalc_state11(constants[j], dcons, new_step, a, mu, all_states[int(tracker[j][-1]):i])
-                        elif conch == 12:
-                            new_step, ch_cons = mm.new_recalc_state12(constants[j], dcons, new_step, a, mu, all_states[int(tracker[j][-1]):i])
-                        elif conch == 13:
-                            new_step, ch_cons = mm.new_recalc_state13(constants[j], dcons, new_step, a, mu, all_states[int(tracker[j][-1]):i])
-                        elif conch == 14:
-                            new_step, ch_cons = mm.new_recalc_state14(constants[j], dcons, new_step, a)
-                        elif conch == 15:
-                            new_step, ch_cons = mm.new_recalc_state15(constants[j], dcons, new_step, a)
-                        elif conch == 16:
-                            new_step, ch_cons = mm.new_recalc_state9b(constants[j], dcons, new_step, a)
-                        elif conch == 17:
-                            new_step, ch_cons = mm.new_recalc_state9d(constants[j], dcons, new_step, a)
-                        elif conch == 18:
-                            new_step, ch_cons = mm.new_recalc_state9e(constants[j], dcons, new_step, a, label)
-                        elif conch == 19:
-                            new_step, ch_cons = mm.new_recalc_state9f(constants[j], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        elif conch == 20:
-                            new_step, ch_cons = mm.new_recalc_state9g(constants[j], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        elif conch == 21:
-                            new_step, ch_cons = mm.new_recalc_state9h(constants[j], dcons, new_step, a, label)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        elif conch == 22:
-                            new_step, ch_cons = mm.new_recalc_state9i(constants[j], dcons, new_step, a, label)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        else:
-                            new_step, ch_cons = mm.new_recalc_state9(constants[j], dcons, new_step, a)#, eps=1e-5)#, eps)#, eps=1e-1)
-                        #print(ch_cons, label, i)
+                        dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
+                        new_step, ch_cons = mm.new_recalc_state9j(constants[j], dcons, new_step, a)
                         pot_min = viable_cons(ch_cons, constants[j], new_step, a)
                         subcount = 0
                         if pot_min < -err_target:
@@ -993,14 +594,6 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                                 viable_cons(ch_cons, constants[j], new_step, a, True)
                                 print("BADVALS", *ch_cons)
                                 raise KeyError
-                            '''if (subcount < 10) or subcount%10000000 == 0:
-                                print(dcons, pot_min, "HEWWO??", subcount)
-                            Lphi, ro = ch_cons[1], pot_min
-                            ch_cons[0] += max(10**(-16), 2*(-pot_min)*((2*ro*((ro**3 + ro*(a**2) + 2*(a**2))*ch_cons[0] - 2*Lphi*a))**(-1)))
-                            #ch_cons[0] += 10**(-16)
-                            new_step = mm.recalc_state(ch_cons, new_step, a)
-                            pot_min = viable_cons(ch_cons, new_step, a)
-                            subcount += 1'''
                         if subcount > 0:
                             print(subcount, "oof", pot_min)
                     confull.append(time.time() - concount)
@@ -1363,6 +956,43 @@ def load_emri_data(filename):
         final["des_node"] = des_node
         final["des_node_time"] = des_node_time
         return final
+
+def delete_emri_data(filename, index_path="./saved_sims/index.json", folder="./saved_sims/", auto=False):
+    full_path = os.path.join(folder, filename)
+    
+    # Delete the file
+    if os.path.exists(full_path):
+        if auto == True:
+            confirm = "y"
+        else:
+            confirm = input(f"Are you sure you want to delete {filename}? (y/n): ").strip().lower()
+
+        if confirm == "y":
+            os.remove(full_path)
+            print(f"Deleted file: {full_path}")
+        else:
+            print("File deletion aborted.")
+    else:
+        print(f"File not found: {full_path}")
+
+    # Remove from index
+    if os.path.exists(index_path):
+        if confirm == "y":
+            with open(index_path, 'r') as f:
+                index = json.load(f)
+
+            if filename in index:
+                del index[filename]
+                with open(index_path, 'w') as f:
+                    json.dump(index, f, indent=2)
+                print(f"Removed {filename} from index.")
+            else:
+                print(f"{filename} not found in index.")
+        else:
+            pass
+    else:
+        print("Index file does not exist.")
+
 
 def EMRIGenMin(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, override=False, bonk2=True):
     '''
