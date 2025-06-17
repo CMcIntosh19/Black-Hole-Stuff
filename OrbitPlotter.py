@@ -350,62 +350,58 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
     for thing in range(len(datalist)):
         data = datalist[thing]
         # ["value": [location in data dict, Value name, extra bit if timing is weird]]
-        termdict = {"index": [np.arange(len(data["time"])), "Index", np.arange(len(data["time"]))],
-                    "time": [data["time"], "Coordinate Time", data["time"]],
-                    "tracktime": [data["tracktime"], "Coordinate Time", data["tracktime"]],
-                    "radius": [data["pos"][:,0], "Radius", data["time"]],
-                    "theta": [data["pos"][:,1], "Theta", data["time"]],
-                    "phase": [data["pos"][:,2]/(2*np.pi), "Phase", data["time"]],
-                    "true_anom": [data["true_anom"]/(2*np.pi), "True Anomaly", data["tracktime"]],
-                    "r0": [data["r0"], "Semimajor Axis", data["tracktime"]],
-                    "pot_min": [data["pot_min"], "Effective Potential Minimum", data["tracktime"]],
-                    "ecc": [data["e"], "Eccentricity", data["tracktime"]],
-                    "semilat": [data["r0"]*(1 - data["e"]**2), "Semilatus-Rectum", data["tracktime"]],
-                    "inc": [data["inc"], "Inclination", data["tracktime"]],
-                    "periapse": [data["it"], "Periapse", data["tracktime"]],
-                    "apoapse": [data["ot"], "Apoapse", data["tracktime"]],
-                    "omega": [data["omega"], "Phi Position of Periapse", "otime"],
-                    "otime": [data["otime"], "Time of Periapse", "otime"],
-                    "omegadot": [np.diff(data["omega"])/np.diff(data["otime"]), "Advance of Periapse", "odottime"],
-                    "odottime": [0.5*data["otime"][:-1] + 0.5*data["otime"][1:], "Periadvance time", "odottime"],
-                    "asc_node": [data["asc_node"], "Phi Position of Ascending Node", "asc_node_time"],
-                    "asc_node_time": [data["asc_node_time"], "Time of Ascending Node", "asc_node_time"],
-                    "semi_maj": [0.5*(data["it"] + data["ot"]), "Semimajor Axis", data["tracktime"]],
-                    "semi_lat": [data["p"], "Semilatus Rectum", data["tracktime"]],
-                    "radial_v": [data["all_vel"][:,1], "Radial Velocity", data["time"]],
-                    "theta_v": [data["all_vel"][:,2], "Theta Velocity", data["time"]],
-                    "phi_v": [data["all_vel"][:,3], "Phi Velocity", data["time"]],
-                    "total_v": [data["vel"], "Velocity", data["time"]],
-                    #"radial_freq": [data["freqs"][:, 0], "Radial Frequency", data["tracktime"]],
-                    #"theta_freq": [data["freqs"][:, 1], "Theta Frequency", data["tracktime"]],
-                    #"phi_freq": [data["freqs"][:, 2], "Phi Frequency", data["tracktime"]],
-                    #"all_freq": [data["freqs"], "All Frequencies", data["tracktime"]],
-                    "energy": [data["energy"], "Specific Energy", data["tracktime"]],
-                    "L_z": [data["phi_momentum"], "Specific Axial Angular Momentum", data["tracktime"]],
-                    "carter": [data["carter"], "Carter Constant", data["tracktime"]],
-                    "qarter": [data["qarter"], "Carter Constant (Unnormalized)", data["tracktime"]],
-                    "approx_L": [np.sqrt(data["carter"] + data["phi_momentum"]**2), "Full Angular Momentum sqrt(C + L\u2080\u00B2)", data["tracktime"]],
-                    #"l_momentumx": [data["Lx_momentum"], "Specific Angular Momentum (x-component)", data["time"]],
-                    #"l_momentumy": [data["Ly_momentum"], "Specific Angular Momentum (y-component)", data["time"]],
-                    #"l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)", data["time"]],
-                    "interval": [data["interval"], "Spacetime Interval", data["time"]]}
-                    #"energy2": [data["energy2"], "other energy", data["time"]]}
+        termdict = {
+            "index": ['np.arange(len(data["time"]))', "Index", 'np.arange(len(data["time"]))'],
+            "time": ['data["time"]', "Coordinate Time", 'data["time"]'],
+            "tracktime": ['data["tracktime"]', "Coordinate Time", 'data["tracktime"]'],
+            "radius": ['data["pos"][:,0]', "Radius", 'data["time"]'],
+            "theta": ['data["pos"][:,1]', "Theta", 'data["time"]'],
+            "phase": ['data["pos"][:,2]/(2*np.pi)', "Phase", 'data["time"]'],
+            "true_anom": ['data["true_anom"]/(2*np.pi)', "True Anomaly", 'data["tracktime"]'],
+            "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
+            "pot_min": ['data["pot_min"]', "Effective Potential Minimum", 'data["tracktime"]'],
+            "ecc": ['data["e"]', "Eccentricity", 'data["tracktime"]'],
+            "semilat": ['data["r0"]*(1 - data["e"]**2)', "Semilatus-Rectum", 'data["tracktime"]'],
+            "inc": ['data["inc"]', "Inclination", 'data["tracktime"]'],
+            "periapse": ['data["it"]', "Periapse", 'data["tracktime"]'],
+            "apoapse": ['data["ot"]', "Apoapse", 'data["tracktime"]'],
+            "omega": ['data["omega"]', "Phi Position of Periapse", 'otime'],
+            "otime": ['data["otime"]', "Time of Periapse", 'otime'],
+            "omegadot": ['np.diff(data["omega"])/np.diff(data["otime"])', "Advance of Periapse", 'odottime'],
+            "odottime": ['0.5*data["otime"][:-1] + 0.5*data["otime"][1:]', "Periadvance time", 'odottime'],
+            "asc_node": ['data["asc_node"]', "Phi Position of Ascending Node", 'asc_node_time'],
+            "asc_node_time": ['data["asc_node_time"]', "Time of Ascending Node", 'asc_node_time'],
+            "semi_maj": ['0.5*(data["it"] + data["ot"])', "Semimajor Axis", 'data["tracktime"]'],
+            "semi_lat": ['data["p"]', "Semilatus Rectum", 'data["tracktime"]'],
+            "radial_v": ['data["all_vel"][:,1]', "Radial Velocity", 'data["time"]'],
+            "theta_v": ['data["all_vel"][:,2]', "Theta Velocity", 'data["time"]'],
+            "phi_v": ['data["all_vel"][:,3]', "Phi Velocity", 'data["time"]'],
+            "total_v": ['data["vel"]', "Velocity", 'data["time"]'],
+            "energy": ['data["energy"]', "Specific Energy", 'data["tracktime"]'],
+            "L_z": ['data["phi_momentum"]', "Specific Axial Angular Momentum", 'data["tracktime"]'],
+            "carter": ['data["carter"]', "Carter Constant", 'data["tracktime"]'],
+            "qarter": ['data["qarter"]', "Carter Constant (Unnormalized)", 'data["tracktime"]'],
+            "approx_L": ['np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Full Angular Momentum sqrt(C + L\u2080\u00B2)", 'data["tracktime"]'],
+            "interval": ['data["interval"]', "Spacetime Interval", 'data["time"]']
+            }
         
         if ((type(xvalue) == str) and (xvalue in termdict)) and ((type(yvalue) == str) and (yvalue in termdict)):
+            xstuff = [eval(termdict[xvalue][0]), termdict[xvalue][1], eval(termdict[xvalue][2])]
+            ystuff = [eval(termdict[yvalue][0]), termdict[yvalue][1], eval(termdict[yyvalue][2])]
             title = "%s vs %s"%(termdict[yvalue][1], termdict[xvalue][1])
             title_add = ""
-            if len(termdict[xvalue][0]) == len(termdict[yvalue][0]):
+            if len(xstuff[0]) == len(ystuff[0]):
                 #if the values have the same length, just grab the data
-                xo = 0 if start==False else get_index(termdict[xvalue][0], start)
-                xf = len(termdict[xvalue][0]) if end==False else get_index(termdict[xvalue][0], end)
-                xvals, yvals = termdict[xvalue][0][xo:xf], termdict[yvalue][0][xo:xf]
+                xo = 0 if start==False else get_index(xstuff[0], start)
+                xf = len(xstuff[0]) if end==False else get_index(xstuff[0], end)
+                xvals, yvals = xstuff[0][xo:xf], ystuff[0][xo:xf]
             else: 
                 #if the values don't have the same length, interpolate using time
-                xvals, yvals = termdict[xvalue][0], termdict[yvalue][0]
+                xvals, yvals = xstuff[0], ystuff[0]
                 if len(xvals) != len(data["time"]):
-                    xvals = np.interp(data["time"], termdict[xvalue][2], termdict[xvalue][0])
+                    xvals = np.interp(data["time"], xstuff[2], xstuff[0])
                 if len(yvals) != len(data["time"]):
-                    yvals = np.interp(data["time"], termdict[yvalue][2], termdict[yvalue][0])
+                    yvals = np.interp(data["time"], ystuff[2], ystuff[0])
                 xo = 0 if start==False else get_index(xvals, start)
                 xf = len(xvals) if end==False else get_index(xvals, end)
                 xvals, yvals = xvals[xo:xf], yvals[xo:xf]
