@@ -3711,8 +3711,7 @@ def get_EL_curve(a, C, rmax=100.0, npts=1000):
         return None, None
     E_1, E_2 = circE_C(r, a, C, 1), circE_C(r, a, C, -1)
     L_1, L_2 = circL_C(r, a, C, 1), circL_C(r, a, C, -1)
-    sort_ix_1, sort_ix_2  = np.argsort(E_1), np.argsort(E_2)
-    return E_1[sort_ix_1], L_1[sort_ix_1], E_2[sort_ix_2], L_2[sort_ix_2]
+    return E_1, L_1, E_2, L_2
 
 def is_in_ELC_region(E_test, L_test, C_test, a, tol=1e-4):
     E_curve_1, L_curve_1, E_curve_2, L_curve_2 = get_EL_curve(a, C_test, rmax=100.0, npts=5000)
@@ -3789,7 +3788,7 @@ def gair_glamp3(E, L, C, a, q, endflag="False"):
 
 def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
     #Matches gair + glampedakis 2006
-    turns, flats, zs = mm.root_getter(E, L, C, a)
+    turns, flats, zs = root_getter(E, L, C, a)
     print(E, L, C)
     print(turns[-2:])
     p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])

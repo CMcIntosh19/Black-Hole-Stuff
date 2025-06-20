@@ -798,7 +798,7 @@ def encode_filename():
     return hex(int(40587.0 + now//86400.0))[2:] + "_" + hex(int((now/86400.0 - now//86400.0)*60*24))[2:]
 
 def decode_filename(name):
-    _, big, small = name.split("_")
+    _, big, small = os.path.splitext(name)[0].split("_")
     mjd = int(big, 16) + int(small,16)/(60*24)
     unix = (mjd - 40587)*86400
     return unix
@@ -955,6 +955,7 @@ def load_emri_data(filename):
         final["asc_node_time"] = asc_node_time
         final["des_node"] = des_node
         final["des_node_time"] = des_node_time
+        print(f"Loaded {filename}")
         return final
 
 def delete_emri_data(filename, index_path="./saved_sims/index.json", folder="./saved_sims/", auto=False):
