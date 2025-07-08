@@ -201,6 +201,73 @@ def fast_err_with_constants2(state1, state2, a):
     all_errors = np.concatenate((scaled_coords, scaled_consts))
     return np.min(all_errors**2)
 
+@njit
+def quick_state(constants, state, a):
+    '''
+    Calculates a new state vector based on a given position and constants of motion
+
+    Parameters
+    ----------
+    constants : 3-element list/array of floats
+        energy, angular momentum, and carter constant per unit mass
+    state : 8 or 4 element list/numpy array
+        4-position and 4-velocity of the test particle at a particular moment
+        Only the 4-position is explicitly required, not specifying the 4-velocity will make the resulting vector default to decreasing r and theta
+        specifying the 4 velocity will maintain the r and theta directions
+    dTau : float
+        proper time between current state and state-to-be-calculated
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    new_state : 8 element numpy array
+        4-position and 4-velocity of the test particle
+    '''
+    energy, lmom, cart = constants[0], constants[1], constants[2]
+    rad, theta = state[1], state[2]
+    sig, tri = rad**2 + (a**2)*(np.cos(theta)**2), rad**2 - 2*rad + a**2
+
+    p_r = np.array([energy, 0, a*(a*energy - lmom)])
+    r_r = np.array([energy**2 - 1, 2, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*((a*energy - lmom)**2 + cart), -cart*(a**2)])
+    the_the = np.array([(a**2)*(1 - energy**2), 0, - (cart + (a**2)*(1 - energy**2) + lmom**2), 0, cart])
+    
+    tlam = -a*(a*energy*(np.sin(theta)**2) - lmom) + ((rad**2 + a**2)/tri)*np.polyval(p_r, rad)
+    rlam = np.sqrt(abs(np.polyval(r_r, rad)))
+    cothelam = np.sqrt(abs(np.polyval(the_the, np.cos(theta))))
+    thelam = (-1/np.sin(theta))*cothelam
+    philam = -( a*energy - ( lmom/(np.sin(theta)**2) ) ) + (a/tri)*np.polyval(p_r, rad)
+    
+    ttau = tlam/sig
+    rtau = rlam/sig
+    thetau = thelam/sig
+    phitau = philam/sig
+    
+    #sign correction and initialization
+    if (len(state) != 8):
+        rtau = abs(rtau) * -1
+        thetau = abs(thetau) * -1
+        new_state = np.zeros(8)
+        new_state[:4] = state[:4]
+    else:
+        roots = np.sort(np.roots(r_r))
+        '''
+        #If current radius is between the inner and outer turning points, maintain direction
+        if (rad - roots[-2])*(roots[-1] - rad) > 0:
+            direc = np.sign(state[5])
+        #If current radius is somehow outside that range, follow the potential to go back in
+        else:
+            direc = np.sign(np.polyval(np.polyder(r_r), rad))
+        '''
+        direc = np.sign(state[5])
+        rtau = abs(rtau) * direc
+        thetau = abs(thetau) * np.sign(state[6])
+        new_state = np.copy(state)
+        
+    new_state[4:] = np.array([ttau, rtau, thetau, phitau])
+    return new_state
+
+
 import statistics as st
 import time
 def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, trigger=2, override=False, bonk2=True, skip_tar=0, nofix=True):
@@ -294,9 +361,9 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
         "plunge": 'True' if simulation ended in a plunge, False otherwise
         "issues": index and state corresponding to any point where Keplerian values read as complex
     '''
-    termdict = {"time": "all_states[i][0] - all_states[0][0]",
-                "phi_orbit": "abs(all_states[i][3]/(2*np.pi)) - abs(all_states[0][3]/(2*np.pi))",
-                "rad_orbit": "(true_anom[i] - true_anom[0])/(2*np.pi)",
+    termdict = {"time": "abs(all_states[i][0] - all_states[0][0])",
+                "phi_orbit": "abs(abs(all_states[i][3]/(2*np.pi)) - abs(all_states[0][3]/(2*np.pi)))",
+                "rad_orbit": "abs((true_anom[i] - true_anom[0])/(2*np.pi))",
                 "radius": "all_states[i][1]",
                 "inclination": "tracker[j][2]",
                 "semilat": "2*tracker[j][3]*tracker[j][4]/(tracker[j][3] + tracker[j][4])",
@@ -461,6 +528,8 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
     
     #Main Loop
     dTau = 0.1*np.abs(np.real((inner_turn/200)**(2)))
+    if "dumb" in label:
+        dTau *= -1
     dTau_change = [dTau]                                                #create dTau tracker
     borken = 0
     initflagval = eval(termdict[terms[0]])
@@ -476,6 +545,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
     confull = []
     upfull = []
     skip_count = 0
+    gorf = 0
     while (not(eval(newflag)) and (i < 10**7 or override)):
         try:
             update = False
@@ -497,7 +567,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
 
             #break if something stops making sense
             if (np.nan in state or constants[j][0] < 0) or (np.isnan(state[0])):
-                print("HEWWO")
+                print("HEWWO", np.nan in state, constants[j][0] < 0, np.isnan(state[0]))
                 plunge = True
                 unbind = True
                 break
@@ -506,10 +576,24 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             old_dTau = dTau
             skip = False
             rkcount = time.time()
+            counter = 0
             while ((err_calc >= err_target) or (first == True)) and (skip == False):
+                counter += 1
+                if counter%20 == 0:
+                    print(f"A lot! {counter}")
                 # Generate 4th and 5th order calculations for next step
-                new_step = mm.gen_RK2(*mm.ck4_2, mm.kerr_2, state, dTau, a)
-                step_check = mm.gen_RK2(*mm.ck5_2, mm.kerr_2, state, dTau, a) 
+                if "fool1" in label:
+                    step_check = mm.gen_RK2(*mm.ck4_2, mm.kerr_2, state, dTau, a)
+                    new_step = mm.gen_RK2(*mm.ck5_2, mm.kerr_2, state, dTau, a)
+                elif "fool2" in label:
+                    step_check = mm.gen_RK2(*mm.rkf4_2, mm.kerr_2, state, dTau, a)
+                    new_step = mm.gen_RK2(*mm.rkf5_2, mm.kerr_2, state, dTau, a)
+                else:
+                    new_step = mm.gen_RK2(*mm.ck4_2, mm.kerr_2, state, dTau, a)
+                    step_check = mm.gen_RK2(*mm.ck5_2, mm.kerr_2, state, dTau, a) 
+                if "ridic" in label:
+                    new_step = mm.recalc_state(constants[j], new_step, a)
+                    step_check = mm.recalc_state(constants[j], step_check, a)
                 # Calculate the error
                 mod_new = np.array([*new_step[1:3], *new_step[4:]])
                 mod_check = np.array([*step_check[1:3], *step_check[4:]])
@@ -524,13 +608,17 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
                     new_step[6] = -new_step[6]
                 # Get new dTau value 
-                old_dTau, dTau = dTau, min(dTau * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
-                if dTau <= 0.0:
+                old_dTau, dTau = dTau, np.sign(dTau)*min(abs(dTau) * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
+                if "stupid" in label and (np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change)):
+                    dTau *= 10
+                if ((-1)**("dumb" in label))*dTau <= 0.0:
                     err_calc = 1
+                    print("a")
                     dTau = old_dTau
-                if new_step[0] - state[0] < 0:
+                if ((-1)**("dumb" in label))*(new_step[0] - state[0]) < 0:
                     err_calc = 1
                     dTau = 10*abs(old_dTau)
+                    print("b")
                 if new_step[0] - state[0] > 100 and new_step[0] - state[0] < 100:
                     print("what the hell??")
                     print(dTau)
@@ -542,9 +630,11 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     oof = input("Type x to try unfucking this: ")
                     if "x" in oof:
                         err_calc = 1
+                        print("c")
                 if np.isnan(np.sum(new_step)):
                     err_calc = 1
                     dTau = old_dTau*0.9
+                    print("d", new_step, step_check)
                 first = False
             rkfull.append(time.time() - rkcount)
             metric = mm.kerr(new_step, a)[0]
@@ -566,6 +656,21 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                 new_step = np.copy(og_new_step)
             if looper > 0:
                 issues.append((i, new_step[0]))
+
+            if "stupid" in label and i%5==0:
+                E, L, C = constants[j]
+                LC = np.sqrt(L**2 + C)
+                ang = np.cosh(np.arccos(np.sqrt(C)/LC))
+                E1, L1, C1 = getCons_2(new_step, a)
+                LC1 = np.sqrt(L1**2 + C1)
+                ang1 = np.cosh(np.arccos(np.sqrt(C1)/LC1))
+                thing = np.array([(E - E1)/E, (LC - LC1)/LC, (ang - ang1)/ang])
+                thing1 = np.abs(thing[~np.isnan(thing)])
+                #print(thing)
+                if len(np.where(thing1 > err_target)[0]) > 0:
+                    #print(thing)
+                    new_step = mm.recalc_state(constants[j], new_step, a)
+                    gorf += 1
 
             #constant modifying section
             R0, ECC = 0.5*(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
@@ -620,12 +725,8 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     constants[j] = [newE, newLz, newC]
                     tracker[j] = [pot_min, e, inc, inner_turn, outer_turn, new_step[0], i]
                     qarter[j] = newQ
-                    
                     #freqs.append(mm.freqs_finder(newE, newLz, newC, a))
                 else:
-                    
-                    #constants.append(ch_cons)
-                    
                     turns, flats, zs = mm.root_getter(*ch_cons, a)
                     pot_min = flats[-1]
                     inner_turn, outer_turn = turns[-2:]
@@ -752,6 +853,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             print("upstats: min %s, max %s, mean %s, stdev%s, median %s, mode %s, total %s"%(min(upfull), max(upfull), np.mean(upfull), np.std(upfull), np.median(upfull), st.mode(upfull), np.sum(upfull)))
         except:
             print("stats borken")
+    #print(f"Steps:{len(all_states)}, Corrections:{gorf}")
     final = {"name": label,
              "raw": all_states,
              "inputs": inputs,

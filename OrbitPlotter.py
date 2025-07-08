@@ -387,7 +387,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
         
         if ((type(xvalue) == str) and (xvalue in termdict)) and ((type(yvalue) == str) and (yvalue in termdict)):
             xstuff = [eval(termdict[xvalue][0]), termdict[xvalue][1], eval(termdict[xvalue][2])]
-            ystuff = [eval(termdict[yvalue][0]), termdict[yvalue][1], eval(termdict[yyvalue][2])]
+            ystuff = [eval(termdict[yvalue][0]), termdict[yvalue][1], eval(termdict[yvalue][2])]
             title = "%s vs %s"%(termdict[yvalue][1], termdict[xvalue][1])
             title_add = ""
             if len(xstuff[0]) == len(ystuff[0]):

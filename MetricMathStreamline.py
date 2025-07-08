@@ -11,6 +11,8 @@ import scipy.integrate as integrate
 import matplotlib.pyplot as plt
 import sympy as sp
 from numba import njit
+import OrbitPlotter as op
+import warnings
 
 def find_rmb(spin):
     '''
@@ -699,6 +701,24 @@ ck4_2 = [np.array([1/5, 3/10, 3/5, 1, 7/8]),  #nodes
                  [    -11/54,     5/2,    -70/27,        35/27,        0],
                  [1631/55296, 175/512, 575/13824, 44275/110592, 253/4096]])]    
 
+#Butcher table for 4th order Runge-Kutta-Fehlberg method
+rkf4_2 = [np.array([1/4, 3/8, 12/13, 1, 1/2]),  #nodes
+       np.array([16/135, 0, 6656/12825, 28561/56430, -9/50, 2/55]), #weights
+       np.array([[       1/4,          0,          0,            0,     0], #coefficients
+                 [      3/32,       9/32,          0,            0,     0], 
+                 [ 1932/2197, -7200/2197,  7296/2197,            0,     0], 
+                 [   439/216,         -8,   3680/513,    -845/4104,     0],
+                 [     -8/27,          2, -3544/2565,    1859/4104, 11/40]])]    
+
+#Butcher table for 5th order Runge-Kutta-Fehlberg method
+rkf5_2 = [np.array([1/4, 3/8, 12/13, 1, 1/2]),  #nodes
+       np.array([25/216, 0, 1408/2565, 2197/4104, -1/5, 0]), #weights
+       np.array([[       1/4,          0,          0,            0,     0], #coefficients
+                 [      3/32,       9/32,          0,            0,     0], 
+                 [ 1932/2197, -7200/2197,  7296/2197,            0,     0], 
+                 [   439/216,         -8,   3680/513,    -845/4104,     0],
+                 [     -8/27,          2, -3544/2565,    1859/4104, 11/40]])]  
+
 def gen_RK(butcher, solution, state, dTau, *args):
     '''
     gen_RK function applies a given Runge-Kutta method to calculate whatever the new state
@@ -802,6 +822,75 @@ def recalc_state(constants, state, a):
         4-position and 4-velocity of the test particle
     '''
     energy, lmom, cart = constants[0], constants[1], constants[2]
+    rad, theta = state[1], state[2]
+    sig, tri = rad**2 + (a**2)*(np.cos(theta)**2), rad**2 - 2*rad + a**2
+
+    p_r = np.array([energy, 0, a*(a*energy - lmom)])
+    r_r = np.array([energy**2 - 1, 2, (a**2)*(energy**2 - 1) - lmom**2 - cart, 2*((a*energy - lmom)**2 + cart), -cart*(a**2)])
+    the_the = np.array([(a**2)*(1 - energy**2), 0, - (cart + (a**2)*(1 - energy**2) + lmom**2), 0, cart])
+    
+    tlam = -a*(a*energy*(np.sin(theta)**2) - lmom) + ((rad**2 + a**2)/tri)*np.polyval(p_r, rad)
+    rlam = np.sqrt(abs(np.polyval(r_r, rad)))
+    cothelam = np.sqrt(abs(np.polyval(the_the, np.cos(theta))))
+    thelam = (-1/np.sin(theta))*cothelam
+    philam = -( a*energy - ( lmom/(np.sin(theta)**2) ) ) + (a/tri)*np.polyval(p_r, rad)
+    
+    ttau = tlam/sig
+    rtau = rlam/sig
+    thetau = thelam/sig
+    phitau = philam/sig
+    
+    #sign correction and initialization
+    if (len(state) != 8):
+        rtau = abs(rtau) * -1
+        thetau = abs(thetau) * -1
+        new_state = np.zeros(8)
+        new_state[:4] = state[:4]
+    else:
+        roots = np.sort(np.roots(r_r))
+        '''
+        #If current radius is between the inner and outer turning points, maintain direction
+        if (rad - roots[-2])*(roots[-1] - rad) > 0:
+            direc = np.sign(state[5])
+        #If current radius is somehow outside that range, follow the potential to go back in
+        else:
+            direc = np.sign(np.polyval(np.polyder(r_r), rad))
+        '''
+        direc = np.sign(state[5])
+        rtau = abs(rtau) * direc
+        thetau = abs(thetau) * np.sign(state[6])
+        new_state = np.copy(state)
+        
+    new_state[4:] = np.array([ttau, rtau, thetau, phitau])
+    return new_state
+
+def recalc_state2(constants, state, a):
+    '''
+    Calculates a new state vector based on a given position and constants of motion
+
+    Parameters
+    ----------
+    constants : 3-element list/array of floats
+        energy, angular momentum, and carter constant per unit mass
+    state : 8 or 4 element list/numpy array
+        4-position and 4-velocity of the test particle at a particular moment
+        Only the 4-position is explicitly required, not specifying the 4-velocity will make the resulting vector default to decreasing r and theta
+        specifying the 4 velocity will maintain the r and theta directions
+    dTau : float
+        proper time between current state and state-to-be-calculated
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    new_state : 8 element numpy array
+        4-position and 4-velocity of the test particle
+    '''
+    energy, lmom, cart = constants[0], constants[1], constants[2]
+    if abs(cart) < 1e-11:
+        cart = 0.0
+    if abs(lmom) < 1e-15:
+        lmom = 0.0
     rad, theta = state[1], state[2]
     sig, tri = rad**2 + (a**2)*(np.cos(theta)**2), rad**2 - 2*rad + a**2
 
@@ -2418,7 +2507,7 @@ def new_recalc_state9j(cons, con_derv, state, a):
                                         #I actually don't think I need to make that correction
 
     # Step 5
-    C = C0 + dC
+    C = max(C0 + dC, 0.0)
 
     # Step 6
     new_state = recalc_state([E, L, C], state, a)
@@ -3739,7 +3828,7 @@ def is_in_ELC_region(E_test, L_test, C_test, a, tol=1e-4):
 
 def gair_glamp3(E, L, C, a, q, endflag="False"):
     # matches glampedakis 2002
-    turns, flats, zs = mm.root_getter(E, L, C, a)
+    turns, flats, zs = root_getter(E, L, C, a)
     print(E, L, C)
     print(turns[-2:])
     p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
@@ -3758,12 +3847,12 @@ def gair_glamp3(E, L, C, a, q, endflag="False"):
     vals = [[0, E, L, C, p, e, cosi, *turns]]
     oldp = p
     mult = 0
-    while (np.abs(np.imag(p)/np.real(p)) < 1e-3 and np.real(p)/(1 + np.real(e)) > mm.find_rmb(a)) and not eval(endflag):
+    while (np.abs(np.imag(p)/np.real(p)) < 1e-3 and np.real(p)/(1 + np.real(e)) > find_rmb(a)) and not eval(endflag):
         E_dot = -(32/5)*(q**2)*(p**-5)*((1 - e**2)**1.5)*(f1(e) - a*(p**-1.5)*cosi*f2(e))
         L_dot = -(32/5)*(q**2)*(p**-3.5)*((1 - e**2)**1.5)*(cosi*f3(e) + a*(p**-1.5)*(f4(e) - cosi*cosi*f5(e)))
         C_dot = 2*C*L_dot/L
         E, L, C = np.real([E + E_dot*dt, L + L_dot*dt, C + C_dot*dt])
-        turns, flats, zs = mm.root_getter(E, L, C, a)
+        turns, flats, zs = root_getter(E, L, C, a)
         #print(turns)
         p_1, e_1 = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
         #print(p_1, e_1,"hey?")
@@ -3789,10 +3878,11 @@ def gair_glamp3(E, L, C, a, q, endflag="False"):
 def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
     #Matches gair + glampedakis 2006
     turns, flats, zs = root_getter(E, L, C, a)
-    print(E, L, C)
-    print(turns[-2:])
+    print(E, L, C, "yoooo")
+    #print(turns[-2:])
     p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
-    print(p)
+    #print(p)
+    inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
     cosi = L/np.sqrt(C + L**2)
     r0 = p/(1 - e**2)
     f1 = lambda x: 1 + (73/24)*(x**2) + (37/96)*(x**4)
@@ -3802,7 +3892,7 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
     f5 = lambda x: 61/8 + (91/4)*(x**2) + (461/64)*(x**4)
     f6 = lambda x: 85/8 + (211/8)*(x**2) + (517/64)*(x**4)
     b = (64/5)*q*(1+q)
-    vals = [[0, E, L, C, p, e, cosi, *turns]]
+    vals = [[0, E, L, C, p, e, inc, cosi, *turns[-2:]]]
     oldp = p
     mult = 0
     dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
@@ -3813,7 +3903,7 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
         return (2/np.pi)*a*(np.arccos((x/b)**c) - np.pi/2) + 1
     def funcret(x, a, b, c):
         return (2/np.pi)*a*(np.arccos((x/b)**c) - np.pi/2) - 1
-    while (np.abs(np.imag(p)/np.real(p)) < 1e-3 and np.real(p)/(1 + np.real(e)) > mm.find_rmb(a)) and not eval(endflag):
+    while (np.abs(np.imag(p)/np.real(p)) < 1e-3 and np.real(p)/(1 + np.real(e)) > find_rmb(a)) and not eval(endflag):
         E_dot = lambda peri, ecc, cosinc: -(32/5)*(q**2)*(peri**-5)*((1 - ecc**2)**1.5)*(f1(ecc) - a*(peri**-1.5)*cosinc*f2(ecc))
         L_dot = lambda peri, ecc, cosinc: -(32/5)*(q**2)*(peri**-3.5)*((1 - ecc**2)**1.5)*(cosinc*f3(ecc) + a*(peri**-1.5)*(f4(ecc) - cosinc*cosinc*f5(ecc)))
         #C_dot = lambda peri, ecc, cosinc: 2*C*L_dot(peri, ecc, cosinc)/L
@@ -3822,7 +3912,9 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
         
         p_0 = np.real(p)
         if 1 - abs(cosi) > 1e-8:
-            C_max = min(np.roots([a**2, -(p_0-3)*(p_0**3), p_0**5]))
+            C_max = (p_0**2)*np.polyval([1, 0, 2*a*a, -4*a*a, a**4], p_0)/((p_0**2 + a**2)*np.polyval([1, -3, a*a, a*a], p_0))
+            if np.iscomplex(C_max):
+                print(C_max, p_0, p, a, "wagga")
             Cs = np.linspace(0, 0.99*C_max, 100)
             Cs = np.linspace(0, min(C*1.1, C_max), 100)
             cosis = circL2(p_0, a, Cs, np.sign(cosi))/np.sqrt(Cs + circL2(p_0, a, Cs, np.sign(cosi))**2)
@@ -3831,10 +3923,22 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
             Cs = np.linspace(C_0*0.95, min(C_0*1.05, C_max), 100)
             cosis = circL2(p_0, a, Cs, np.sign(cosi))/np.sqrt(Cs + circL2(p_0, a, Cs, np.sign(cosi))**2)
             mask = np.where(np.isnan(cosis) == False)[0]
-            oop = np.polyfit(cosis[mask], Cs[mask], 6)
+            n = 6
+            bad = True
+            warnings.filterwarnings('error')
+            while bad:
+                try:
+                    oop = np.polyfit(cosis[mask], Cs[mask], n)
+                    bad = False
+                except np.exceptions.RankWarning:
+                    n -= 1
             C_0 = np.polyval(oop, cosi)
             if C_0 > C_max:
-                print("AAA")
+                print("AAA", cosi)
+                print(cosis[mask])
+                print(Cs[mask])
+                print(p_0, a, E, L, C, C_0, C_max)
+                break
         else:
             C_0 = C
         
@@ -3851,7 +3955,7 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
             break
         E, L, C = np.real([E + E_dot_true*dt, L + L_dot(p, e, cosi)*dt, C + C_dot(p, e, cosi)*dt])
         try:
-            turns, flats, zs = mm.root_getter(E, L, C, a)
+            turns, flats, zs = root_getter(E, L, C, a)
         except:
             print(E, L, C, a)
             print("IT BORKE")
@@ -3879,8 +3983,25 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
             mult -= 0.1
             mult = max(mult, 0)
             dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
-            vals.append([vals[-1][0] + dt, E, L, C, p, e, cosi, *turns])
+            vals.append([vals[-1][0] + dt, E, L, C, p, e, inc, cosi, *turns[-2:]])
             if p < (9/10)*oldp:
                 #print(p, "new")
                 oldp = p
-    return np.array(vals)
+    '''print(len(vals[0]), len(vals[10]), len(vals[-1]))
+    print(np.array(vals[0]))
+    print(np.array(vals[10]))
+    print(np.array(vals[-1]))
+    for gerf in range(len(vals[0])):
+        print(len([thing[gerf] for thing in vals]))'''
+    vals = np.array(vals)
+    dct = {"time": vals[:, 0],
+           "energy": vals[:, 1],
+           "phi_momentum": vals[:, 2],
+           "carter": vals[:, 3],
+           "p": vals[:, 4],
+           "e": vals[:, 5],
+           "inc": vals[:, 6],
+           "cosi": vals[:, 7],
+           "it": vals[:, 8],
+           "ot": vals[:, 9]}
+    return dct
