@@ -312,8 +312,10 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         energy, angular momentum, and carter constant per unit mass
     '''
     if np.shape(cons) == (3,):
+        cons = np.real(cons)
         #print("Calculating initial velocity from constants E,L,C")
         if np.shape(pos) == (4,):
+            pos = np.real(pos)
             new = recalc_state(cons, pos, a)
         else:
             E, L, C = cons
@@ -323,6 +325,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             pos = [0.0, flats[-1], np.pi/2, 0.0]
             new = recalc_state(cons, pos, a)
     elif (np.shape(velorient) == (3,)) and np.shape(pos) == (4,):
+        velorient, pos = np.real(velorient), np.real(pos)
         #print("Calculating intial velocity from tetrad velocity and orientation")
         beta, eta, xi = velorient
         #eta is radial angle - 0 degrees is radially outwards, 90 degrees is in the phi direction
@@ -349,6 +352,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         new = np.matmul(tetrad_matrix, tilde)
         new = np.array([*pos, *new])
     elif (np.shape(vel4) == (4,)) and np.shape(pos) == (4,):
+        vel4, pos = np.real(vel4), np.real(pos)
         #print("Calculating initial velocity from tetrad component velocities")
         r, theta = pos[1], pos[2]
         metric, chris = kerr(pos, a)
@@ -377,6 +381,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         tilde = np.array([gamma, gamma*rdot, gamma*thetadot, gamma*phidot])
         new = np.matmul(tetrad_matrix, tilde)
     elif np.shape(params) == (3,):
+        params = np.real(params)
         #print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
         cons = schmidtparam3(*params, a)
         if cons == False:
@@ -387,7 +392,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
     else:
         print("Insufficent information provided, begone")
         new = np.array([0.0, 2000000.0, np.pi/2, 0.0, 7.088812050083354, -0.99, 0.0, 0.0])
-    if cons == False:
+    if np.shape(cons) != (3,):
         metric, chris = kerr(new, a)
         energy = -np.matmul(new[4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
         lz = np.matmul(new[4:], np.matmul(metric, [0, 0, 0, 1]))         #initial angular momentum
@@ -2321,7 +2326,7 @@ def new_recalc_state8(cons, con_derv, state, a):
     thing = 1e10
     tog = 0
     #print(target)
-    while np.linalg.norm(hold) > 6e-15:
+    while thing > 6e-15:
         thing = np.linalg.norm(hold)
         eps = 1e-8 #np.sqrt(abs(max(hold)))
 
@@ -3239,6 +3244,59 @@ def new_recalc_state10(cons, con_derv, state, a):
 
     return holdstate, [newE, newLz, newC]
 
+def new_recalc_state10b(cons, con_derv, state, a):
+    metric, chris = kerr(state, a)
+    E0 = -np.matmul(metric, state[4:])[0]
+    r, theta, phi = state[1:4]
+    sint, cost, sinp, cosp = np.sin(theta), np.cos(theta), np.sin(phi), np.cos(phi)
+    rho2, tri = r**2 + (a**2)*(cost**2), r**2 - 2*r + a**2
+    al2 = (rho2*tri)/(rho2*tri + 2*r*(a**2 + r**2))
+    w = (2*r*a)/(rho2*tri + 2*r*(a**2 + r**2))
+    wbar2 = ((rho2*tri + 2*r*(a**2 + r**2))/rho2)*(sint**2)
+    tet2kerr = np.array([[1/np.sqrt(al2), 0.0,               0.0,             0.0],
+                         [0.0,            np.sqrt(tri/rho2), 0.0,             0.0],
+                         [0.0,            0.0,               1/np.sqrt(rho2), 0.0],
+                         [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
+    tetrad = np.linalg.solve(tet2kerr, state[4:])
+    tetcart = np.array([*tetrad[:2], tetrad[3], -tetrad[2]])
+    vel, cartpos = tetcart[1:]/tetcart[0], np.array([r*sint*cosp, r*sint*sinp, r*cost])
+    L0 = np.cross(cartpos, vel)
+    A, eps = np.zeros((4,3)), 1e-7
+    loop, err, target = 0, 100, np.array([E0, *L0]) + con_derv
+    diff = con_derv
+    
+    def getNewCons(j, vel, eps):
+        intvel = np.array([0.0,0.0,0.0])
+        intvel[j] += eps
+        intL, gamma = np.cross(cartpos, intvel+vel), 1/np.sqrt(1 - np.linalg.norm(intvel + vel)**2)
+        inttetrad = gamma*np.array([1, intvel[0], -intvel[2], intvel[1]])
+        intkerr = np.matmul(tet2kerr, inttetrad)
+        intE = -np.matmul(metric, intkerr)[0]
+        return np.array([intE - E0, *(intL - L0)])/eps
+    
+    while err > 1e-5 and loop < 100:
+        A[:,0], A[:,1], A[:,2] = getNewCons(0, vel, eps), getNewCons(1, vel, eps), getNewCons(2, vel, eps)
+        dvel = np.linalg.solve(np.matmul(np.transpose(A), A), np.matmul(np.transpose(A), diff))
+        vel = vel + dvel
+        gamma, newL = 1/np.sqrt(1 - np.linalg.norm(vel)**2), np.cross(cartpos, vel)
+        newtetrad = gamma*np.array([1, vel[0], -vel[2], vel[1]])
+        newkerr = np.matmul(tet2kerr, newtetrad)
+        newE = -np.matmul(metric, newkerr)[0]        #initial energy
+        err = 100*np.linalg.norm((np.array([newE, *newL]) - target)/target)
+        #print(np.array([newE, *newL]), err)
+        loop += 1
+        diff = target - np.array([newE, *newL])
+    #print("___")
+    #print(target)
+    #print(np.array([newE, *newL]))
+    #print(np.linalg.norm(con_derv)**2)
+    holdstate = np.array([*state[0:4], *newkerr])
+    newLz = np.matmul(metric, newkerr)[3]        #initial angular momentum
+    newQ = np.matmul(np.matmul(kill_tensor(holdstate, a), newkerr), newkerr)
+    newC = newQ - (a*newE - newLz)**2  
+
+    return holdstate, [newE, newLz, newC]
+
 def new_recalc_state11(cons, con_derv, state, a, mu, path):
     '''
     Calculates new state vector from current state and change in orbital constants
@@ -3684,7 +3742,10 @@ def seper_locator(r0, inc, a):
     return [E, L, C], e
 
 def root_getter(E, L, C, spin):
-    a, b, c, d, e = np.array([(E**2 - 1.0), 2.0, ((spin**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - spin*E)**2) + 2*C), -(spin**2)*C]).astype(complex)
+    E, L, C = np.fix(1e13*np.array([E, L, C]))*1e-13
+    a, b, c, d, e = np.array(np.fix(1e12*np.array([(E**2 - 1.0), 2.0, ((spin**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - spin*E)**2) + 2*C), -(spin**2)*C]))*1e-12).astype(complex)
+    #print(E, L, C, spin, L**2 + C)
+    #print(a, b, c, d, e)
     p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
     p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
     p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
@@ -3695,12 +3756,13 @@ def root_getter(E, L, C, spin):
     x2 = -b/(4*a) - p4/2 + 0.5*((p5 - p6)**0.5)
     x3 = -b/(4*a) + p4/2 - 0.5*((p5 + p6)**0.5)
     x4 = -b/(4*a) + p4/2 + 0.5*((p5 + p6)**0.5) 
-    turns = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in [x1, x2, x3, x4]]).astype(complex)
+    turns = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in [x1, x2, x3, x4]])
     
     flats = np.roots(np.polyder([a,b,c,d,e])) #np.roots([4*a,3*b,2*c,d])
-    flats = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in flats]).astype(complex)
+    flats = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in flats])
     
-    a, b, c, d, e = np.array([(a**2)*(1 - E**2), 0.0, -(C + (a**2)*(1 - E**2) + L**2), 0.0, C]).astype(complex)
+    #print(np.array([(a**2)*(1 - E**2), 0.0, -(C + (a**2)*(1 - E**2) + L**2), 0.0, C]))
+    a, b, c, d, e = np.array(np.fix(1e13*np.array([(a**2)*(1 - E**2), 0.0, -(C + (a**2)*(1 - E**2) + L**2), 0.0, C]).real)*1e-13).astype(complex)
     p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
     p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
     p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
@@ -3711,7 +3773,7 @@ def root_getter(E, L, C, spin):
     x2 = -b/(4*a) - p4/2 + 0.5*((p5 - p6)**0.5)
     x3 = -b/(4*a) + p4/2 - 0.5*((p5 + p6)**0.5)
     x4 = -b/(4*a) + p4/2 + 0.5*((p5 + p6)**0.5) 
-    zs = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-5 else num for num in [x1, x2, x3, x4]]).astype(complex)
+    zs = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-5 else num for num in [x1, x2, x3, x4]])
     
     return np.round(np.sort(turns), 10), np.round(np.sort(flats), 10), np.round(np.sort(zs), 10)
 
@@ -3752,29 +3814,43 @@ def root_getter_vec(E, L, C, spin):
 def sig_q(r, a, inc):
     return r**2 + (a*np.cos(inc))**2, np.sqrt(r**2 - (a*np.cos(inc))**2)
 
-def circE_inc(r, a, inc, p=1):
+def circE_inc(r, a, inc):
+    p = 1 if a >= 0 else -1
+    a = abs(a)
     sig, q = sig_q(r, a, inc)
     denom = np.sqrt(1 - 3*r/sig + p*2*a*q*np.sin(inc)/(sig*np.sqrt(r)) + ((a*np.cos(inc))**2)/(sig*r))
     numer = 1 - 2*r/sig + p*a*q*np.sin(inc)/(sig*np.sqrt(r))
     return numer / denom
 
-def circL_inc(r, a, inc, p=1):
+def circL_inc(r, a, inc):
+    p = 1 if a >= 0 else -1
+    a = abs(a)
     sig, q = sig_q(r, a, inc)
     denom = np.sqrt(1 - 3*r/sig + p*2*a*q*np.sin(inc)/(sig*np.sqrt(r)) + ((a*np.cos(inc))**2)/(sig*r))
     numer = p*q*(r**2 + a**2)*np.sin(inc)/(sig*np.sqrt(r)) - 2*a*r*(np.sin(inc)**2)/sig
     return numer / denom
 
+def circC_inc(r, a, inc):
+    E, L = circE_inc(r, a, inc), circL_inc(r, a, inc)
+    tri = r**2 - 2*r + a**2
+    C = (((r**2 + a**2)*E - a*L)**2)/tri - r**2 - (L - a*E)**2
+    return C
+
 def Yfunc(r, a, C):
     return r**5 - C*(r - 3)*r**3 + (a*C)**2
 
-def circE_C(r, a, C, p=1):
+def circE_C(r, a, C):
+    p = 1 if a >= 0 else -1
+    a = abs(a)
     Y = Yfunc(r, a, C)
     sqrt_Y = np.sqrt(Y)
     denom = (r**2) * np.sqrt(r**3*(r - 3) - 2*a*(a*C - p*sqrt_Y))
     numer = r**3*(r - 2) - a*(a*C - p*sqrt_Y)
     return numer / denom
 
-def circL_C(r, a, C, p=1):
+def circL_C(r, a, C):
+    p = 1 if a >= 0 else -1
+    a = abs(a)
     Y = Yfunc(r, a, C)
     sqrt_Y = np.sqrt(Y)
     denom = (r**2) * np.sqrt(r**3*(r - 3) - 2*a*(a*C - p*sqrt_Y))
@@ -3798,8 +3874,8 @@ def get_EL_curve(a, C, rmax=100.0, npts=1000):
     r = r[valid]
     if len(r) == 0:
         return None, None
-    E_1, E_2 = circE_C(r, a, C, 1), circE_C(r, a, C, -1)
-    L_1, L_2 = circL_C(r, a, C, 1), circL_C(r, a, C, -1)
+    E_1, E_2 = circE_C(r, a, C), circE_C(r, -a, C)
+    L_1, L_2 = circL_C(r, a, C), circL_C(r, -a, C)
     return E_1, L_1, E_2, L_2
 
 def is_in_ELC_region(E_test, L_test, C_test, a, tol=1e-4):
@@ -3893,6 +3969,7 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
     f6 = lambda x: 85/8 + (211/8)*(x**2) + (517/64)*(x**4)
     b = (64/5)*q*(1+q)
     vals = [[0, E, L, C, p, e, inc, cosi, *turns[-2:]]]
+    #print(vals[0])
     oldp = p
     mult = 0
     dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
@@ -3916,11 +3993,17 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
             if np.iscomplex(C_max):
                 print(C_max, p_0, p, a, "wagga")
             Cs = np.linspace(0, 0.99*C_max, 100)
-            Cs = np.linspace(0, min(C*1.1, C_max), 100)
+            Cs = np.linspace(0, min(C*1.1, 0.99*C_max), 100)
+            '''print("skirp", C*1.1, C_max)
+            print("yo", p_0)
+            print("sko", Cs)
+            print("C", Yfunc(p_0, a, Cs))
+            print("B", Cs, circL2(p_0, a, Cs, np.sign(cosi))**2)
+            print("A", Cs + circL2(p_0, a, Cs, np.sign(cosi))**2)'''
             cosis = circL2(p_0, a, Cs, np.sign(cosi))/np.sqrt(Cs + circL2(p_0, a, Cs, np.sign(cosi))**2)
             mask = np.where(np.isnan(cosis) == False)[0]
             C_0 = Cs[mask][op.get_index(cosis[mask], cosi)]
-            Cs = np.linspace(C_0*0.95, min(C_0*1.05, C_max), 100)
+            Cs = np.linspace(C_0*0.95, min(C_0*1.05, 0.99*C_max), 100)
             cosis = circL2(p_0, a, Cs, np.sign(cosi))/np.sqrt(Cs + circL2(p_0, a, Cs, np.sign(cosi))**2)
             mask = np.where(np.isnan(cosis) == False)[0]
             n = 6
@@ -3934,11 +4017,12 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
                     n -= 1
             C_0 = np.polyval(oop, cosi)
             if C_0 > C_max:
-                print("AAA", cosi)
-                print(cosis[mask])
-                print(Cs[mask])
-                print(p_0, a, E, L, C, C_0, C_max)
-                break
+                #print("AAA", cosi)
+                #print(cosis[mask])
+                #print(Cs[mask])
+                #print(p_0, a, E, L, C, C_0, C_max)
+                #break
+                C_0 = C_max
         else:
             C_0 = C
         
@@ -3993,7 +4077,7 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
     print(np.array(vals[-1]))
     for gerf in range(len(vals[0])):
         print(len([thing[gerf] for thing in vals]))'''
-    vals = np.array(vals)
+    vals = np.real(np.array(vals))
     dct = {"time": vals[:, 0],
            "energy": vals[:, 1],
            "phi_momentum": vals[:, 2],
@@ -4004,4 +4088,177 @@ def gair_glamp5(E, L, C, a, q, mult_min=4, endflag="False"):
            "cosi": vals[:, 7],
            "it": vals[:, 8],
            "ot": vals[:, 9]}
+    return dct
+
+def gair_glamp6(a, q, cons=False, params=False, mult_min=4, endflag="False"):
+    #doesn't work for polar orbits
+    if cons == False and params == False:
+        print("Not enough info")
+        return False
+    elif params == False:
+        E, L, C = cons
+        turns, flats, zs = root_getter(E, L, C, a)
+        p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+        inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+        r0 = p/(1 - e**2)
+    else:
+        r0, e, inc = params
+        p = r0*(1 - e**2)
+        E, L, C = schmidtparam3(r0, e, inc, a)
+        turns, flats, zs = root_getter(E, L, C, a)
+    cosi = L/np.sqrt(C + L**2)
+
+    f1 = lambda x: 1 + (73/24)*(x**2) + (37/96)*(x**4)
+    f2 = lambda x: 73/12 + (823/24)*(x**2) + (949/32)*(x**4) + (491/192)*(x**6)
+    f3 = lambda x: 1 + (7/8)*(x**2)
+    f4 = lambda x: 61/24 + (63/8)*(x**2) + (95/64)*(x**4)
+    f5 = lambda x: 61/8 + (91/4)*(x**2) + (461/64)*(x**4)
+    f6 = lambda x: 85/8 + (211/8)*(x**2) + (517/64)*(x**4)
+    b = (64/5)*q*(1+q)
+    vals = [[0, E, L, C, p, e, inc, cosi, *turns[-2:]]]
+
+    Edot_r = lambda p, e, a, cosi: (-32/5)*q*q*(p**-5)*((1 - e**2)**1.5)*(f1(e) - a*(p**-1.5)*cosi*f2(e))
+    Ldot_r = lambda p, e, a, cosi: (-32/5)*q*q*(p**-3.5)*((1 - e**2)**1.5)*(cosi*f3(e) + a*(p**-1.5)*(f4(e) - (cosi**2)*f5(e)))
+    Cdot_r = lambda p, e, a, cosi, L, C: 2*(C/L)*Ldot_r(p, e, a, cosi)
+    N1 = lambda E, L, a, r: E*(r**4) + a*a*E*r*r - 2*a*(L - a*E)*r
+    N2 = lambda E, L, a, r, cosi: -L*r*r/(cosi**2) + 2*(L/(cosi**2) - a*E)*r - a*a*L*(1 - cosi**2)/(cosi**2)
+    N3 = lambda E, L, a, r, cosi: (L*L*(np.sqrt(1 - cosi**2))/(cosi**3))*(r*(2 - r) - a*a)
+    N4 = lambda E, L, a, p: (2*p - p*p)*L - 2*a*E*p
+    N5 = lambda a, p: 0.5*(2*p - p*p - a*a)
+    Edot_true = lambda p, e, a, cosi, N1, N4, N5: ((1 - e**2)**1.5)*(((1 - e**2)**-1.5)*Edot_r(p, e, a, cosi) - Edot_r(p, 0.0, a, cosi) - (N4/N1)*Ldot_r(p, 0.0, a, cosi) - (N5/N1)*Cdot_r(p, 0.0, a, cosi, L, C))
+    Cdot_true = lambda p, e, a, cosi: (-64/5)*(q*q)*(p**-3)*((1 - e**2)**1.5)*(1 - cosi**2)*(f3(e) - a*(p**-1.5)*cosi*f6(e))
+
+    mult = 0
+    dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+
+    while (np.abs(np.imag(p)/np.real(p)) < 1e-3 and np.real(p)/(1 + np.real(e)) > find_rmb(a)) and not eval(endflag):
+        circE = circE_inc(p, a, inc)
+        circL = circL_inc(p, a, inc)
+        N1_val, N4_val, N5_val = N1(circE, circL, a, p), N4(circE, circL, a, p), N5(a, p)
+
+        newE = vals[-1][1] + dt*Edot_true(p, e, a, cosi, N1_val, N4_val, N5_val)
+        newL, newC = vals[-1][2] + dt*Ldot_r(p, e, a, cosi), vals[-1][3] + dt*Cdot_true(p, e, a, cosi)
+        new_cosi = L/np.sqrt(L**2 + C)
+        turns, flats, zs = root_getter(newE, newL, newC, a)
+        new_p, new_e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+        new_inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+
+        E, L, C, p, e, inc, cosi = newE, newL, newC, new_p, new_e, new_inc, new_cosi
+        vals.append([vals[-1][0] + dt, E, L, C, p, e, inc, cosi, *turns[-2:]])
+        dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+    
+    vals = np.real(np.array(vals))
+    dct = {"time": vals[:, 0],
+           "energy": vals[:, 1],
+           "phi_momentum": vals[:, 2],
+           "carter": vals[:, 3],
+           "p": vals[:, 4],
+           "e": vals[:, 5],
+           "inc": vals[:, 6],
+           "cosi": vals[:, 7],
+           "it": vals[:, 8],
+           "ot": vals[:, 9]}
+    return dct
+
+def gair_glamp7(E, L, C, a, q, mult_min=4, endflag="False"):
+    #Matches gair + glampedakis 2006
+    turns, flats, zs = root_getter(E, L, C, a)
+    p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+    inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+    cosi = L/np.sqrt(C + L**2)
+    r0 = p/(1 - e**2)
+    f1 = lambda x: 1 + (73/24)*(x**2) + (37/96)*(x**4)
+    f2 = lambda x: 73/12 + (823/24)*(x**2) + (949/32)*(x**4) + (491/192)*(x**6)
+    f3 = lambda x: 1 + (7/8)*(x**2)
+    f4 = lambda x: 61/24 + (63/8)*(x**2) + (95/64)*(x**4)
+    f5 = lambda x: 61/8 + (91/4)*(x**2) + (461/64)*(x**4)
+    f6 = lambda x: 85/8 + (211/8)*(x**2) + (517/64)*(x**4)
+    b = (64/5)*q*(1+q)
+    vals = [[0, E, L, C, p, e, inc, cosi, *turns[-2:]]]
+    oldp = p
+    mult = 0
+    dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+    def funcpro(x, a, b, c):
+        return (2/np.pi)*a*(np.arccos((x/b)**c) - np.pi/2) + 1
+    def funcret(x, a, b, c):
+        return (2/np.pi)*a*(np.arccos((x/b)**c) - np.pi/2) - 1
+    def adjust(num):
+        exp = np.floor(np.log10(num))
+        return (10**-exp)*(np.fix((10**exp)*num))
+    while (np.abs(np.imag(p)/np.real(p)) < 1e-3 and np.real(p)/(1 + np.real(e)) > find_rmb(a)) and not eval(endflag):
+        E_dot = lambda peri, ecc, cosinc: -(32/5)*(q**2)*(peri**-5)*((1 - ecc**2)**1.5)*(f1(ecc) - a*(peri**-1.5)*cosinc*f2(ecc))
+        L_dot = lambda p, e, cosi: (-32/5)*q*q*(p**-3.5)*((1 - e**2)**1.5)*(cosi*f3(e) + a*(p**-1.5)*(f4(e) - (cosi**2)*f5(e)))
+        Q_dot = lambda p, e, cosi: (-64/5)*(q*q)*(p**-3)*((1 - e**2)**1.5)*(f3(e) - a*(p**-1.5)*cosi*f6(e))
+        C_dot = lambda p, e, cosi, L: Q_dot(p, e, cosi) - 2*L_dot(p, e, cosi)*L
+        inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+        
+        p_0 = np.real(p)
+        
+        E_0, L_0 = circE_inc(p_0, a, inc), circL_inc(p_0, a, inc)
+
+        N1 = E_0*(p**4) + (a**2)*E_0*(p**2) - 2*a*(L_0 - a*E_0)*p
+        N4 = (2*p - p**2)*L_0 - 2*a*E_0*p
+        N5 = (2*p - p**2 - a**2)/2
+
+        #E_dot_true = ((1 - e**2)**1.5)*(((1 - e**2)**-1.5)*E_dot(p, e, cosi) - E_dot(p, 0, cosi) - (N4/N1)*L_dot(p, 0, cosi) - (N5/N1)*C_dot(p, 0, cosi))
+        E_dot_true = ((1 - e**2)**1.5)*(((1 - e**2)**(-1.5))*E_dot(p, e, cosi) - E_dot(p, 0, cosi) - (N4/N1)*L_dot(p, 0, cosi) - (N5/N1)*C_dot(p, 0.0, cosi, L_0))
+        #print(E_dot_true)
+        if not np.real(E_dot_true):
+            print(E_dot_true, "grah", E_dot(p, 0, cosi_0), L_dot(p, 0, cosi_0), C_dot(p, 0, cosi_0, L), len(vals))
+            break
+
+        if len(vals) <3:
+            print("yo", C_dot(p, e, cosi, L), Q_dot(p, e, cosi), - 2*L_dot(p, e, cosi)*L, p, (L*cosi)**2, 100*(p - (L*cosi)**2)/p)
+
+        #print(np.real([E + 0*E_dot_true*dt, L + 0*L_dot(p, e, cosi)*dt, C + 0*C_dot(p, e, cosi, L)*dt]))
+        #print(np.real([E + E_dot_true*dt, L + L_dot(p, e, cosi)*dt, C + C_dot(p, e, cosi, L)*dt]))
+        E, L, C = np.real([E + E_dot_true*dt, L + L_dot(p, e, cosi)*dt, C + C_dot(p, e, cosi, L)*dt])
+        try:
+            turns, flats, zs = root_getter(E, L, C, a)
+        except:
+            print(E, L, C, a)
+            print("IT BORKE")
+            print(dt, E_dot_true, E_dot(p, e, cosi), E_dot(p, 0, cosi), C_dot(p, e, cosi, L), N1, N4, N5, E_0, L_0, p, p_0, a, C_0, np.sign(cosi), cosi)
+            break
+        p_1, e_1 = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+        #print(p, e)
+        #print(p_1, e_1)
+        cosi_1 = L/np.sqrt(C + L**2)
+        if np.abs(np.imag(p_1))/np.abs(np.real(p_1)) > 0.001:
+            mult += 1
+            dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+            #print(dt, "unreal", np.abs(np.imag(p_1))/np.abs(np.real(p_1)))
+            if dt < np.real(p)**1.5 + a or (mult_min + mult) > 20 + 0.5*mult_min:
+                print("semilat complexity break")
+                break
+        elif p_1 > vals[-1][4]:
+            mult -= 0.1
+            dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+            #print(dt, "reverse", p_1, vals[-1][4])
+            if dt > vals[-1][0] + a or (mult_min + mult) > 20 + 0.5*mult_min: #This will cause problems
+                print("semilat growth break")
+                break
+        else:
+            p, e, cosi = p_1, e_1, cosi_1
+            r0 = p/(1 - e**2)
+            mult -= 0.1
+            mult = max(mult, 0)
+            dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+            vals.append([vals[-1][0] + dt, E, L, C, p, e, inc, cosi, *turns[-2:]])
+            if p < (9/10)*oldp:
+                #print(p, "new")
+                oldp = p
+
+    vals = np.real(np.array(vals))
+    dct = {"time": vals[:, 0],
+           "energy": vals[:, 1],
+           "phi_momentum": vals[:, 2],
+           "carter": vals[:, 3],
+           "p": vals[:, 4],
+           "e": vals[:, 5],
+           "inc": vals[:, 6],
+           "cosi": vals[:, 7],
+           "it": vals[:, 8],
+           "ot": vals[:, 9],
+           "spin": a}
     return dct

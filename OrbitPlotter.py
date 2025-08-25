@@ -13,6 +13,7 @@ import os
 from scipy.fftpack import fft
 import time
 import matplotlib.animation as animation
+from IPython.display import HTML
 #import pywt
 from tqdm import tqdm
 
@@ -36,7 +37,7 @@ def get_index(array, time):
     val = array.flat[idx]
     return np.where(array == val)[0][0]
 
-def sph2cart(pos):
+def sph2cart(pos, a):
     '''
     Converts spherical coords to cartesian
     
@@ -50,8 +51,8 @@ def sph2cart(pos):
     new_pos : 3-element array of floats
         x, y, and z position
     '''
-    x = pos[0] * np.sin(pos[1]) * np.cos(pos[2])
-    y = pos[0] * np.sin(pos[1]) * np.sin(pos[2])
+    x = np.sqrt(pos[0]**2 + a**2) * np.sin(pos[1]) * np.cos(pos[2])
+    y = np.sqrt(pos[0]**2 + a**2) * np.sin(pos[1]) * np.sin(pos[2])
     z = pos[0] * np.cos(pos[1])
     return [x, y, z]
 
@@ -356,6 +357,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
             "tracktime": ['data["tracktime"]', "Coordinate Time", 'data["tracktime"]'],
             "radius": ['data["pos"][:,0]', "Radius", 'data["time"]'],
             "theta": ['data["pos"][:,1]', "Theta", 'data["time"]'],
+            "phi": ['data["pos"][:,2]%(2*np.pi)', "Phi", 'data["time"]'],
             "phase": ['data["pos"][:,2]/(2*np.pi)', "Phase", 'data["time"]'],
             "true_anom": ['data["true_anom"]/(2*np.pi)', "True Anomaly", 'data["tracktime"]'],
             "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
@@ -397,7 +399,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
                 xvals, yvals = xstuff[0][xo:xf], ystuff[0][xo:xf]
             else: 
                 #if the values don't have the same length, interpolate using time
-                xvals, yvals = xstuff[0], ystuff[0]
+                xvals, yvals = np.real_if_close(xstuff[0], 1000), np.real_if_close(ystuff[0], 1000)
                 if len(xvals) != len(data["time"]):
                     xvals = np.interp(data["time"], xstuff[2], xstuff[0])
                 if len(yvals) != len(data["time"]):
@@ -419,7 +421,11 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
                 except:
                     print("Could not calculate derivative! Maybe use a different x value?")
                     title_add = ""
-            ax.plot(xvals, yvals, color=colors[thing%len(colors)])
+            try:
+                ax.plot(xvals, yvals, color=colors[thing%len(colors)])
+            except Exception as e:
+                print(e)
+                ax.plot(np.real(xvals), np.real(yvals), color=colors[thing%len(colors)])
             if linefit == True:
                 try:
                     stuff = np.polyfit(xvals, yvals, 1)
@@ -493,7 +499,7 @@ def comparevalues(data, values, start=0, end=-1, leg=True):
     
     return True
 
-def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, ele=30, azi=-60, cb=False, stitch=False, filename=False):
+def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, ele=30, azi=-60, cb=False, stitch=False, filename=False, colors_list=None):
     '''
     Plots one or more test particles' path through space
     
@@ -530,6 +536,11 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
     -------
     True
     '''
+    if colors_list == None:
+        from matplotlib.colors import TABLEAU_COLORS
+        tab_cols = list(TABLEAU_COLORS.values())
+    else:
+        tab_cols = colors_list
     if type(datalist) != list:
         datalist = [datalist]
     if ortho == True:
@@ -549,7 +560,10 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
         scaler = np.floor(np.log10(cap))//3
         scale_word = scale_dict[min(4, scaler)]
         cap = cap/(10**(3*scaler))
+        i = -1
         for data in datalist:
+            i += 1
+            a = data["spin"]
             to = get_index(data["time"], start)
             flipto = get_index(data["tracktime"], start)
             if end > 0.0:
@@ -559,26 +573,33 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                 tf = get_index(data["time"], data["time"][-1])
                 fliptf = get_index(data["tracktime"], data["tracktime"][-1])
 
-            carts = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"][to:tf]])
+            carts = np.array([sph2cart(pos, a)/(10**(3*scaler)) for pos in data["pos"][to:tf]])
             cartsxy = np.copy(carts)
             cartsxz = np.copy(carts)
             cartsyz = np.copy(carts)
-            flippoints = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"][data["trackix"][flipto:fliptf].astype(int)]])
+            flippoints = np.array([sph2cart(pos, a)/(10**(3*scaler)) for pos in data["pos"][data["trackix"][flipto:fliptf].astype(int)]])
             flipsxy = np.copy(flippoints)
             flipsxz = np.copy(flippoints)
             flipsyz = np.copy(flippoints)
             
             if cb == True:
+                from matplotlib.path import Path
+                from matplotlib.patches import PathPatch
                 rb = (1 + (1 - data["spin"]**2)**(0.5))/(10**(3*scaler))
-                circle1 = plt.Circle((0, 0), rb, color='black')
-                circle2 = plt.Circle((0, 0), rb, color='black')
-                circle3 = plt.Circle((0, 0), rb, color='black')
-                ax_list[0].add_patch(circle1)
-                ax_list[1].add_patch(circle2)
-                ax_list[2].add_patch(circle3)
+                ev_hor1 = plt.Circle((0, 0), rb, color='black')
+                ev_hor2 = plt.Circle((0, 0), rb, color='black')
+                ev_hor3 = plt.Circle((0, 0), rb, color='black')
+
+                theta = np.linspace(0, 2*np.pi, 100)
+                re = (1 + (1 - (data["spin"]*np.cos(theta))**2)**(0.5))/(10**(3*scaler))
+                path = Path(np.transpose([re*np.sin(theta), re*np.cos(theta)]))
+                top_erg = plt.Circle((0, 0), 2/(10**(3*scaler)), color='darksalmon', alpha=0.6)
+                side_erg1 = PathPatch(path, color ='darksalmon', alpha=0.6)
+                side_erg2 = PathPatch(path, color ='darksalmon', alpha=0.6)
+                
                 
                 al = (azi)*np.pi/180. -np.pi
-                el = (ele)*np.pi/180. - np.pi/2.
+                el = (ele)*np.pi/180. - np.pi/2
                 Xxy = [ 0.0, 0.0, 1.0]
                 Xxz = [ 0.0, 1.0, 0.0]
                 Xyz = [ 1.0, 0.0, 0.0]
@@ -589,8 +610,8 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                 condxz = (np.arccos(np.dot(carts, Xxz)/data["pos"][to:tf,0]) < np.pi - B_)
                 condyz = (np.arccos(np.dot(carts, Xyz)/data["pos"][to:tf,0]) < np.pi - B_)
                 cartsxy = np.array([carts[i] if condxy[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxy))])
-                cartsxz = np.array([carts[i] if condxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxy))])
-                cartsyz = np.array([carts[i] if condyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxy))])
+                cartsxz = np.array([carts[i] if condxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxz))])
+                cartsyz = np.array([carts[i] if condyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condyz))])
                 
                 try:
                     flipB_ = A - np.pi/2 + np.arcsin((rb/data["pos"][data["trackix"][flipto:fliptf].astype(int),0])*np.sin(A))
@@ -598,14 +619,39 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                     flipcondxz = (np.arccos(np.dot(flippoints, Xxz)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
                     flipcondyz = (np.arccos(np.dot(flippoints, Xyz)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
                     flipsxy = np.array([flippoints[i] if flipcondxy[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxy))])
-                    flipsxz = np.array([flippoints[i] if flipcondxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxy))])
-                    flipsyz = np.array([flippoints[i] if flipcondyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxy))])
+                    flipsxz = np.array([flippoints[i] if flipcondxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxz))])
+                    flipsyz = np.array([flippoints[i] if flipcondyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondyz))])
                 except:
                     pass
+
+                #XY Plane
+                frontxy = np.array([carts[i] if carts[i][2] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+                backxy = np.array([carts[i] if carts[i][2] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+                ax_list[0].plot(frontxy[:,0], frontxy[:,1], label=data["name"], c = tab_cols[i])
+                ax_list[0].add_patch(top_erg)
+                ax_list[0].add_patch(ev_hor1)
+                ax_list[0].plot(backxy[:,0], backxy[:,1], label="_nolabel_", c = tab_cols[i])
+
+                frontxz = np.array([carts[i] if carts[i][1] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+                backxz = np.array([carts[i] if carts[i][1] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+                ax_list[1].plot(frontxz[:,0], frontxz[:,2], label="_nolabel_", c = tab_cols[i])
+                ax_list[1].add_patch(side_erg1)
+                ax_list[1].add_patch(ev_hor2)
+                ax_list[1].plot(backxz[:,0], backxz[:,2], label="_nolabel_", c = tab_cols[i])
+
+                frontyz = np.array([carts[i] if carts[i][0] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+                backyz = np.array([carts[i] if carts[i][0] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+                ax_list[2].plot(frontyz[:,1], frontyz[:,2], label="_nolabel_", c = tab_cols[i])
+                ax_list[2].add_patch(side_erg2)
+                ax_list[2].add_patch(ev_hor3)
+                ax_list[2].plot(backyz[:,1], backyz[:,2], label="_nolabel_", c = tab_cols[i])
                 
-            ax_list[0].plot(cartsxy[:,0], cartsxy[:,1], label=data["name"], zorder=10)  #XY Plot
-            ax_list[1].plot(cartsxz[:,0], cartsxz[:,2], label="_nolabel_", zorder=10)  #XZ Plot
-            ax_list[2].plot(cartsyz[:,1], cartsyz[:,2], label="_nolabel_", zorder=10)  #ZY Plot
+                
+            #ax_list[0].plot(cartsxy[:,0], cartsxy[:,1], label=data["name"], zorder=10)  #XY Plot
+            #ax_list[1].plot(cartsxz[:,0], cartsxz[:,2], label="_nolabel_", zorder=10)  #XZ Plot
+            #ax_list[2].plot(cartsyz[:,1], cartsyz[:,2], label="_nolabel_", zorder=10)  #ZY Plot
+
+
             if stitch == True:
                 ax_list[0].scatter(flipsxy[:,0], flipsxy[:,1], label=data["name"], zorder=9, marker="*", s=300)  #XY Plot
                 ax_list[1].scatter(flipsxz[:,0], flipsxz[:,2], label="_nolabel_", zorder=9, marker="*", s=300)  #XZ Plot
@@ -632,8 +678,7 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
             legend = fig.legend(loc=(0.75,0.5))
             hor_ratio = legend.get_window_extent().width/ fig.get_window_extent().width
             ver_ratio = legend.get_window_extent().height/ fig.get_window_extent().height
-            legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))
-        
+            legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))        
         
     else:
         fig = plt.figure(figsize=(10,12))
@@ -641,7 +686,10 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
         ax.view_init(elev=ele, azim=azi)
         
         rbound = 0
+        i = -1
         for data in datalist:
+            i += 1
+            a = data["spin"]
             to = get_index(data["time"], start)
             flipto = get_index(data["tracktime"], start)
             if end > 0.0:
@@ -652,19 +700,17 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                 fliptf = get_index(data["tracktime"], data["tracktime"][-1])
                 
             rbound = max(max(data["pos"][to:tf,0])*1.05, rbound)
-            carts = np.array([sph2cart(pos) for pos in data["pos"][to:tf]])
-            flippoints = np.array([sph2cart(pos) for pos in data["pos"][data["trackix"][flipto:fliptf].astype(int)]])
+            carts = np.array([sph2cart(pos, a) for pos in data["pos"][to:tf]])
+            flippoints = np.array([sph2cart(pos, a) for pos in data["pos"][data["trackix"][flipto:fliptf].astype(int)]])
             
             if cb == True:
                 rb = 1 + (1 - data["spin"]**2)**(0.5)
                 theta, phi = np.linspace(0, 2*np.pi), np.linspace(0, np.pi)
                 phi, theta = np.meshgrid(phi, theta)
-                x, y, z = rb*np.sin(theta)*np.sin(phi), rb*np.sin(theta)*np.cos(phi), rb*np.cos(theta)
-                ax.plot_surface(x, y, z, color="black", zorder=1, shade=False)
+                xS, yS, zS = rb*np.sin(theta)*np.sin(phi), rb*np.sin(theta)*np.cos(phi), rb*np.cos(theta)
                 
                 re = 1 + (1 - (data["spin"]*np.cos(theta))**2)**(0.5)
-                x, y, z = re*np.sin(theta)*np.sin(phi), re*np.sin(theta)*np.cos(phi), re*np.cos(theta)
-                ax.plot_surface(x, y, z, color="darksalmon", zorder=2, alpha = 0.3)
+                xE, yE, zE = re*np.sin(theta)*np.sin(phi), re*np.sin(theta)*np.cos(phi), re*np.cos(theta)
                 
                 al = (azi)*np.pi/180. -np.pi
                 el = (ele)*np.pi/180. - np.pi/2.
@@ -677,7 +723,7 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                 boundboxcheck = [False not in piece for piece in np.abs(carts) <= rbound/zoom]
                  
                 cond = np.logical_and(blockedcheck, boundboxcheck)
-                carts = np.array([carts[i] if cond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(cond))])
+                #carts = np.array([carts[i] if cond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(cond))])
                 
                 try:
                     flipB_ = A - np.pi/2 + np.arcsin((rb/data["pos"][data["trackix"][flipto:fliptf].astype(int),0])*np.sin(A))
@@ -688,7 +734,15 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                 except:
                     pass
                 
-            ax.plot3D(carts[:, 0], carts[:, 1], carts[:, 2], label=data["name"], zorder=10)
+            rad_ele, rad_azi = ele*np.pi/180, azi*np.pi/180
+            A, B, C = np.cos(rad_ele)*np.cos(rad_azi), np.cos(rad_ele)*np.sin(rad_azi), np.sin(rad_ele)
+            front = np.array([carts[i] if -(A/C)*carts[i][0] - (B/C)*carts[i][1] - C*5 <= carts[i][2] else [np.nan, np.nan, np.nan] for i in range(len(cond))])
+            back = np.array([carts[i] if -(A/C)*carts[i][0] - (B/C)*carts[i][1] - C*5 >= carts[i][2] else [np.nan, np.nan, np.nan] for i in range(len(cond))])
+
+            ax.plot3D(back[:, 0], back[:, 1], back[:, 2], label=data["name"], c = tab_cols[i])
+            ax.plot_surface(xS, yS, zS, color="black", shade=False)
+            ax.plot_surface(xE, yE, zE, color="darksalmon", alpha = 0.3)
+            ax.plot3D(front[:, 0], front[:, 1], front[:, 2], zorder=10, c = tab_cols[i])
             if stitch == True:
                 ax.scatter(flippoints[:, 0], flippoints[:, 1], flippoints[:, 2], label=data["name"], zorder=9, marker="*", s=300)
             
@@ -856,7 +910,7 @@ def physplots(datalist, merge=False, start=0.0, end=-1.0, fit=True, leg=True):
     else:
         return True
 
-def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=True, cb=True, numturns=10, fid=1):
+def ani_thing3(data, name=None, display=True, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=True, cb=True, numturns=10, fid=1):
     '''
     Creates an animation of a test particle's path through space
     
@@ -896,12 +950,10 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
     True
     '''
     
-    if name == False:
-        name=data["name"][:10] + time.strftime("%y_%m_%d_%H", time.localtime())
-    
     int_sphere, int_time = mm.interpolate(data["pos"], data["time"], supress = False)
-    X = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.cos(int_sphere[:,2])
-    Y = int_sphere[:,0]*np.sin(int_sphere[:,1])*np.sin(int_sphere[:,2])
+    a = data["spin"]
+    X = np.sqrt(int_sphere[:,0]**2 + a**2)*np.sin(int_sphere[:,1])*np.cos(int_sphere[:,2])
+    Y = np.sqrt(int_sphere[:,0]**2 + a**2)*np.sin(int_sphere[:,1])*np.sin(int_sphere[:,2])
     Z = int_sphere[:,0]*np.cos(int_sphere[:,1])
 
     num_steps = int(100*fid)
@@ -1019,7 +1071,10 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
         fig, update_line, frames=tqdm(range(num_steps+10), position=0, initial=1), fargs=(X, Y, Z, line), interval=10)
     
     #HEY, CAN YOU JUST MAKE MULTIPLE ANIMATION OBJECTS ON THE SAME FIGURE??? EXPERIMENT ON SOMETHING SIMPLE
-    
+    '''
+    if name == False:
+        name=data["name"][:10] + time.strftime("%y_%m_%d_%H", time.localtime())
+
     cwd = os.getcwd()
     f = os.path.join(cwd, name + ".gif")
     writergif = animation.PillowWriter(fps=10)
@@ -1027,8 +1082,23 @@ def ani_thing3(data, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=
     
     plt.show()
     print("\n")
-    print(name + '.gif')
-    return True
+    print(name + '.gif')'''
+    # Case 1: Save if requested
+    if name:
+        cwd = os.getcwd()
+        f = os.path.join(cwd, name if name.endswith(".gif") else name + ".gif")
+        writergif = animation.PillowWriter(fps=10)
+        ani.save(f, writer=writergif)
+        print(f"Saved animation as: {f}")
+
+    # Case 2: Display inline if requested
+    if display:
+        plt.close(fig)  # prevent duplicate static plot
+        return HTML(ani.to_jshtml())
+
+    # Case 3: Neither save nor display
+    plt.close(fig)
+    return None
 
 def ani_test():
     # initializing a figure in  
@@ -1067,7 +1137,7 @@ def ani_test():
     anim.save('continuousSineWave.gif', fps = 30) 
     return 0
 
-def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=True, cb=True, numturns=10, fid=1):
+def ani_thing4(datalist, name=None, display=True, ortho=False, zoom=1.0, ele=30, azi=-60, scroll=True, cb=True, numturns=10, fid=1):
     '''
     Creates an animation of a test particle's path through space
     
@@ -1106,9 +1176,7 @@ def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scr
     -------
     True
     '''
-    
-    if name == False:
-        name="False"
+
     if type(datalist) != list:
         datalist = [datalist]
 
@@ -1241,14 +1309,22 @@ def ani_thing4(datalist, name=False, ortho=False, zoom=1.0, ele=30, azi=-60, scr
     
     #HEY, CAN YOU JUST MAKE MULTIPLE ANIMATION OBJECTS ON THE SAME FIGURE??? EXPERIMENT ON SOMETHING SIMPLE
     
-    cwd = os.getcwd()
-    f = os.path.join(cwd, name + ".gif")
-    writergif = animation.PillowWriter(fps=10)
-    ani.save(f, writer=writergif)
-    
-    plt.show()
-    print(name + '.gif')
-    return True
+    # Case 1: Save if requested
+    if name:
+        cwd = os.getcwd()
+        f = os.path.join(cwd, name if name.endswith(".gif") else name + ".gif")
+        writergif = animation.PillowWriter(fps=10)
+        ani.save(f, writer=writergif)
+        print(f"Saved animation as: {f}")
+
+    # Case 2: Display inline if requested
+    if display:
+        plt.close(fig)  # prevent duplicate static plot
+        return HTML(ani.to_jshtml())
+
+    # Case 3: Neither save nor display
+    plt.close(fig)
+    return None
 
 def ani_thing5(data, name=False, ortho=False, start=0.0, end=-1.0, zoom=1.0, ele=30, azi=-60, scroll=True, cb=True, numturns=10, fid=1):
     '''
@@ -1678,7 +1754,7 @@ def top_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         cap = max(datalist[i]["pos"][to:tf,0])*1.05
 
         scaler = np.floor(np.log10(cap))//3
-        carts = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in datalist[i]["pos"]])
+        carts = np.array([sph2cart(pos, a)/(10**(3*scaler)) for pos in datalist[i]["pos"]])
         ax[i,0].plot(carts[to:tf,0], carts[to:tf,1])
         ax[i,0].set_aspect('equal')
         wave, time = mm.full_transform(datalist[i], cap*1000)
@@ -1698,7 +1774,7 @@ def top_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         ax[i,1].grid()
         ax[i,1].legend()
         
-def orth_and_fourier(data, start=0, end=-1, filename=False):
+def orth_and_fourier(data, start=0, end=-1, filename=False, leg_title=False):
     fig = plt.figure(figsize=(8,6))
     ax1 = fig.add_subplot(2,3,4)
     ax2 = fig.add_subplot(2,1,1)
@@ -1722,7 +1798,8 @@ def orth_and_fourier(data, start=0, end=-1, filename=False):
     else:
         tf = get_index(data["time"], data["time"][-1])
 
-    carts = np.array([sph2cart(pos) for pos in data["pos"]])
+    a = data["spin"]
+    carts = np.array([sph2cart(pos, a) for pos in data["pos"]])
     #carts = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"]])
     ax_list[0].plot(carts[to:tf,0], carts[to:tf,1], label=data["name"])  #XY Plot
     ax_list[1].plot(carts[to:tf,0], carts[to:tf,2], label="_nolabel_")  #XZ Plot
@@ -1770,7 +1847,8 @@ def orth_and_fourier(data, start=0, end=-1, filename=False):
     ax2.set_yscale('log')
     ax2.set_xscale('log')
     ax2.grid()
-    ax2.legend(title=data["name"])
+    if leg_title != False:
+        ax2.legend(title=leg_title)
     if filename == False:
         plt.show()
     else:

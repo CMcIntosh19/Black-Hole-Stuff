@@ -270,7 +270,7 @@ def quick_state(constants, state, a):
 
 import statistics as st
 import time
-def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, trigger=2, override=False, bonk2=True, skip_tar=0, nofix=True):
+def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, trigger=2, override=False, bonk2=True, skip_tar=0, nofix=True):
     '''
     Generates orbit
 
@@ -403,19 +403,27 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
             turns2, flats2, zs2 = mm.root_getter(E2, L2, C2, a)
             low, high = min(turns1[-2], turns2[-2]), max(turns1[-1], turns2[-1])
             low_b, high_b = low - 0.01*(high - low), high + 0.01*(high - low) 
-            r_vals = np.linspace(low_b, high_b, num=100)
+            r_vals = np.real(np.linspace(low_b, high_b, num=100))
             fig, ax = plt.subplots()
             ax.hlines(0, r_vals[0], r_vals[-1])
-            ax.plot(r_vals, np.polyval(Rpoly(*old_cons, a), r_vals))
-            ax.plot(r_vals, np.polyval(Rpoly(*new_cons, a), r_vals))
-            ax.scatter(state[1], np.polyval(Rpoly(*old_cons, a), state[1]))
-            ax.scatter(state[1], np.polyval(Rpoly(*new_cons, a), state[1]))
+            #ax.plot(r_vals, np.polyval(Rpoly(*old_cons, a), r_vals))
+            #ax.plot(r_vals, np.polyval(Rpoly(*new_cons, a), r_vals))
+            #ax.scatter(state[1], np.polyval(Rpoly(*old_cons, a), state[1]))
+            #ax.scatter(state[1], np.polyval(Rpoly(*new_cons, a), state[1]))
+            ax.plot(r_vals, R(r_vals, *old_cons, a))
+            ax.plot(r_vals, R(r_vals, *new_cons, a))
+            ax.scatter(state[1], R(state[1], *old_cons, a))
+            ax.scatter(state[1], R(state[1], *new_cons, a))
+            ax.set_title("Viable Cons scream")
+            plt.show()
             #print(turns1)
             #print(turns2)
             #print(old_cons)
             #print(new_cons)
             #print(new_cons - old_cons)
-        potential_min = np.polyval(Rpoly(*new_cons, a), mm.root_getter(*new_cons, a)[1][-1])
+        potential_min = R(mm.root_getter(*new_cons, a)[1][-1], *new_cons, a)
+        #print("uh", *new_cons, a)
+        #print("HEWWO??", mm.root_getter(*new_cons, a))
         return potential_min
     
     def bl2cart_oof(state, a):
@@ -447,11 +455,12 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
     pot_min = viable_cons([initE, initLz, initC], [initE, initLz, initC], all_states[0], a)
     count = 0
     while pot_min < 0.0:
+        #print(pot_min)
         count += 1
         initE += err_target
         pot_min = viable_cons([initE, initLz, initC], [initE, initLz, initC], all_states[0], a)
         if count >= 21:
-            print("Don't trust this!", inputs)
+            print("Don't trust this!", pot_min, inputs)
             break
                 
     coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
@@ -483,12 +492,13 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
     inc = np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
     
     j = 0
-    constants = np.empty((int(10**7), 3))
-    tracker = np.empty((int(10**7), 7))
-    qarter = np.empty(int(10**7))
+    constants = list(np.empty((int(10**7), 3)))
+    tracker = list(np.empty((int(10**7), 7)))
+    qarter = list(np.empty(int(10**7)))
     constants[0] = [initE,      #energy   
                     initLz,      #angular momentum (axial)
                     initC]
+    #gorfed
     tracker[0] = [pot_min, e, inc, inner_turn, outer_turn, all_states[0][0], 0]
     qarter[0] = initQ
     
@@ -687,7 +697,10 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
                     if mu != 0.0:
                         condate = True
                         dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
-                        new_step, ch_cons = mm.new_recalc_state9j(constants[j], dcons, new_step, a)
+                        if "hoopa" in label:
+                            new_step, ch_cons = mm.new_recalc_state8(constants[j], dcons, new_step, a)
+                        else:
+                            new_step, ch_cons = mm.new_recalc_state9j(constants[j], dcons, new_step, a)
                         pot_min = viable_cons(ch_cons, constants[j], new_step, a)
                         subcount = 0
                         if pot_min < -err_target:
@@ -882,7 +895,7 @@ def EMRIGenerator(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label
              "r0": 0.5*(tracker[:,3] + tracker[:,4]),
              "p": 0.5*(tracker[:,3] + tracker[:,4])*(1 - tracker[:,1]**2),
              "tracktime": tracker[:,5],
-             "trackix": np.array([int(num) for num in tracker[:,6]]),
+             "trackix": np.array([int(np.real(num)) for num in tracker[:,6]]),
              "omega": omega,
              "otime": otime,
              "asc_node": asc_node,
@@ -977,8 +990,10 @@ def save_emri_data(final, filename=False):
         metadata[key] = value
 
     update_index(filename, metadata)
+    return filename
 
 def load_emri_data(filename):
+    print(f"Loading {filename}")
     with h5py.File(filename, 'r') as f:
         final = {}
 
@@ -1057,7 +1072,7 @@ def load_emri_data(filename):
         final["asc_node_time"] = asc_node_time
         final["des_node"] = des_node
         final["des_node_time"] = des_node_time
-        print(f"Loaded {filename}")
+        print(f"Done")
         return final
 
 def delete_emri_data(filename, index_path="./saved_sims/index.json", folder="./saved_sims/", auto=False):
@@ -1267,7 +1282,7 @@ def EMRIGenMin(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="d
         initE += err_target
         pot_min = viable_cons([initE, initLz, initC], [initE, initLz, initC], all_states[0], a)
         if count >= 21:
-            print("Don't trust this!", inputs)
+            print("Don't trust this!", pot_min, inputs)
             break
                 
     coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
