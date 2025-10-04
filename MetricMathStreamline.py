@@ -319,10 +319,10 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             new = recalc_state(cons, pos, a)
         else:
             E, L, C = cons
-            Rdco = [4*(E**2 - 1), 6, 2*((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C)]
-            flats = np.roots(Rdco)
-            flats = np.sort(flats.real[abs(flats.imag)<1e-14])
-            pos = [0.0, flats[-1], np.pi/2, 0.0]
+            R = [(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -a*a*C]
+            turns = np.roots(R)
+            turns = np.sort(turns.real[abs(turns.imag)<1e-14])
+            pos = [0.0, 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), np.pi/2, 0.0]
             new = recalc_state(cons, pos, a)
     elif (np.shape(velorient) == (3,)) and np.shape(pos) == (4,):
         velorient, pos = np.real(velorient), np.real(pos)
@@ -387,7 +387,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         if cons == False:
             print("Non-viable parameters")
         if np.shape(pos) != (4,):
-            pos = [0.0, params[0], np.pi/2, 0.0]
+            pos = [0.0, params[0]*(1 - params[1]**2), np.pi/2, 0.0]
         new = recalc_state(cons, pos, a)
     else:
         print("Insufficent information provided, begone")
@@ -3743,37 +3743,57 @@ def seper_locator(r0, inc, a):
 
 def root_getter(E, L, C, spin):
     E, L, C = np.fix(1e13*np.array([E, L, C]))*1e-13
-    a, b, c, d, e = np.array(np.fix(1e12*np.array([(E**2 - 1.0), 2.0, ((spin**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - spin*E)**2) + 2*C), -(spin**2)*C]))*1e-12).astype(complex)
-    #print(E, L, C, spin, L**2 + C)
-    #print(a, b, c, d, e)
-    p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
-    p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
-    p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
-    p4 = ((b**2)/(4*(a**2)) - (2*c)/(3*a) + p3)**(0.5)
-    p5 = (b**2)/(2*(a**2)) - (4*c)/(3*a) - p3
-    p6 = (-(b**3)/(a**3) + (4*b*c)/(a**2) - 8*d/a)/(4*p4)
-    x1 = -b/(4*a) - p4/2 - 0.5*((p5 - p6)**0.5)
-    x2 = -b/(4*a) - p4/2 + 0.5*((p5 - p6)**0.5)
-    x3 = -b/(4*a) + p4/2 - 0.5*((p5 + p6)**0.5)
-    x4 = -b/(4*a) + p4/2 + 0.5*((p5 + p6)**0.5) 
-    turns = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in [x1, x2, x3, x4]])
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error", category=RuntimeWarning)
+
+            #print("orgio")
+            a, b, c, d, e = np.array(np.fix(1e12*np.array([(E**2 - 1.0), 2.0, ((spin**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - spin*E)**2) + 2*C), -(spin**2)*C]))*1e-12).astype(complex)
+            #print(E, L, C, spin, L**2 + C)
+            #print(a, b, c, d, e)
+            p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
+            p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
+            p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
+            p4 = ((b**2)/(4*(a**2)) - (2*c)/(3*a) + p3)**(0.5)
+            p5 = (b**2)/(2*(a**2)) - (4*c)/(3*a) - p3
+            p6 = (-(b**3)/(a**3) + (4*b*c)/(a**2) - 8*d/a)/(4*p4)
+            x1 = -b/(4*a) - p4/2 - 0.5*((p5 - p6)**0.5)
+            x2 = -b/(4*a) - p4/2 + 0.5*((p5 - p6)**0.5)
+            x3 = -b/(4*a) + p4/2 - 0.5*((p5 + p6)**0.5)
+            x4 = -b/(4*a) + p4/2 + 0.5*((p5 + p6)**0.5) 
+            turns = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in [x1, x2, x3, x4]])
+            #print("HELLO")
+    except RuntimeWarning:
+        print("Radial roots error")
+        turns = np.roots([a, b, c, d, e])
+        turns = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in turns])
     
     flats = np.roots(np.polyder([a,b,c,d,e])) #np.roots([4*a,3*b,2*c,d])
     flats = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in flats])
     
     #print(np.array([(a**2)*(1 - E**2), 0.0, -(C + (a**2)*(1 - E**2) + L**2), 0.0, C]))
-    a, b, c, d, e = np.array(np.fix(1e13*np.array([(a**2)*(1 - E**2), 0.0, -(C + (a**2)*(1 - E**2) + L**2), 0.0, C]).real)*1e-13).astype(complex)
-    p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
-    p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
-    p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
-    p4 = ((b**2)/(4*(a**2)) - (2*c)/(3*a) + p3)**(0.5)
-    p5 = (b**2)/(2*(a**2)) - (4*c)/(3*a) - p3
-    p6 = (-(b**3)/(a**3) + (4*b*c)/(a**2) - 8*d/a)/(4*p4)
-    x1 = -b/(4*a) - p4/2 - 0.5*((p5 - p6)**0.5)
-    x2 = -b/(4*a) - p4/2 + 0.5*((p5 - p6)**0.5)
-    x3 = -b/(4*a) + p4/2 - 0.5*((p5 + p6)**0.5)
-    x4 = -b/(4*a) + p4/2 + 0.5*((p5 + p6)**0.5) 
-    zs = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-5 else num for num in [x1, x2, x3, x4]])
+    try:
+        with warnings.catch_warnings():
+            warnings.filterwarnings("error", category=RuntimeWarning)
+
+            #print("orgio")
+            a, b, c, d, e = np.array(np.fix(1e13*np.array([(a**2)*(1 - E**2), 0.0, -(C + (a**2)*(1 - E**2) + L**2), 0.0, C]).real)*1e-13).astype(complex)
+            p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
+            p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
+            p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
+            p4 = ((b**2)/(4*(a**2)) - (2*c)/(3*a) + p3)**(0.5)
+            p5 = (b**2)/(2*(a**2)) - (4*c)/(3*a) - p3
+            p6 = (-(b**3)/(a**3) + (4*b*c)/(a**2) - 8*d/a)/(4*p4)
+            x1 = -b/(4*a) - p4/2 - 0.5*((p5 - p6)**0.5)
+            x2 = -b/(4*a) - p4/2 + 0.5*((p5 - p6)**0.5)
+            x3 = -b/(4*a) + p4/2 - 0.5*((p5 + p6)**0.5)
+            x4 = -b/(4*a) + p4/2 + 0.5*((p5 + p6)**0.5) 
+            zs = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-5 else num for num in [x1, x2, x3, x4]])
+            #print("SIR")
+    except RuntimeWarning:
+        print("Theta roots error")
+        zs = np.roots([a, b, c, d, e])
+        zs = np.array([np.real(num) if np.abs(np.imag(num)) < 1e-8 else num for num in zs])
     
     return np.round(np.sort(turns), 10), np.round(np.sort(flats), 10), np.round(np.sort(zs), 10)
 
@@ -4160,13 +4180,23 @@ def gair_glamp6(a, q, cons=False, params=False, mult_min=4, endflag="False"):
            "ot": vals[:, 9]}
     return dct
 
-def gair_glamp7(E, L, C, a, q, mult_min=4, endflag="False"):
+def gair_glamp7(a, q, cons=False, params=False, mult_min=4, endflag="False"):
     #Matches gair + glampedakis 2006
-    turns, flats, zs = root_getter(E, L, C, a)
-    p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
-    inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+    if cons != False:
+        E, L, C = cons
+        turns, flats, zs = root_getter(E, L, C, a)
+        p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+        inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+        r0 = p/(1 - e**2)
+    elif params != False:
+        r0, e, inc = params
+        p = r0*(1 - e**2)
+        E, L, C = schmidtparam3(*params, a)
+        turns, flats, zs = root_getter(E, L, C, a)
+    else:
+        print("No starting input.")
+        return 0
     cosi = L/np.sqrt(C + L**2)
-    r0 = p/(1 - e**2)
     f1 = lambda x: 1 + (73/24)*(x**2) + (37/96)*(x**4)
     f2 = lambda x: 73/12 + (823/24)*(x**2) + (949/32)*(x**4) + (491/192)*(x**6)
     f3 = lambda x: 1 + (7/8)*(x**2)
@@ -4186,68 +4216,68 @@ def gair_glamp7(E, L, C, a, q, mult_min=4, endflag="False"):
         exp = np.floor(np.log10(num))
         return (10**-exp)*(np.fix((10**exp)*num))
     while (np.abs(np.imag(p)/np.real(p)) < 1e-3 and np.real(p)/(1 + np.real(e)) > find_rmb(a)) and not eval(endflag):
-        E_dot = lambda peri, ecc, cosinc: -(32/5)*(q**2)*(peri**-5)*((1 - ecc**2)**1.5)*(f1(ecc) - a*(peri**-1.5)*cosinc*f2(ecc))
-        L_dot = lambda p, e, cosi: (-32/5)*q*q*(p**-3.5)*((1 - e**2)**1.5)*(cosi*f3(e) + a*(p**-1.5)*(f4(e) - (cosi**2)*f5(e)))
-        Q_dot = lambda p, e, cosi: (-64/5)*(q*q)*(p**-3)*((1 - e**2)**1.5)*(f3(e) - a*(p**-1.5)*cosi*f6(e))
-        C_dot = lambda p, e, cosi, L: Q_dot(p, e, cosi) - 2*L_dot(p, e, cosi)*L
-        inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
-        
-        p_0 = np.real(p)
-        
-        E_0, L_0 = circE_inc(p_0, a, inc), circL_inc(p_0, a, inc)
-
-        N1 = E_0*(p**4) + (a**2)*E_0*(p**2) - 2*a*(L_0 - a*E_0)*p
-        N4 = (2*p - p**2)*L_0 - 2*a*E_0*p
-        N5 = (2*p - p**2 - a**2)/2
-
-        #E_dot_true = ((1 - e**2)**1.5)*(((1 - e**2)**-1.5)*E_dot(p, e, cosi) - E_dot(p, 0, cosi) - (N4/N1)*L_dot(p, 0, cosi) - (N5/N1)*C_dot(p, 0, cosi))
-        E_dot_true = ((1 - e**2)**1.5)*(((1 - e**2)**(-1.5))*E_dot(p, e, cosi) - E_dot(p, 0, cosi) - (N4/N1)*L_dot(p, 0, cosi) - (N5/N1)*C_dot(p, 0.0, cosi, L_0))
-        #print(E_dot_true)
-        if not np.real(E_dot_true):
-            print(E_dot_true, "grah", E_dot(p, 0, cosi_0), L_dot(p, 0, cosi_0), C_dot(p, 0, cosi_0, L), len(vals))
-            break
-
-        if len(vals) <3:
-            print("yo", C_dot(p, e, cosi, L), Q_dot(p, e, cosi), - 2*L_dot(p, e, cosi)*L, p, (L*cosi)**2, 100*(p - (L*cosi)**2)/p)
-
-        #print(np.real([E + 0*E_dot_true*dt, L + 0*L_dot(p, e, cosi)*dt, C + 0*C_dot(p, e, cosi, L)*dt]))
-        #print(np.real([E + E_dot_true*dt, L + L_dot(p, e, cosi)*dt, C + C_dot(p, e, cosi, L)*dt]))
-        E, L, C = np.real([E + E_dot_true*dt, L + L_dot(p, e, cosi)*dt, C + C_dot(p, e, cosi, L)*dt])
         try:
-            turns, flats, zs = root_getter(E, L, C, a)
+            E_dot = lambda peri, ecc, cosinc: -(32/5)*(q**2)*(peri**-5)*((1 - ecc**2)**1.5)*(f1(ecc) - a*(peri**-1.5)*cosinc*f2(ecc))
+            L_dot = lambda p, e, cosi: (-32/5)*q*q*(p**-3.5)*((1 - e**2)**1.5)*(cosi*f3(e) + a*(p**-1.5)*(f4(e) - (cosi**2)*f5(e)))
+            Q_dot = lambda p, e, cosi: (-64/5)*(q*q)*(p**-3)*((1 - e**2)**1.5)*(f3(e) - a*(p**-1.5)*cosi*f6(e))
+            C_dot = lambda p, e, cosi, L: Q_dot(p, e, cosi) - 2*L_dot(p, e, cosi)*L
+            inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+            
+            p_0 = np.real(p)
+            
+            E_0, L_0 = circE_inc(p_0, a, inc), circL_inc(p_0, a, inc)
+
+            N1 = E_0*(p**4) + (a**2)*E_0*(p**2) - 2*a*(L_0 - a*E_0)*p
+            N4 = (2*p - p**2)*L_0 - 2*a*E_0*p
+            N5 = (2*p - p**2 - a**2)/2
+
+            #E_dot_true = ((1 - e**2)**1.5)*(((1 - e**2)**-1.5)*E_dot(p, e, cosi) - E_dot(p, 0, cosi) - (N4/N1)*L_dot(p, 0, cosi) - (N5/N1)*C_dot(p, 0, cosi))
+            E_dot_true = ((1 - e**2)**1.5)*(((1 - e**2)**(-1.5))*E_dot(p, e, cosi) - E_dot(p, 0, cosi) - (N4/N1)*L_dot(p, 0, cosi) - (N5/N1)*C_dot(p, 0.0, cosi, L_0))
+            #print(E_dot_true)
+            if not np.real(E_dot_true):
+                print(E_dot_true, "grah", E_dot(p, 0, cosi_0), L_dot(p, 0, cosi_0), C_dot(p, 0, cosi_0, L), len(vals))
+                break
+
+            #print(np.real([E + 0*E_dot_true*dt, L + 0*L_dot(p, e, cosi)*dt, C + 0*C_dot(p, e, cosi, L)*dt]))
+            #print(np.real([E + E_dot_true*dt, L + L_dot(p, e, cosi)*dt, C + C_dot(p, e, cosi, L)*dt]))
+            E, L, C = np.real([E + E_dot_true*dt, L + L_dot(p, e, cosi)*dt, C + C_dot(p, e, cosi, L)*dt])
+            try:
+                turns, flats, zs = root_getter(E, L, C, a)
+            except:
+                print(E, L, C, a)
+                print("IT BORKE")
+                print(dt, E_dot_true, E_dot(p, e, cosi), E_dot(p, 0, cosi), C_dot(p, e, cosi, L), N1, N4, N5, E_0, L_0, p, p_0, a, C_0, np.sign(cosi), cosi)
+                break
+            p_1, e_1 = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+            #print(p, e)
+            #print(p_1, e_1)
+            cosi_1 = L/np.sqrt(C + L**2)
+            if np.abs(np.imag(p_1))/np.abs(np.real(p_1)) > 0.001:
+                mult += 1
+                dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+                #print(dt, "unreal", np.abs(np.imag(p_1))/np.abs(np.real(p_1)))
+                if dt < np.real(p)**1.5 + a or (mult_min + mult) > 20 + 0.5*mult_min:
+                    print("semilat complexity break")
+                    break
+            elif p_1 > vals[-1][4]:
+                mult -= 0.1
+                dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+                #print(dt, "reverse", p_1, vals[-1][4])
+                if dt > vals[-1][0] + a or (mult_min + mult) > 20 + 0.5*mult_min: #This will cause problems
+                    print("semilat growth break")
+                    break
+            else:
+                p, e, cosi = p_1, e_1, cosi_1
+                r0 = p/(1 - e**2)
+                mult -= 0.1
+                mult = max(mult, 0)
+                dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
+                vals.append([vals[-1][0] + dt, E, L, C, p, e, inc, cosi, *turns[-2:]])
+                if p < (9/10)*oldp:
+                    #print(p, "new")
+                    oldp = p
         except:
-            print(E, L, C, a)
-            print("IT BORKE")
-            print(dt, E_dot_true, E_dot(p, e, cosi), E_dot(p, 0, cosi), C_dot(p, e, cosi, L), N1, N4, N5, E_0, L_0, p, p_0, a, C_0, np.sign(cosi), cosi)
             break
-        p_1, e_1 = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
-        #print(p, e)
-        #print(p_1, e_1)
-        cosi_1 = L/np.sqrt(C + L**2)
-        if np.abs(np.imag(p_1))/np.abs(np.real(p_1)) > 0.001:
-            mult += 1
-            dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
-            #print(dt, "unreal", np.abs(np.imag(p_1))/np.abs(np.real(p_1)))
-            if dt < np.real(p)**1.5 + a or (mult_min + mult) > 20 + 0.5*mult_min:
-                print("semilat complexity break")
-                break
-        elif p_1 > vals[-1][4]:
-            mult -= 0.1
-            dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
-            #print(dt, "reverse", p_1, vals[-1][4])
-            if dt > vals[-1][0] + a or (mult_min + mult) > 20 + 0.5*mult_min: #This will cause problems
-                print("semilat growth break")
-                break
-        else:
-            p, e, cosi = p_1, e_1, cosi_1
-            r0 = p/(1 - e**2)
-            mult -= 0.1
-            mult = max(mult, 0)
-            dt = np.real((r0**4/(4*b))/(10 + np.e**(mult_min + mult)))
-            vals.append([vals[-1][0] + dt, E, L, C, p, e, inc, cosi, *turns[-2:]])
-            if p < (9/10)*oldp:
-                #print(p, "new")
-                oldp = p
 
     vals = np.real(np.array(vals))
     dct = {"time": vals[:, 0],

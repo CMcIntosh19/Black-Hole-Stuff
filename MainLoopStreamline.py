@@ -137,6 +137,30 @@ def new_sph2cart(vec, a):
     new_vec = np.array([vec[0], x, y, z, vec[4], vx, vy, vz])
     return new_vec
 
+def cart2sph(cart_vec, a):   #inaccurate, kind of
+    t, x, y, z, tdot, vx, vy, vz = cart_vec
+    
+    # coordinates
+    R = np.sqrt(x**2 + y**2 + (z*a/r if False else 0)**2)  # keep safe
+    r = np.sqrt(x**2 + y**2 + z**2 - a**2)
+    theta = np.arccos(z / r)
+    phi = np.arctan2(y, x)%(np.pi) + (0 if cart_vec[2] >= 0 else np.pi)
+    
+    # matrix relating (ṙ, θ̇, φ̇) to (vx, vy, vz)
+    Rtot = np.sqrt(r**2 + a**2)
+    M = np.array([
+        [ (r/Rtot)*np.sin(theta)*np.cos(phi),  Rtot*np.cos(theta)*np.cos(phi),  -Rtot*np.sin(theta)*np.sin(phi) ],
+        [ (r/Rtot)*np.sin(theta)*np.sin(phi),  Rtot*np.cos(theta)*np.sin(phi),   Rtot*np.sin(theta)*np.cos(phi) ],
+        [ (r/Rtot)*np.cos(theta),             -r*np.sin(theta),                  0                              ]
+    ])
+    
+    rhs = np.array([vx, vy, vz])
+    rdot, thetadot, phidot = np.linalg.solve(M, rhs)
+    
+    sph_vec = np.array([t, r, theta, phi, tdot, rdot, thetadot, phidot])
+    return sph_vec
+
+
 def vec_rot(vec, axis, angle):
     posvec, velvec = vec[1:4], vec[5:8]
     new_posvec = posvec*np.cos(angle) + (np.cross(axis, posvec))*np.sin(angle) + axis*np.dot(axis, posvec)*(1 - np.cos(angle))
@@ -270,7 +294,7 @@ def quick_state(constants, state, a):
 
 import statistics as st
 import time
-def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, trigger=2, override=False, bonk2=True, skip_tar=0, nofix=True):
+def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, trigger=2, override=False, bonk2=True, skip_tar=0, nofix=True, time_reverse=False):
     '''
     Generates orbit
 
@@ -362,20 +386,27 @@ def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, lab
         "issues": index and state corresponding to any point where Keplerian values read as complex
     '''
     termdict = {"time": "abs(all_states[i][0] - all_states[0][0])",
-                "phi_orbit": "abs(abs(all_states[i][3]/(2*np.pi)) - abs(all_states[0][3]/(2*np.pi)))",
-                "rad_orbit": "abs((true_anom[i] - true_anom[0])/(2*np.pi))",
                 "radius": "all_states[i][1]",
-                "inclination": "tracker[j][2]",
+                "theta": "all_states[i][2]",
+                "phi": "all_states[i][3]",
+                "rad_orbit": "abs((true_anom[i] - true_anom[0])/(2*np.pi))",
+                "phi_orbit": "abs(abs(all_states[i][3]/(2*np.pi)) - abs(all_states[0][3]/(2*np.pi)))",
                 "semilat": "2*tracker[j][3]*tracker[j][4]/(tracker[j][3] + tracker[j][4])",
-                "eccentricity": "tracker[j][1]"}
+                "eccentricity": "tracker[j][1]",
+                "inclination": "tracker[j][2]"}
     
     try:
-        terms = endflag.split(" ")
-        newflag = termdict[terms[0]] + terms[1] + terms[2]
+        if "custom" in endflag:
+            terms = ["custom"]
+            newflag = input("Input custom endflag:\n")
+        else:
+            terms = endflag.split(" ")
+            newflag = termdict[terms[0]] + terms[1] + terms[2]
     except:
         print("Endflag should be a valid variable name, comparison operator, and numerical value, all separated by spaces")
         return 0
     
+    time_check = (-1)**time_reverse
     inputs = [mass, a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, veltrue, units]          #Grab initial input in case you want to run the continue function
     inputs = [entry.tolist() if type(entry) == np.ndarray else entry for entry in inputs]                           #Convert numpy arrays to lists so that JSON doesn't complain
     all_states = [[np.zeros(8)]]                                                  #Grab that initial state         
@@ -540,9 +571,10 @@ def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, lab
     dTau = 0.1*np.abs(np.real((inner_turn/200)**(2)))
     if "dumb" in label:
         dTau *= -1
-    dTau_change = [dTau]                                                #create dTau tracker
+    dTau_change = [0]                                                #create dTau tracker
     borken = 0
-    initflagval = eval(termdict[terms[0]])
+    if terms[0] != "custom":
+        initflagval = eval(termdict[terms[0]])
     plunge, unbind = False, False
     def anglething(angle):
         return 0.5*np.pi - np.abs(angle%np.pi - np.pi/2)
@@ -614,9 +646,11 @@ def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, lab
                 E, L, C = constants[j]
                 # if ((within ~0.5 degrees of pole) and (moving closer to pole)) and (average of last few dTau_change values is much smaller than the average):
                 if ((np.sin(new_step[2])**2 <= 8e-5) and np.sign(new_step[6]*np.cos(new_step[2])) < 0) and (np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change)):
+                    old_step = new_step[0]
                     new_step[0] += ((new_step[0] - state[0])/abs(new_step[2] - state[2]))*(2*anglething(new_step[2]))
                     new_step[3] += 2*np.arccos(np.sin(abs(np.pi/2 - np.arccos(L/np.sqrt(L**2 + C))))/ np.sin(new_step[2]))
                     new_step[6] = -new_step[6]
+                    dTau = dTau*abs((new_step[0] - state[0])/(old_step - state[0]))
                 # Get new dTau value 
                 old_dTau, dTau = dTau, np.sign(dTau)*min(abs(dTau) * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
                 if "stupid" in label and (np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change)):
@@ -697,6 +731,8 @@ def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, lab
                     if mu != 0.0:
                         condate = True
                         dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, int(tracker[j][-1]), i)
+                        if "dumb" in label:
+                            dcons *= -1
                         if "hoopa" in label:
                             new_step, ch_cons = mm.new_recalc_state8(constants[j], dcons, new_step, a)
                         else:
@@ -758,7 +794,7 @@ def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, lab
             #print("not stuck!")
             interval.append(mm.check_interval(mm.kerr, new_step, a))
             #false_constants.append([getEnergy(new_step, a), *getLs(new_step, mu)])
-            dTau_change.append(old_dTau)
+            dTau_change.append(dTau_change[-1] + old_dTau)
             all_states.append(new_step )    #update position and velocity
             anomval = get_true_anom(new_step, 0.5*(outer_turn + inner_turn), e) + orbCount*2*np.pi
             if anomval - true_anom[-1] < -np.pi:
@@ -767,15 +803,17 @@ def EMRIGenerator(a, mu, endflag="radius < 0.5", mass=1.0, err_target=1e-15, lab
             true_anom.append(anomval)
             i += 1
             if verbose == 3:
-                progress = max( abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i/(10**7)) * 100
-                if (progress >= milestone):
-                    print("Program has completed " + str(round(eval(termdict[terms[0]]), 2)), ",", str(round(progress, 4)) + "% of maximum run: Index = " + str(i))
-                    milestone = int(progress) + 1
+                if terms[0] != "custom":
+                    progress = max( abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i/(10**7)) * 100
+                    if (progress >= milestone):
+                        print("Program has completed " + str(round(eval(termdict[terms[0]]), 2)), ",", str(round(progress, 4)) + "% of maximum run: Index = " + str(i))
+                        milestone = int(progress) + 1
             elif verbose > 0 and verbose < 3:
-                val = max( (10**7)*abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i) - progress
-                if val > 0:
-                    pbar.update(val)
-                    progress = max( (10**7)*abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i)
+                if terms[0] != "custom":
+                    val = max( (10**7)*abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i) - progress
+                    if val > 0:
+                        pbar.update(val)
+                        progress = max( (10**7)*abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i)
             #print("maybe even finished?")
             upfull.append(time.time() - upcount)
         #Lets you end the program before the established end without breaking anything
@@ -913,47 +951,56 @@ def encode_filename():
     return hex(int(40587.0 + now//86400.0))[2:] + "_" + hex(int((now/86400.0 - now//86400.0)*60*24))[2:]
 
 def decode_filename(name):
-    _, big, small = os.path.splitext(name)[0].split("_")
-    mjd = int(big, 16) + int(small,16)/(60*24)
+    splits = os.path.splitext(name)[0].split("_")
+    mjd = int(splits[1], 16) + int(splits[2], 16)/(60*24)
     unix = (mjd - 40587)*86400
     return unix
 
-def update_index(filename, metadata, index_path="./saved_sims/index.json"):
+def update_index(filename, metadata, index_path="D:/EMRIData/saved_sims/index.json"):
     if os.path.exists(index_path):
         with open(index_path, 'r') as f:
             index = json.load(f)
     else:
-        index = {}
+        new_path = input(f"{index_path} is not a valid index path.\nWould you like to create a new index at this location? (y/n): ").lower()
+        if "y" in new_path:
+            print("Creating new index.")
+            index = {}
+        else:
+            print("Index Update Aborted.")
+            return False
 
     index[filename] = metadata
 
     with open(index_path, 'w') as f:
         json.dump(index, f, indent=2)
 
-def load_index(index_path="./saved_sims/index.json"):
-    with open(index_path, 'r') as f:
-        return json.load(f)
+def load_index(index_path="D:/EMRIData/saved_sims/index.json"):
+    if os.path.exists(index_path):
+        with open(index_path, 'r') as f:
+            return json.load(f)
+    else:
+        print(f"{index_path} does not exist.")
 
-def save_emri_data(final, filename=False):
+def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/"):
     if filename == False:
         filename = "auto_" + encode_filename()
 
     if not filename.endswith('.h5') and not filename.endswith('.hdf5'):
         filename += '.h5' 
 
-    if os.path.exists(f"./saved_sims/{filename}"):
+    if os.path.exists(f"{folder}{filename}"):
         overwrite = input(f"Data for {filename} already exists. Overwrite? (y/n): ").strip().lower()
         if overwrite == 'y':
             print(f"Overwriting {filename}...")
         else:
             num = 1
             base, ext = os.path.splitext(filename)
-            while os.path.exists(f"./saved_sims/{filename}"):
+            while os.path.exists(f"{folder}{filename}"):
                 filename = f"{base}_{num}{ext}"
                 num += 1
             print(f"File now saved as {filename}")
 
-    with h5py.File("./saved_sims/" + filename, 'w') as f:
+    with h5py.File(folder + filename, 'w') as f:
         # String attributes
         f.attrs['name'] = final['name']
 
@@ -992,9 +1039,9 @@ def save_emri_data(final, filename=False):
     update_index(filename, metadata)
     return filename
 
-def load_emri_data(filename):
-    print(f"Loading {filename}")
-    with h5py.File(filename, 'r') as f:
+def load_emri_data(filename, folder="D:/EMRIData/saved_sims/"):
+    print(f"Loading {folder + filename}")
+    with h5py.File(folder + filename, 'r') as f:
         final = {}
 
         # Basic attributes
@@ -1075,7 +1122,7 @@ def load_emri_data(filename):
         print(f"Done")
         return final
 
-def delete_emri_data(filename, index_path="./saved_sims/index.json", folder="./saved_sims/", auto=False):
+def delete_emri_data(filename, index_path="D:/EMRIData/saved_sims/index.json", folder="D:/EMRIData/saved_sims/", auto=False):
     full_path = os.path.join(folder, filename)
     
     # Delete the file
