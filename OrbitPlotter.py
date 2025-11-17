@@ -582,71 +582,78 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
             flipsxz = np.copy(flippoints)
             flipsyz = np.copy(flippoints)
             
+            from matplotlib.path import Path
+            from matplotlib.patches import PathPatch
+            rb = (1 + (1 - data["spin"]**2)**(0.5))/(10**(3*scaler))
+            ev_hor1 = plt.Circle((0, 0), rb, color='black')
+            ev_hor2 = plt.Circle((0, 0), rb, color='black')
+            ev_hor3 = plt.Circle((0, 0), rb, color='black')
+
+            theta = np.linspace(0, 2*np.pi, 100)
+            re = (1 + (1 - (data["spin"]*np.cos(theta))**2)**(0.5))/(10**(3*scaler))
+            path = Path(np.transpose([re*np.sin(theta), re*np.cos(theta)]))
+            top_erg = plt.Circle((0, 0), 2/(10**(3*scaler)), color='darksalmon', alpha=0.6)
+            side_erg1 = PathPatch(path, color ='darksalmon', alpha=0.6)
+            side_erg2 = PathPatch(path, color ='darksalmon', alpha=0.6)
+            
+            
+            al = (azi)*np.pi/180. -np.pi
+            el = (ele)*np.pi/180. - np.pi/2
+            Xxy = [ 0.0, 0.0, 1.0]
+            Xxz = [ 0.0, 1.0, 0.0]
+            Xyz = [ 1.0, 0.0, 0.0]
+
+            A = np.pi - np.arctan(20*cap/rb)
+            B_ = A - np.pi/2 + np.arcsin((rb/data["pos"][to:tf,0])*np.sin(A))
+            
+            condxy = (np.arccos(np.dot(carts, Xxy)/data["pos"][to:tf,0]) < np.pi - B_)
+            condxz = (np.arccos(np.dot(carts, Xxz)/data["pos"][to:tf,0]) < np.pi - B_)
+            condyz = (np.arccos(np.dot(carts, Xyz)/data["pos"][to:tf,0]) < np.pi - B_)
+            if cb == False:
+                condxy = np.ones_like(condxy)
+                condxz = np.ones_like(condxz)
+                condyz = np.ones_like(condyz)
+
+            cartsxy = np.array([carts[i] if condxy[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxy))])
+            cartsxz = np.array([carts[i] if condxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxz))])
+            cartsyz = np.array([carts[i] if condyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condyz))])
+            
+            try:
+                flipB_ = A - np.pi/2 + np.arcsin((rb/data["pos"][data["trackix"][flipto:fliptf].astype(int),0])*np.sin(A))
+                flipcondxy = (np.arccos(np.dot(flippoints, Xxy)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
+                flipcondxz = (np.arccos(np.dot(flippoints, Xxz)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
+                flipcondyz = (np.arccos(np.dot(flippoints, Xyz)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
+                flipsxy = np.array([flippoints[i] if flipcondxy[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxy))])
+                flipsxz = np.array([flippoints[i] if flipcondxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxz))])
+                flipsyz = np.array([flippoints[i] if flipcondyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondyz))])
+            except:
+                pass
+
+            #XY Plane
+            frontxy = np.array([carts[i] if carts[i][2] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+            backxy = np.array([carts[i] if carts[i][2] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+            frontxz = np.array([carts[i] if carts[i][1] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+            backxz = np.array([carts[i] if carts[i][1] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+            frontyz = np.array([carts[i] if carts[i][0] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+            backyz = np.array([carts[i] if carts[i][0] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
+
+            ax_list[0].plot(frontxy[:,0], frontxy[:,1], label=data["name"], c = tab_cols[i])
+            ax_list[0].plot(backxy[:,0], backxy[:,1], label="_nolabel_", c = tab_cols[i])
+            ax_list[1].plot(frontxz[:,0], frontxz[:,2], label="_nolabel_", c = tab_cols[i])
+            ax_list[1].plot(backxz[:,0], backxz[:,2], label="_nolabel_", c = tab_cols[i])
+            ax_list[2].plot(frontyz[:,1], frontyz[:,2], label="_nolabel_", c = tab_cols[i])
+            ax_list[2].plot(backyz[:,1], backyz[:,2], label="_nolabel_", c = tab_cols[i])
+
             if cb == True:
-                from matplotlib.path import Path
-                from matplotlib.patches import PathPatch
-                rb = (1 + (1 - data["spin"]**2)**(0.5))/(10**(3*scaler))
-                ev_hor1 = plt.Circle((0, 0), rb, color='black')
-                ev_hor2 = plt.Circle((0, 0), rb, color='black')
-                ev_hor3 = plt.Circle((0, 0), rb, color='black')
-
-                theta = np.linspace(0, 2*np.pi, 100)
-                re = (1 + (1 - (data["spin"]*np.cos(theta))**2)**(0.5))/(10**(3*scaler))
-                path = Path(np.transpose([re*np.sin(theta), re*np.cos(theta)]))
-                top_erg = plt.Circle((0, 0), 2/(10**(3*scaler)), color='darksalmon', alpha=0.6)
-                side_erg1 = PathPatch(path, color ='darksalmon', alpha=0.6)
-                side_erg2 = PathPatch(path, color ='darksalmon', alpha=0.6)
-                
-                
-                al = (azi)*np.pi/180. -np.pi
-                el = (ele)*np.pi/180. - np.pi/2
-                Xxy = [ 0.0, 0.0, 1.0]
-                Xxz = [ 0.0, 1.0, 0.0]
-                Xyz = [ 1.0, 0.0, 0.0]
-
-                A = np.pi - np.arctan(20*cap/rb)
-                B_ = A - np.pi/2 + np.arcsin((rb/data["pos"][to:tf,0])*np.sin(A))
-                condxy = (np.arccos(np.dot(carts, Xxy)/data["pos"][to:tf,0]) < np.pi - B_)
-                condxz = (np.arccos(np.dot(carts, Xxz)/data["pos"][to:tf,0]) < np.pi - B_)
-                condyz = (np.arccos(np.dot(carts, Xyz)/data["pos"][to:tf,0]) < np.pi - B_)
-                cartsxy = np.array([carts[i] if condxy[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxy))])
-                cartsxz = np.array([carts[i] if condxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condxz))])
-                cartsyz = np.array([carts[i] if condyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(condyz))])
-                
-                try:
-                    flipB_ = A - np.pi/2 + np.arcsin((rb/data["pos"][data["trackix"][flipto:fliptf].astype(int),0])*np.sin(A))
-                    flipcondxy = (np.arccos(np.dot(flippoints, Xxy)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
-                    flipcondxz = (np.arccos(np.dot(flippoints, Xxz)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
-                    flipcondyz = (np.arccos(np.dot(flippoints, Xyz)/data["pos"][data["trackix"][flipto:fliptf].astype(int),0]) < np.pi - flipB_)
-                    flipsxy = np.array([flippoints[i] if flipcondxy[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxy))])
-                    flipsxz = np.array([flippoints[i] if flipcondxz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondxz))])
-                    flipsyz = np.array([flippoints[i] if flipcondyz[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcondyz))])
-                except:
-                    pass
-
-                #XY Plane
-                frontxy = np.array([carts[i] if carts[i][2] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
-                backxy = np.array([carts[i] if carts[i][2] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
-                ax_list[0].plot(frontxy[:,0], frontxy[:,1], label=data["name"], c = tab_cols[i])
                 ax_list[0].add_patch(top_erg)
                 ax_list[0].add_patch(ev_hor1)
-                ax_list[0].plot(backxy[:,0], backxy[:,1], label="_nolabel_", c = tab_cols[i])
 
-                frontxz = np.array([carts[i] if carts[i][1] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
-                backxz = np.array([carts[i] if carts[i][1] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
-                ax_list[1].plot(frontxz[:,0], frontxz[:,2], label="_nolabel_", c = tab_cols[i])
                 ax_list[1].add_patch(side_erg1)
                 ax_list[1].add_patch(ev_hor2)
-                ax_list[1].plot(backxz[:,0], backxz[:,2], label="_nolabel_", c = tab_cols[i])
 
-                frontyz = np.array([carts[i] if carts[i][0] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
-                backyz = np.array([carts[i] if carts[i][0] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
-                ax_list[2].plot(frontyz[:,1], frontyz[:,2], label="_nolabel_", c = tab_cols[i])
                 ax_list[2].add_patch(side_erg2)
                 ax_list[2].add_patch(ev_hor3)
-                ax_list[2].plot(backyz[:,1], backyz[:,2], label="_nolabel_", c = tab_cols[i])
-                
-                
+
             #ax_list[0].plot(cartsxy[:,0], cartsxy[:,1], label=data["name"], zorder=10)  #XY Plot
             #ax_list[1].plot(cartsxz[:,0], cartsxz[:,2], label="_nolabel_", zorder=10)  #XZ Plot
             #ax_list[2].plot(cartsyz[:,1], cartsyz[:,2], label="_nolabel_", zorder=10)  #ZY Plot
@@ -733,6 +740,8 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
                     flippoints = np.array([flippoints[i] if flipcond[i] == True else [np.nan, np.nan, np.nan] for i in range(len(flipcond))])
                 except:
                     pass
+            else:
+                cond = np.ones_like(carts[:,0])
                 
             rad_ele, rad_azi = ele*np.pi/180, azi*np.pi/180
             A, B, C = np.cos(rad_ele)*np.cos(rad_azi), np.cos(rad_ele)*np.sin(rad_azi), np.sin(rad_ele)
@@ -740,8 +749,9 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
             back = np.array([carts[i] if -(A/C)*carts[i][0] - (B/C)*carts[i][1] - C*5 >= carts[i][2] else [np.nan, np.nan, np.nan] for i in range(len(cond))])
 
             ax.plot3D(back[:, 0], back[:, 1], back[:, 2], label=data["name"], c = tab_cols[i])
-            ax.plot_surface(xS, yS, zS, color="black", shade=False)
-            ax.plot_surface(xE, yE, zE, color="darksalmon", alpha = 0.3)
+            if cb == True:
+                ax.plot_surface(xS, yS, zS, color="black", shade=False)
+                ax.plot_surface(xE, yE, zE, color="darksalmon", alpha = 0.3)
             ax.plot3D(front[:, 0], front[:, 1], front[:, 2], zorder=10, c = tab_cols[i])
             if stitch == True:
                 ax.scatter(flippoints[:, 0], flippoints[:, 1], flippoints[:, 2], label=data["name"], zorder=9, marker="*", s=300)

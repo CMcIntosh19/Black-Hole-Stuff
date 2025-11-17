@@ -26,7 +26,7 @@ def find_rmb(spin):
     Returns
     -------
     r_mb: float
-        Periapse of an equatorial orbit at the marginally bound orbit
+        Periapse of an equatorial marginally BOUND orbit
     '''
 
     return (1 + np.sqrt(1 - spin))**2
@@ -43,7 +43,7 @@ def find_rms(spin):
     Returns
     -------
     r_ms: float
-        Radius of an equatorial orbit at the marginally stable bound orbit
+        Radius of an equatorial marginally STABLE bound orbit
     '''
     if spin >= 0.0:
         pro = 1.0
@@ -54,6 +54,22 @@ def find_rms(spin):
     z2 = np.sqrt(3*(spin**2) + z1**2)
     r_ms = 3 + z2 - pro*np.sqrt((3 - z1)*(3 + z1 + 2*z2))
     return r_ms
+
+def find_rph(spin):
+    '''
+    Brief calculations for photon orbit
+
+    Parameters
+    ----------
+    spin : float
+        Dimensionless spin constant of black hole, between -1 and 1 inclusive
+
+    Returns
+    -------
+    r_ph: float
+        Radius of an equatorial photon orbit
+    '''
+    return 2*(1 + np.cos((2/3)*np.arccos(-spin)))
 
 def mink(state):
     '''
@@ -3693,6 +3709,65 @@ def freqs_finder(E, L, C, a):
         wt = wp
     return np.array([wr, wt, wp])/g
 
+def freqs_finder2(E, L, C, a):
+    '''
+    Calculates characteristic frequencies of a given orbit
+
+    Parameters
+    ----------
+    E : float
+        Specific energy of orbit
+    L : float
+        Specific angular momentum of orbit
+    C : float
+        Specific Carter constant of orbit
+    a : float
+        Dimensionless spin of central black hole
+
+    Returns
+    -------
+    3-element numpy array
+        [Radial frequency, theta frequency, phi frequency] in geometric units
+
+    '''
+    B2 = (a**2)*(1 - E**2)
+    roots = np.round(np.sort(np.roots([B2, 0, -(B2 + C + L**2), 0, C])), 15)
+    if len(roots) == 4:
+        zm, zp = roots[-2], roots[-1]
+    else:
+        zm, zp = roots[-1], 1e151
+    k, i = (zm**2)/(zp**2), np.arccos(zm)
+    
+    Rcoeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+    ri, ro = np.sort(np.roots(Rcoeff))[-2:]
+    if ri.imag/ri.real > 1e-8:
+        return np.array([np.nan, np.nan, np.nan])
+
+    r0, e = 0.5*(ro + ri), (ro - ri)/(ro + ri)
+    p = r0*(1 - e**2)
+
+    J2 = lambda x: np.real(Jfunc(x, r0, e, i, a, E, L, C))
+    H = lambda x: np.real(1 - (2/p)*(1 + e*np.cos(x)) + ((a/p)**2)*(1 + e*np.cos(x))**2)
+    G = lambda x: np.real(L - 2*(L - a*E)*(1 + e*np.cos(x))/p)
+    F = lambda x: np.real(E + ((a/p)**2)*E*((1 + e*np.cos(x))**2) - 2*a*(L - a*E)*((1 + e*np.cos(x))/p)**3)
+    
+    Xt = integrate.quad(lambda x: 1/(J2(x)**0.5), 0.0, np.pi)[0]
+    Yt = integrate.quad(lambda x: (p**2)/(((1+e*np.cos(x))**2)*(J2(x)**0.5)), 0.0, np.pi)[0]
+    Zt = integrate.quad(lambda x: G(x)/(H(x)*(J2(x)**0.5)), 0.0, np.pi)[0]
+    Wt = integrate.quad(lambda x: (p**2)*F(x)/(((1 + e*np.cos(x))**2)*H(x)*(J2(x)**0.5)), 0.0, np.pi)[0]
+
+    Kk = integrate.quad(lambda p: 1/np.sqrt(1 - k*(np.sin(p)**2)), 0, np.pi/2)[0]
+    Ek = integrate.quad(lambda p: np.sqrt(1 - k*(np.sin(p)**2)), 0, np.pi/2)[0]
+    Pk = integrate.quad(lambda p: 1/((1-(zm*np.sin(p))**2)*np.sqrt(1 - k*(np.sin(p)**2))), 0, np.pi/2)[0]
+
+    Lam = (Yt + Xt*(a*zp)**2)*Kk - Xt*Ek*(a*zp)**2
+    wr, wt, wp = np.pi*p*Kk/((1-e**2)*Lam), np.pi*(B2**0.5)*zp*Xt/(2*Lam), (1/Lam)*((Zt - L*Xt)*Kk + L*Xt*Pk)
+    g = (1/Lam)*((Wt + E*Xt*(a*zp)**2)*Kk - E*Xt*Ek*(a*zp)**2)
+    wr, wt, wp, g = np.where(np.array([wr, wt, wp, g]).imag < 1e-11, np.array([wr, wt, wp, g]).real, np.array([wr, wt, wp, g]))
+    if a == 0.0:
+        wt = wp
+    return np.array([g, wr, wt, wp])
+
 def seper_locator(r0, inc, a):
     '''
     Locates seperatrix for a given semimajor axis, inclination, and black hole spin
@@ -3798,7 +3873,7 @@ def root_getter(E, L, C, spin):
     return np.round(np.sort(turns), 10), np.round(np.sort(flats), 10), np.round(np.sort(zs), 10)
 
 def root_getter_vec(E, L, C, spin):
-    a, b, c, d, e = np.array([(E**2 - 1.0), 2.0*np.ones_like(E), ((spin**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - spin*E)**2) + 2*C), -(spin**2)*C]).astype(complex)
+    a, b, c, d, e = np.array([(E**2 - 1.0), 2.0*np.ones_like(E), ((spin**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - spin*E)**2) + 2*C), -(spin**2)*C*np.ones_like(E)]).astype(complex)
     p1 = 2*(c**3) - 9*b*c*d + 27*a*(d**2) + 27*(b**2)*e - 72*a*c*e
     p2 = p1 + (-4*(c**2 - 3*b*d + 12*a*e)**3 + p1**2)**0.5
     p3 = (c**2 - 3*b*d + 12*a*e)/(3*a*((0.5*p2)**(1/3))) + ((0.5*p2)**(1/3))/(3*a)
@@ -3859,47 +3934,72 @@ def circC_inc(r, a, inc):
 def Yfunc(r, a, C):
     return r**5 - C*(r - 3)*r**3 + (a*C)**2
 
-def circE_C(r, a, C):
-    p = 1 if a >= 0 else -1
-    a = abs(a)
+def circE_C(r, a, C, p=1):
+    p = float(np.sign(p))**np.sign(p)
     Y = Yfunc(r, a, C)
     sqrt_Y = np.sqrt(Y)
     denom = (r**2) * np.sqrt(r**3*(r - 3) - 2*a*(a*C - p*sqrt_Y))
     numer = r**3*(r - 2) - a*(a*C - p*sqrt_Y)
     return numer / denom
 
-def circL_C(r, a, C):
-    p = 1 if a >= 0 else -1
-    a = abs(a)
+def circL_C(r, a, C, p=1):
+    p = float(np.sign(p))**np.sign(p)
     Y = Yfunc(r, a, C)
     sqrt_Y = np.sqrt(Y)
     denom = (r**2) * np.sqrt(r**3*(r - 3) - 2*a*(a*C - p*sqrt_Y))
     numer = -2*a*r**3 - (r**2 + a**2)*(a*C - p*sqrt_Y)
     return numer / denom
 
+def circE_L_C(r, a, C, p=1):
+    """
+    Vectorized: returns tuple (E, L) for arrays r.
+    Assumes r is numpy array (or scalar).
+    p should be +1 or -1 (or a sign-like value).
+    """
+    p = 1.0 if p >= 0 else -1.0
+    Y = r**5 - C*(r - 3)*r**3 + (a*C)**2         # same as Yfunc
+    sqrt_Y = np.sqrt(Y)
+    inner = r**3*(r - 3) - 2*a*(a*C - p*sqrt_Y)
+    denom = (r**2) * np.sqrt(inner)
+    numerE = r**3*(r - 2) - a*(a*C - p*sqrt_Y)
+    E = numerE / denom
+    numerL = -2*a*r**3 - (r**2 + a**2)*(a*C - p*sqrt_Y)
+    L = numerL / denom
+    return E, L
+
+
 def get_EL_curve(a, C, rmax=100.0, npts=1000):
-    rmin = find_rmb(a)        # Marginally bound orbit, smallest possible periapse for an equatorial orbit
-    r_isco = find_rms(a)      # Innermost stable circular orbit - NOT the same as innermost stable spherical orbit
+    r1min = find_rmb(a)*0.5        # Marginally bound orbit, smallest possible periapse for an equatorial orbit
+    r1_isco = find_rms(a)      # Innermost stable circular orbit - NOT the same as innermost stable spherical orbit
+    r2min = find_rmb(-a)*0.5        # Marginally bound orbit, smallest possible periapse for an equatorial orbit
+    r2_isco = find_rms(-a)      # Innermost stable circular orbit - NOT the same as innermost stable spherical orbit
 
     # Sample more densely near ISCO
     n_half = npts // 2
-    r_inner = np.linspace(rmin, r_isco, n_half, endpoint=False)
-    r_outer = np.linspace(r_isco, rmax, npts - n_half)
+    r1_inner = np.geomspace(r1min, r1_isco, n_half)
+    r1_outer = np.geomspace(r1_isco, rmax, npts - n_half)
+    r2_inner = np.geomspace(r2min, r2_isco, n_half)
+    r2_outer = np.geomspace(r2_isco, rmax, npts - n_half)
 
-    r = np.concatenate([r_inner, r_outer])
-    Y = Yfunc(r, a, C)
+    r = np.array([np.concatenate([r1_inner, r1_outer]), np.concatenate([r2_inner, r2_outer])])
+    '''Y = Yfunc(r, a, C)
     sqrt_Y = np.sqrt(np.maximum(Y, 0))
     radicand = r**3 * (r - 3) - 2 * a * (a * C - sqrt_Y)
-    valid = (Y >= 0) & (radicand > 0)
-    r = r[valid]
+    valid1 = (Y[0] >= 0) & (radicand[0] > 0)
+    valid2 = (Y[1] >= 0) & (radicand[1] > 0)
+    r[0] = r[0][valid1]
+    r[1] = r[1][valid2]
     if len(r) == 0:
-        return None, None
-    E_1, E_2 = circE_C(r, a, C), circE_C(r, -a, C)
-    L_1, L_2 = circL_C(r, a, C), circL_C(r, -a, C)
+        return None, None'''
+    E_1, E_2 = circE_C(r[0], a, C), circE_C(r[1], a, C, -1)
+    L_1, L_2 = circL_C(r[0], a, C), circL_C(r[1], a, C, -1)
+    mask1, mask2 = (0 <= E_1) & (E_1 <= 1), (0 <= E_2) & (E_2 <= 1)
+    E_1, E_2 = E_1[mask1], E_2[mask2]
+    L_1, L_2 = L_1[mask1], L_2[mask2]
     return E_1, L_1, E_2, L_2
 
-def is_in_ELC_region(E_test, L_test, C_test, a, tol=1e-4):
-    E_curve_1, L_curve_1, E_curve_2, L_curve_2 = get_EL_curve(a, C_test, rmax=100.0, npts=5000)
+def is_in_ELC_region(E_test, L_test, C_test, a, tol=1e-3):
+    E_curve_1, L_curve_1, E_curve_2, L_curve_2 = get_EL_curve(a, C_test, rmax=1000, npts=5000)
     
     if E_curve_1 is None and E_curve_2 is None:
         #print("E_curve is None")
@@ -3911,16 +4011,213 @@ def is_in_ELC_region(E_test, L_test, C_test, a, tol=1e-4):
     close_indices_1 = np.where(E_diff_1 < tol)[0]
     close_indices_2 = np.where(E_diff_2 < tol)[0]
 
-    if len(close_indices_1) < 2 and len(close_indices_1) < 2:
+    if len(close_indices_1) < 2 and len(close_indices_2) < 2:
         #print("close_indices too small")
         return False  # Either no valid E or not enough to get bounds
 
     Ls_at_E = [L_curve_1[close_indices_1], L_curve_2[close_indices_2]]
-    Lmin, Lmax = np.min(Ls_at_E, axis=1), np.max(Ls_at_E, axis=1) #[np.min(Ls) for Ls in Ls_at_E], [np.max(Ls) for Ls in Ls_at_E],
+    #print(Ls_at_E[0])
+    Lmin, Lmax = [0,0], [0,0]
+
+    for i in range(2):
+        try:
+            mid = circL_C(find_rms(a), a, C_test, 0-i)
+            print(find_rmb(a), find_rms(a))
+            Lmin[i], Lmax[i] = np.mean(Ls_at_E[i][np.where(Ls_at_E[i] <= mid)]), np.mean(Ls_at_E[i][np.where(Ls_at_E[i] >= mid)])
+        except:
+            pass
+    
+    #Lmin, Lmax = [np.min(Ls) for Ls in Ls_at_E], [np.max(Ls) for Ls in Ls_at_E] #np.min(Ls_at_E[1], axis=1), np.max(Ls_at_E[1], ax) #
     #print(Lmin, Lmax)
+    #print(Ls_at_E[i][np.where(Ls_at_E[0] <= mid)])
 
     # Also ensure E < 1 for bound orbits
-    return ((Lmin[0] <= L_test <= Lmax[0]) or (Lmin[1] <= L_test <= Lmax[1])) and (E_test < 1)
+    val = ((Lmin[0] <= L_test <= Lmax[0]) or (Lmin[1] <= L_test <= Lmax[1])) and (E_test < 1)
+ 
+    #if val == False and (E_test < 1):
+    #    print(Lmin[0], L_test, Lmax[0], "starts", E_test)
+    #    print(Lmin[1], L_test, Lmax[1])
+    return val #((Lmin[0] <= L_test <= Lmax[0]) or (Lmin[1] <= L_test <= Lmax[1])) and (E_test < 1)
+
+def is_in_ELC_region2(E_test, L_test, C_test, a, tol=1e-4):
+    #E_curve_1, L_curve_1, E_curve_2, L_curve_2 = get_EL_curve(a, C_test, rmax=1000, npts=5000)
+    rmax, npts = 1000, 50000
+    r1min = find_rmb(a)        # Marginally bound orbit, smallest possible periapse for an equatorial orbit
+    r1_isco = find_rms(a)      # Innermost stable circular orbit - NOT the same as innermost stable spherical orbit
+    r2min = find_rmb(-a)        # Marginally bound orbit, smallest possible periapse for an equatorial orbit
+    r2_isco = find_rms(-a)      # Innermost stable circular orbit - NOT the same as innermost stable spherical orbit
+    #I NEED BETTER BOUNDS, THESE FUCK UP WHEN C != 0
+
+    # Sample more densely near ISCO
+    n_half = npts // 2
+    r1_inner = np.geomspace(r1min, r1_isco, n_half, endpoint=False)
+    r1_outer = np.geomspace(r1_isco, rmax, npts - n_half)
+    r2_inner = np.geomspace(r2min, r2_isco, n_half, endpoint=False)
+    r2_outer = np.geomspace(r2_isco, rmax, npts - n_half)
+
+    r = np.array([r1_inner, r1_outer, r2_inner, r2_outer])
+    Y = Yfunc(r, a, C_test)
+    sqrt_Y = np.sqrt(np.maximum(Y, 0))
+    radicand = r**3 * (r - 3) - 2 * a * (a * C_test - sqrt_Y)
+    valids = [(Y[i] >= 0) & (radicand[i] > 0) for i in range(4)]
+    rs = [r[i][valids[i]] for i in range(4)]
+    #print(rs[0])
+    #print(rs[1])
+    #print(rs[2])
+    #print(rs[3])
+    #print("----")
+    print(r1min, r1_isco)
+    plt.plot(r1_inner)
+    plt.show()
+    if len(rs[0]) == 0:
+        return None, None
+    Es1 = [circE_C(r[i], a, C_test, p=(-1)**(i//2)) for i in range(4)]#, circE_C(r[1], a, C, -1)
+    Ls1 = [circL_C(r[i], a, C_test, p=(-1)**(i//2)) for i in range(4)]
+
+    # For some values of C, a, we need to move values from the upper branch to the lower branch or vice versa so we can check things properly!
+    # I need to check for the minimum values of E between the inner sections and the outer sections (the points)
+    # Then get the corresponding L values
+    # Everything HIGHER than that value needs to go in the upper branch, and everything LOWER needs to go in the lower branch
+    #Get the minimum E value in each section, plus their indices
+    Emins, Emins_ix = np.nanmin(Es1, axis=1), np.nanargmin(Es1, axis=1)
+    #Get the corresponding Ls
+    Lmins = np.array([Ls1[i][Emins_ix[i]] for i in range(4)])
+    Es, Ls = [[],[],[],[]], [[],[],[],[]]
+    print(Emins, "HUH", np.nanmin(Es1[0]), np.nanmax(Es1[0]))
+    
+    for i in range(2): #inner, then outer
+        if Emins[0 + i] < Emins[2 + i]:
+            Lturn = Lmins[0 + i]
+        else:
+            Lturn = Lmins[2 + i]
+        print(Lturn)
+        Es[0 + i] = np.concatenate((Es1[0 + i][Ls1[0 + i] >= Lturn], Es1[2 + i][Ls1[2 + i] >= Lturn]))
+        Es[2 + i] = np.concatenate((Es1[0 + i][Ls1[0 + i] < Lturn], Es1[2 + i][Ls1[2 + i] < Lturn]))
+        Ls[0 + i] = np.concatenate((Ls1[0 + i][Ls1[0 + i] >= Lturn], Ls1[2 + i][Ls1[2 + i] >= Lturn]))
+        Ls[2 + i] = np.concatenate((Ls1[0 + i][Ls1[0 + i] < Lturn], Ls1[2 + i][Ls1[2 + i] < Lturn]))
+
+    if np.all(Es == None):
+        print("E_curve is None")
+        return False
+
+    # Only consider points where |E - E_test| < tol
+    E_diffs = [np.abs(E_group - E_test) for E_group in Es]
+    close_indices = [np.where(E_group < tol)[0] for E_group in E_diffs]
+    #print([len(thing) for thing in close_indices])
+
+    if len(close_indices[0]) + len(close_indices[1]) < 2 and len(close_indices[2]) + len(close_indices[3]) < 2:
+        print("close_indices too small")
+        return False  # Either no valid E or not enough to get bounds
+
+    #print(Ls[0][close_indices[0]])
+    Ls_at_E = [Ls[i][close_indices[i]] for i in range(4)]
+    #print(Ls_at_E[0])
+    Lmin, Lmax = [np.mean(Ls_at_E[0]), np.mean(Ls_at_E[2])], [np.mean(Ls_at_E[1]), np.mean(Ls_at_E[3])]
+    
+    for i in range(4):
+        plt.scatter(Es[i][close_indices[i]], Ls[i][close_indices[i]])
+
+    # Also ensure E < 1 for bound orbits
+    val = ((Lmin[0] <= L_test <= Lmax[0]) or (Lmin[1] <= L_test <= Lmax[1])) and (E_test < 1)
+ 
+    #if val == False and (E_test < 1):
+    #    print(Lmin[0], L_test, Lmax[0], "starts", E_test)
+    #    print(Lmin[1], L_test, Lmax[1])
+    return val #((Lmin[0] <= L_test <= Lmax[0]) or (Lmin[1] <= L_test <= Lmax[1])) and (E_test < 1)
+
+def is_in_ELC_region3(E_test, L_test, C_test, a, tol=1e-4, rmax=1000):
+    
+    #Starter radii, roughly covers the ranges of viable extremal orbits (psuedo-circular or marginally bound) where branch splits occur
+    #First half is for upper branch, second half is for lower branch
+    rys = [np.linspace(find_rph(a), 6, 50000), 
+           np.linspace(max(12, C_test)/2, max(12, C_test), 50000),
+           np.linspace(find_rph(-a), 6, 50000), 
+           np.linspace(max(12, C_test)/2, max(12, C_test), 50000)]
+    #Get the energies and angular momenta associated with these radii
+    getEs, getLs = [], []
+    for i in range(4):
+        p = (-1)**(i//2)
+        E_arr, L_arr = circE_L_C(rys[i], a, C_test, p=p)
+        getEs.append(E_arr)
+        getLs.append(L_arr)
+    getEs = np.array(getEs)  
+    getLs = np.array(getLs)  #We need these for later
+
+    #Get the minima of each set of energies - they will either correspond to the actual minima OR the split point
+    Emins, Emins_ix = np.nanmin(getEs, axis=1), np.nanargmin(getEs, axis=1)
+    if E_test < np.nanmin(Emins):
+        #print("E is too low!")
+        return False
+    #Get the radii associated with THOSE energies (lots of back and forth, can I fix that?)
+    key_radii = [rys[i][Emins_ix[i]] for i in range(4)]
+
+    r_mb = max(key_radii[0], key_radii[2])      # Split point for marginally bound curve
+    r_cir = min(key_radii[1], key_radii[3])     # Split point for psuedo-circular curve
+    #When C >= 12, the upper and lower branches connect, r_mb != r_cir, and the values in between are not viable extremal orbits
+    #When C < 12, the upper and lower branches DON'T connect, r_mb = r_cir
+    
+    # Sample more densely near split points
+    npts = 50000
+    n_half = npts // 2
+    r1_inner = r_mb - np.geomspace(find_rph(a), r_mb, n_half) + find_rph(a)         # Start from upper branch photon orbit, go to mb split
+    r1_outer = np.geomspace(r_cir, rmax, npts - n_half)                             # Start psuedo-circular split, go to upper bound
+    r2_inner = r_mb - np.geomspace(find_rph(-a), r_mb, n_half) + find_rph(-a)       # Start from lower branch photon orbit, go to mb split
+    r2_outer = np.geomspace(r_cir, rmax, npts - n_half)                             # Start psuedo-circular split, go to upper bound
+    #The 'outer' ranges are identical, and for C >= 16 the 'inner' ranges all correspond to E > 1, but!! I don't care!! It's gonna work for all cases so there
+    r = np.array([r1_inner, r1_outer, r2_inner, r2_outer])
+    #Get the energies and angular momenta
+    Es1, Ls1 = [], []
+    for i in range(4):
+        p = (-1)**(i//2)
+        E_arr, L_arr = circE_L_C(r[i], a, C_test, p=p)
+        Es1.append(E_arr)
+        Ls1.append(L_arr)
+    Es1 = np.array(Es1)
+    Ls1 = np.array(Ls1)
+
+    # For some values of C, a, we need to move values from the upper branch to the lower branch or vice versa so that we
+        # can have nicely defined upper and lower bounds for later
+    #Grab the angular momenta associated with the actual minimum energy points, so our splits are more symmetrical
+    Lturn = [np.concatenate((getLs[0], getLs[2]))[np.nanargmin(np.concatenate((getEs[0], getEs[2])))],    # marginally bound curve
+              np.concatenate((getLs[1], getLs[3]))[np.nanargmin(np.concatenate((getEs[1], getEs[3])))]]    # psuedo-circular curve 
+    #Reorganize Es1 and Ls1 to move the values
+    Es, Ls = [[],[],[],[]], [[],[],[],[]]
+    for i in range(2): #inner, then outer
+        great_mask = Ls1[0 + i] >= Lturn[i], Ls1[2 + i] >= Lturn[i]
+        less_mask = Ls1[0 + i] < Lturn[i], Ls1[2 + i] < Lturn[i]
+        Es[0 + i] = np.concatenate((Es1[0 + i][great_mask[0]], Es1[2 + i][great_mask[1]]))
+        Es[2 + i] = np.concatenate((Es1[0 + i][less_mask[0]], Es1[2 + i][less_mask[1]]))
+        Ls[0 + i] = np.concatenate((Ls1[0 + i][great_mask[0]], Ls1[2 + i][great_mask[1]]))
+        Ls[2 + i] = np.concatenate((Ls1[0 + i][less_mask[0]], Ls1[2 + i][less_mask[1]]))
+
+    #If for whatever reason there are no energies, just break everything I guess
+    if np.all(Es == None):
+        #print("E_curve is None")
+        return False
+
+    # Only consider points where |E - E_test| < tol
+    close_indices = [np.abs(E_group - E_test) <= tol for E_group in Es]
+    if sum(close_indices[0]) + sum(close_indices[1]) < 2 and sum(close_indices[2]) + sum(close_indices[3]) < 2:
+        #print("close_indices too small")
+        return False  # Either no valid E or not enough to get bounds
+    #Get corresponding Ls
+    Ls_at_E = [Ls[i][close_indices[i]] for i in range(4)]
+
+    if len(Ls_at_E[0])*len(Ls_at_E[2]) == 0:  #If E = E_test does not intersect the marginally bound curve
+        Lmax, Lmin = np.mean(Ls_at_E[1]), np.mean(Ls_at_E[3])
+        val = Lmin <= L_test <= Lmax
+    else:
+        Lmin, Lmax = [np.mean(Ls_at_E[0]), np.mean(Ls_at_E[3])], [np.mean(Ls_at_E[1]), np.mean(Ls_at_E[2])]
+        val = (Lmin[0] <= L_test <= Lmax[0]) or (Lmin[1] <= L_test <= Lmax[1])
+
+    #for i in range(4):
+    #    plt.scatter(Es[i][close_indices[i]], Ls[i][close_indices[i]])
+    #plt.scatter(E_test, L_test, marker="x")
+
+    # Also ensure E < 1 for bound orbits
+    val = val and (E_test < 1)
+
+    return val 
 
 def gair_glamp3(E, L, C, a, q, endflag="False"):
     # matches glampedakis 2002
