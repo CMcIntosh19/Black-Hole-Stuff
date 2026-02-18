@@ -16,6 +16,8 @@ import matplotlib.animation as animation
 from IPython.display import HTML
 #import pywt
 from tqdm import tqdm
+from matplotlib.colors import TABLEAU_COLORS
+from matplotlib.gridspec import GridSpec
 
 def get_index(array, time):
     '''
@@ -359,6 +361,9 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
             "theta": ['data["pos"][:,1]', "Theta", 'data["time"]'],
             "phi": ['data["pos"][:,2]%(2*np.pi)', "Phi", 'data["time"]'],
             "phase": ['data["pos"][:,2]/(2*np.pi)', "Phase", 'data["time"]'],
+            "x": ['np.sqrt(data["pos"][:,0]**2 + data["spin"]**2)*np.sin(data["pos"][:,1])*np.cos(data["pos"][:,2])', "X", 'data["time"]'],
+            "y": ['np.sqrt(data["pos"][:,0]**2 + data["spin"]**2)*np.sin(data["pos"][:,1])*np.sin(data["pos"][:,2])', "Y", 'data["time"]'],
+            "z": ['data["pos"][:,0]*np.cos(data["pos"][:,1])', "Z", 'data["time"]'],
             "true_anom": ['data["true_anom"]/(2*np.pi)', "True Anomaly", 'data["tracktime"]'],
             "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
             "pot_min": ['data["pot_min"]', "Effective Potential Minimum", 'data["tracktime"]'],
@@ -688,7 +693,7 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
             legend.set_bbox_to_anchor(bbox=(0.666 - 0.5*hor_ratio, 0.55 - 0.5*ver_ratio))        
         
     else:
-        fig = plt.figure(figsize=(10,12))
+        fig = plt.figure(figsize=(10,10))
         ax = fig.add_subplot(projection="3d")
         ax.view_init(elev=ele, azim=azi)
         
@@ -767,6 +772,114 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
         plt.show()
     else:
         plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
+
+def multi3D(datalist, grid=None, zoom=1.0, start=0, end=-1, ele=30, azi=30, cb=True, filename=False, colors_list=None):
+    if colors_list == None:
+        from matplotlib.colors import TABLEAU_COLORS
+        tab_cols = list(TABLEAU_COLORS.values())
+    else:
+        tab_cols = colors_list
+
+    if type(datalist) != list:
+        datalist = [datalist]
+
+    if grid == None:
+        c, r = np.ceil(np.sqrt(len(datalist))), 0
+        while c*r < len(datalist):
+            r += 1
+        grid = (int(r), int(c))
+
+    scale = np.ceil(2*np.sqrt(len(datalist)))/2
+    fig = plt.figure(figsize=(grid[1]*8/scale, grid[0]*8/scale))
+    gs = GridSpec(
+        grid[0], grid[1],
+        figure=fig,
+        left=0, right=1,
+        bottom=0, top=1,
+        wspace=0, hspace=0
+    )
+
+    for i in range(len(datalist)):
+        ax = fig.add_subplot(gs[i//grid[1], i % grid[1]], projection="3d")
+        ax.set_axis_off()
+        print(i//grid[1], i % grid[1], grid)
+        ax.view_init(elev=ele, azim=azi)
+
+        data = datalist[i]
+        to = get_index(data["time"], start)
+        tf = get_index(data["time"], end) if end > 0 else len(data["time"])
+
+        carts = np.array([sph2cart(pos, data["spin"]) for pos in data["pos"][to:tf]])
+
+        # View mask
+        T = np.pi / 180
+        view_norm = np.array([
+            np.cos(ele*T)*np.cos(azi*T),
+            np.cos(ele*T)*np.sin(azi*T),
+            np.sin(ele*T)
+            ])
+        mask = np.sign(carts @ view_norm)
+
+        # Horizons
+        rb = 1 + np.sqrt(1 - data["spin"]**2)
+        theta, phi = np.linspace(0, 2*np.pi), np.linspace(0, np.pi)
+        phi, theta = np.meshgrid(phi, theta)
+
+        xS = rb*np.sin(theta)*np.sin(phi)
+        yS = rb*np.sin(theta)*np.cos(phi)
+        zS = rb*np.cos(theta)
+
+        re = 1 + np.sqrt(1 - (data["spin"]*np.cos(theta))**2)
+        xE = re*np.sin(theta)*np.sin(phi)
+        yE = re*np.sin(theta)*np.cos(phi)
+        zE = re*np.cos(theta)
+
+        rbound = np.max(np.abs(carts)) * 0.9
+        ax.set_xlim(-rbound, rbound)
+        ax.set_ylim(-rbound, rbound)
+        ax.set_zlim(-rbound, rbound)
+        ax.set_box_aspect((1, 1, 1))
+
+        dr = 10
+        max_r = dr * max(1, int(rbound // dr))
+        radii = np.arange(dr, max_r + dr, dr)
+        while len(radii) < 3:
+            dr = dr//2
+            max_r = int(max_r * 1.5)
+            radii = np.arange(dr, max_r + dr, dr)
+            #print(dr, radii)
+        while len(radii) > 5:
+            radii = radii[1::2]
+
+        radial_reference_circles(ax, radii, angle=azi+90)
+        radial_axes_with_ticks(ax, rbound, ticks=())
+
+        # Back half
+        ax.plot3D(
+            np.where(mask <= 0, carts[:,0], np.nan),
+            np.where(mask <= 0, carts[:,1], np.nan),
+            np.where(mask <= 0, carts[:,2], np.nan),
+            c=tab_cols[i%len(tab_cols)], lw=1.2, alpha=0.85
+        )
+
+        ax.plot_surface(xS, yS, zS, color="black", alpha=0.85)
+        ax.plot_surface(xE, yE, zE, color="darksalmon", alpha=0.25)
+
+        # Front half
+        ax.plot3D(
+            np.where(mask > 0, carts[:,0], np.nan),
+            np.where(mask > 0, carts[:,1], np.nan),
+            np.where(mask > 0, carts[:,2], np.nan),
+            c=tab_cols[i%len(tab_cols)], lw=1.3
+        )
+
+        ax.margins(0)
+        ax.set_box_aspect((1, 1, 1))
+        ax.set_anchor('C')
+    
+    draw_panel_dividers(fig, gridvals=(grid[1], grid[0]))
+    plt.show()
+    
 
 def physplots(datalist, merge=False, start=0.0, end=-1.0, fit=True, leg=True):
     '''
@@ -1687,36 +1800,40 @@ def potentplotter3(cons, a, rbounds=[-1, -1]):
     plt.show()
     return(R(bloh))
 
-def fouriercountourthing(data, wavedis, num=1000):
+def fouriercountourthing(datalist, wavedis, num=1000):
     from scipy.fft import rfft, rfftfreq
-    waves, time = mm.full_transform(data, wavedis)
-    x, z = [], []
-    d = 0
-    i = 0
-    while d < len(waves)-1:
-        #print(d, len(waves)-1)
-        c, d = i*(len(waves)//num), min((i+2)*(len(waves)//num), len(waves)-1)
-        #print(time[c], time[d])
-        N = len(waves[c:d, 0, 0])
-        samprate = N/(time[d] - time[c])
-        x.append((time[c] + time[d])/2)
-        xf = rfftfreq(N, 1 / samprate)
-        z.append(rfft(waves[c:d, 0, 0])[0:np.where(xf <= 0.10)[0][-1]])
-        i += 1
-    print("good?")
-    x = np.array(x)
-    print("good?", x)
-    z = np.abs(np.array(z)**2)
-    print("good?")
-    y = xf[0:np.where(xf <= 0.10)[0][-1]]
-    print("good?")
-    X, Y = np.meshgrid(x, y)
-    print("good?")
-    Z = z.transpose()
-    print("good?")
-    print(np.shape(X), np.shape(Y), np.shape(Z))
-    plt.contourf(X, Y, Z)
-    plt.show()
+    if type(datalist) != list:
+        datalist = [datalist]
+    for data in datalist:
+        waves, time = mm.full_transform(data, wavedis)
+        x, z = [], []
+        d = 0
+        i = 0
+        while d < len(waves)-1:
+            #print(d, len(waves)-1)
+            c, d = i*(len(waves)//num), min((i+2)*(len(waves)//num), len(waves)-1)
+            #print(time[c], time[d])
+            N = len(waves[c:d, 0, 0])
+            samprate = N/(time[d] - time[c])
+            x.append((time[c] + time[d])/2)
+            xf = rfftfreq(N, 1 / samprate)
+            z.append(rfft(waves[c:d, 0, 0])[0:np.where(xf <= 0.10)[0][-1]])
+            i += 1
+        print("good?")
+        x = np.array(x)
+        print("good?", x)
+        z = np.abs(np.array(z)**2)
+        print("good?")
+        y = xf[0:np.where(xf <= 0.10)[0][-1]]
+        print("good?")
+        X, Y = np.meshgrid(x, y)
+        print("good?")
+        Z = z.transpose()
+        print("good?")
+        print(np.shape(x), np.shape(y), np.shape(z))
+        print(np.shape(X), np.shape(Y), np.shape(Z))
+        plt.contourf(X, Y, Z)
+        plt.show()
 
 def orbitchecker(data, mu, r0, e):
     dEdt = -(32/5)*(mu**2)*(1+mu)*(1 + (73/24)*(e**2) + (37/96)*(e**4))/((r0**5)*((1-e**2)**(7/2)))
@@ -1744,6 +1861,8 @@ def peterscheck(mu, r0, e):
     return [dEdt, dLdt, dr0dt, dedt]
 
 def top_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
+    if type(datalist) != list:
+        datalist = [datalist]
     num = len(datalist)
     if num < 2:
         print("For comparisons only")
@@ -1755,6 +1874,8 @@ def top_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
     fig, ax = plt.subplots(num, 2, figsize=(width, height))
     fig.subplots_adjust(wspace=space)
     #start, end = 0, 20000
+    xmin, xmax = 10**10, 10**(-10)
+    size_vals = []
     for i in range(num):
         to = get_index(datalist[i]["time"], start)
         if end > 0.0:
@@ -1764,9 +1885,11 @@ def top_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         cap = max(datalist[i]["pos"][to:tf,0])*1.05
 
         scaler = np.floor(np.log10(cap))//3
-        carts = np.array([sph2cart(pos, a)/(10**(3*scaler)) for pos in datalist[i]["pos"]])
+        carts = np.array([sph2cart(pos, datalist[i]["spin"])/(10**(3*scaler)) for pos in datalist[i]["pos"]])
         ax[i,0].plot(carts[to:tf,0], carts[to:tf,1])
         ax[i,0].set_aspect('equal')
+        size_vals.append([*ax[i,0].set_xlim(), *ax[i, 0].set_ylim(), 0.0])
+        size_vals[-1][4] = (size_vals[-1][3] - size_vals[-1][2])*(size_vals[-1][1] - size_vals[-1][0])
         wave, time = mm.full_transform(datalist[i], cap*1000)
         x = np.copy(time)
         y1 = np.copy(wave[:,0,0])
@@ -1783,129 +1906,232 @@ def top_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         ax[i,1].set_xscale('log')
         ax[i,1].grid()
         ax[i,1].legend()
+        thismin, thismax = ax[i, 1].set_xlim()
+        xmin, xmax = min(xmin, thismin), max(xmax, thismax)
+    size_ix = np.where(np.array(size_vals)[:,-1] == max(np.array(size_vals)[:,-1]))[0][0]
+    for i in range(num):
+        ax[i, 0].set_xlim(*size_vals[size_ix][:2])
+        ax[i, 0].set_ylim(*size_vals[size_ix][2:4])
+        ax[i, 1].set_xlim(xmin, xmax)
+    plt.show()
+
+def full_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
+    from matplotlib.colors import TABLEAU_COLORS
+    tab_cols = list(TABLEAU_COLORS.values())
+    if type(datalist) != list:
+        datalist = [datalist]
+    num = len(datalist)
+    if num < 2:
+        print("For comparisons only")
+        return False
+    if width == 0:
+        width = (10/3)*num
+    if height == 0:
+        height = 3*num + 1
+    fig = plt.figure(figsize=(width, height))
+    
+    #start, end = 0, 20000
+    xmin, xmax = 10**10, 10**(-10)
+    size_vals = []
+    for i in range(num):
+        ax = fig.add_subplot(num, 2, i*2 + 1, projection="3d")
+        to = get_index(datalist[i]["time"], start)
+        if end > 0.0:
+            tf = get_index(datalist[i]["time"], end)
+        else:
+            tf = get_index(datalist[i]["time"], datalist[i]["time"][-1])
+        cap = max(datalist[i]["pos"][to:tf,0])*1.05
+
+        #Actual path data
+        elev = ax.elev
+        azim = ax.azim
+        carts = np.array([sph2cart(pos, datalist[i]["spin"]) for pos in datalist[i]["pos"]])
+        T = np.pi/180
+        view_norm = np.array([np.cos(elev*T)*np.cos(azim*T), np.cos(elev*T)*np.sin(azim*T), np.sin(elev*T)])
+        mask = np.sign(np.matmul(carts, view_norm))
+        #Event horizon
+        rb = 1 + (1 - datalist[i]["spin"]**2)**(0.5)
+        theta, phi = np.linspace(0, 2*np.pi), np.linspace(0, np.pi)
+        phi, theta = np.meshgrid(phi, theta)
+        xS, yS, zS = rb*np.sin(theta)*np.sin(phi), rb*np.sin(theta)*np.cos(phi), rb*np.cos(theta)
+        #Ergosphere
+        re = 1 + (1 - (datalist[i]["spin"]*np.cos(theta))**2)**(0.5)
+        xE, yE, zE = re*np.sin(theta)*np.sin(phi), re*np.sin(theta)*np.cos(phi), re*np.cos(theta)
+        #Plot the 3D bits
+        ax.plot3D(np.where(mask<=0, carts[:, 0], np.nan), np.where(mask<=0, carts[:, 1], np.nan), np.where(mask<=0, carts[:, 2], np.nan), c=tab_cols[0], zorder=0)
+        ax.plot_surface(xS, yS, zS, color="black", shade=False, zorder=1)
+        ax.plot_surface(xE, yE, zE, color="darksalmon", alpha = 0.3, zorder=2)
+        ax.plot3D(np.where(mask>0, carts[:, 0], np.nan), np.where(mask>0, carts[:, 1], np.nan), np.where(mask>0, carts[:, 2], np.nan), c=tab_cols[0], zorder=3)
+        size_vals.append([*ax.set_xlim(), *ax.set_ylim(), 0.0])
+        size_vals[-1][4] = (size_vals[-1][3] - size_vals[-1][2])*(size_vals[-1][1] - size_vals[-1][0])
+        rbound = np.max(carts)*1.01
+        ax.set(xlim3d=(-rbound, rbound), xlabel='X')
+        ax.set(ylim3d=(-rbound, rbound), ylabel='Y')
+        ax.set(zlim3d=(-rbound, rbound), zlabel='Z')
+        ax.set_box_aspect((rbound, rbound, rbound))
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+        ax.set_zlabel('')
+        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+            labels = axis.get_ticklabels()
+            for lbl in labels[0::2]:
+                lbl.set_visible(False)
+
+
+        ax = fig.add_subplot(num, 2, i*2 + 2)
+        wave, time = mm.full_transform(datalist[i], cap*1000)
+        x = np.copy(time)
+        y1 = np.copy(wave[:,0,0])
+        y2 = np.copy(wave[:,0,1])
+        N = time.size
+        T = (x[-1] - x[0])/N
+        yf1 = fft(y1)
+        yf2 = fft(y2)
+        xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
+        ax.plot(xf, 2.0/N * np.abs(yf2[0:N//2]), label = "hx")
+        ax.plot(xf, 2.0/N * np.abs(yf1[0:N//2]), label = "h+")
+        #plt.xscale('log')
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        ax.grid()
+        ax.legend(title=datalist[i]["name"])
+        thismin, thismax = ax.set_xlim()
+        xmin, xmax = min(xmin, thismin), max(xmax, thismax)
+    size_ix = np.where(np.array(size_vals)[:,-1] == max(np.array(size_vals)[:,-1]))[0][0]
+    fig.subplots_adjust(wspace=0*space)
+    for ax in fig.axes[1::2]:
+        ax.set_xlim(xmin, xmax)
+    plt.show()
+
+def orth_and_fourier(datalist, start=0, end=-1, filename=False, leg_title=False):
+    if type(datalist) != list:
+        datalist = [datalist]
+    for data in datalist:
+        fig = plt.figure(figsize=(8,6))
+        ax1 = fig.add_subplot(2,3,4)
+        ax2 = fig.add_subplot(2,1,1)
+        ax3 = fig.add_subplot(2,3,5)
+        ax4 = fig.add_subplot(2,3,6)
+        ax_list = [ax1, ax3, ax4]
         
-def orth_and_fourier(data, start=0, end=-1, filename=False, leg_title=False):
-    fig = plt.figure(figsize=(8,6))
-    ax1 = fig.add_subplot(2,3,4)
-    ax2 = fig.add_subplot(2,1,1)
-    ax3 = fig.add_subplot(2,3,5)
-    ax4 = fig.add_subplot(2,3,6)
-    ax_list = [ax1, ax3, ax4]
-    
-    to = get_index(data["time"], start)
-    if end > 0.0:
-        tf = get_index(data["time"], end)
-    else:
-        tf = get_index(data["time"], data["time"][-1])
-    cap = max(data["pos"][to:tf,0])*1.05
-    scale_dict = {0: "", 1: "Thousands of ", 2: "Millions of ", 3: "Billions of ", 4: "Trillions of "}
-    scaler = np.floor(np.log10(cap))//3
-    scale_word = scale_dict[min(4, scaler)]
-    #cap = cap/(10**(3*scaler))
-    to = get_index(data["time"], start)
-    if end > 0.0:
-        tf = get_index(data["time"], end)
-    else:
-        tf = get_index(data["time"], data["time"][-1])
+        to = get_index(data["time"], start)
+        if end > 0.0:
+            tf = get_index(data["time"], end)
+        else:
+            tf = get_index(data["time"], data["time"][-1])
+        cap = max(data["pos"][to:tf,0])*1.05
+        scale_dict = {0: "", 1: "Thousands of ", 2: "Millions of ", 3: "Billions of ", 4: "Trillions of "}
+        scaler = np.floor(np.log10(cap))//3
+        scale_word = scale_dict[min(4, scaler)]
+        #cap = cap/(10**(3*scaler))
+        to = get_index(data["time"], start)
+        if end > 0.0:
+            tf = get_index(data["time"], end)
+        else:
+            tf = get_index(data["time"], data["time"][-1])
 
-    a = data["spin"]
-    carts = np.array([sph2cart(pos, a) for pos in data["pos"]])
-    #carts = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"]])
-    ax_list[0].plot(carts[to:tf,0], carts[to:tf,1], label=data["name"])  #XY Plot
-    ax_list[1].plot(carts[to:tf,0], carts[to:tf,2], label="_nolabel_")  #XZ Plot
-    ax_list[2].plot(carts[to:tf,1], carts[to:tf,2], label="_nolabel_")  #ZY Plot
-    #ax1.set_xlim(-cap, cap)
-    #ax1.set_ylim(-cap, cap)
-    #ax3.set_xlim(-cap, cap)
-    #ax3.set_ylim(-cap, cap)
-    #ax4.set_xlim(-cap, cap)
-    #ax4.set_ylim(-cap, cap)
-    ax1.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='XY Plot')
-    if data["inputs"][-1] == "grav":
-        freq_unit = '(G\u209C\u207B\u00B9)'
-    else:
-        freq_unit = '(Hz)'
-    #ax2.set(xlabel='Waveform Frequency ' + freq_unit)
-    ax3.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='XZ Plot')
-    ax4.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='YZ Plot')
-    ax1.set_aspect('equal')
-    ax3.set_aspect('equal')
-    ax4.set_aspect('equal')
-    
-    wave, time = mm.full_transform(data, cap*1000)
-    to = get_index(time, start)
-    if end > 0.0:
-        tf = get_index(time, end)
-    else:
-        tf = get_index(time, data["time"][-1])
-    x = np.copy(time[to:tf])
-    y1 = np.copy(wave[to:tf,0,0])
-    y2 = np.copy(wave[to:tf,0,1])
-    y0 = np.sqrt(y1**2 + y2**2)
-    N = x.size
-    T = (x[-1] - x[0])/N
-    yf1 = fft(y1)
-    yf2 = fft(y2)
-    yf0 = fft(y0)
-    xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
-    ax2.plot(xf, 2.0/N * np.abs(yf1[0:N//2]), label = "h+")
-    ax2.plot(xf, 2.0/N * np.abs(yf2[0:N//2]), label = "hx")
-    plt.setp(ax3.get_yticklabels(), visible=False)
-    plt.setp(ax4.get_yticklabels(), visible=False)
-    ax2.set_title(data["name"])
-    ax2.set_title('Waveform Frequency ' + freq_unit)
-    ax2.set_yscale('log')
-    ax2.set_xscale('log')
-    ax2.grid()
-    if leg_title != False:
-        ax2.legend(title=leg_title)
-    if filename == False:
-        plt.show()
-    else:
-        plt.savefig("%s.png"%(filename), bbox_inches="tight")
+        a = data["spin"]
+        carts = np.array([sph2cart(pos, a) for pos in data["pos"]])
+        #carts = np.array([sph2cart(pos)/(10**(3*scaler)) for pos in data["pos"]])
+        ax_list[0].plot(carts[to:tf,0], carts[to:tf,1], label=data["name"])  #XY Plot
+        ax_list[1].plot(carts[to:tf,0], carts[to:tf,2], label="_nolabel_")  #XZ Plot
+        ax_list[2].plot(carts[to:tf,1], carts[to:tf,2], label="_nolabel_")  #ZY Plot
+        #ax1.set_xlim(-cap, cap)
+        #ax1.set_ylim(-cap, cap)
+        #ax3.set_xlim(-cap, cap)
+        #ax3.set_ylim(-cap, cap)
+        #ax4.set_xlim(-cap, cap)
+        #ax4.set_ylim(-cap, cap)
+        ax1.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='XY Plot')
+        if data["inputs"][-1] == "grav":
+            freq_unit = '(G\u209C\u207B\u00B9)'
+        else:
+            freq_unit = '(Hz)'
+        #ax2.set(xlabel='Waveform Frequency ' + freq_unit)
+        ax3.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='XZ Plot')
+        ax4.set(xlim=(-cap, cap), ylim=(-cap, cap), xlabel='YZ Plot')
+        ax1.set_aspect('equal')
+        ax3.set_aspect('equal')
+        ax4.set_aspect('equal')
+        
+        wave, time = mm.full_transform(data, cap*1000)
+        to = get_index(time, start)
+        if end > 0.0:
+            tf = get_index(time, end)
+        else:
+            tf = get_index(time, data["time"][-1])
+        x = np.copy(time[to:tf])
+        y1 = np.copy(wave[to:tf,0,0])
+        y2 = np.copy(wave[to:tf,0,1])
+        y0 = np.sqrt(y1**2 + y2**2)
+        N = x.size
+        T = (x[-1] - x[0])/N
+        yf1 = fft(y1)
+        yf2 = fft(y2)
+        yf0 = fft(y0)
+        xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
+        ax2.plot(xf, 2.0/N * np.abs(yf1[0:N//2]), label = "h+")
+        ax2.plot(xf, 2.0/N * np.abs(yf2[0:N//2]), label = "hx")
+        plt.setp(ax3.get_yticklabels(), visible=False)
+        plt.setp(ax4.get_yticklabels(), visible=False)
+        ax2.set_title(data["name"])
+        ax2.set_title('Waveform Frequency ' + freq_unit)
+        ax2.set_yscale('log')
+        ax2.set_xscale('log')
+        ax2.grid()
+        if leg_title != False:
+            ax2.legend(title=leg_title)
+        if filename == False:
+            plt.show()
+        else:
+            plt.savefig("%s.png"%(filename), bbox_inches="tight")
 
-def justfourier(data, start=0, end=-1, filename=False):
-    cap = max(data["pos"][:,0])
-    wave, time = mm.full_transform(data, cap*1000, supress=True)
-    to = get_index(time, start)
-    if end > 0.0:
-        tf = get_index(time, end)
-    else:
-        tf = get_index(time, data["time"][-1])
-    x = np.copy(time[to:tf])
-    y1 = np.copy(wave[to:tf,0,0])
-    y2 = np.copy(wave[to:tf,0,1])
-    y0 = np.sqrt(y1**2 + y2**2)
-    N = x.size
-    T = (x[-1] - x[0])/N
-    yf1 = fft(y1)
-    yf2 = fft(y2)
-    yf0 = fft(y0)
-    xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
-    
-    fig, ax = plt.subplots()
-    h_plus = 2.0/N * np.abs(yf1[0:N//2])
-    h_min = 2.0/N * np.abs(yf2[0:N//2])
-    ax.plot(xf, h_plus/max(h_plus), label = "h+")
-    ax.plot(xf, h_min/max(h_min), label = "hx")
-    #plt.setp(ax3.get_yticklabels(), visible=False)
-    #plt.setp(ax4.get_yticklabels(), visible=False)
-    ax.set_title("Waveform Fourier Transform")
-    #ax.set_title('Waveform Frequency ' + freq_unit)
-    ax.set_yscale('log')
-    ax.set_xscale('log')
-    if data["inputs"][-1] == "grav":
-        freq_unit = "(Geometric Units)"#'(G\u209C\u207B\u00B9)'
-    else:
-        freq_unit = '(Hz)'
-    ax.set_xlabel("Frequency " + freq_unit)
-    ax.set_ylabel("Relative Intensity")
-    ax.grid()
-    ax.legend()
-    if filename == False:
-        plt.show()
-    else:
-        plt.savefig("%s.png"%(filename), bbox_inches="tight")
+def justfourier(datalist, start=0, end=-1, filename=False):
+    if type(datalist) != list:
+        datalist = [datalist]
+    num = len(datalist)
+    for data in datalist:
+        cap = max(data["pos"][:,0])
+        wave, time = mm.full_transform(data, cap*1000, supress=True)
+        to = get_index(time, start)
+        if end > 0.0:
+            tf = get_index(time, end)
+        else:
+            tf = get_index(time, data["time"][-1])
+        x = np.copy(time[to:tf])
+        y1 = np.copy(wave[to:tf,0,0])
+        y2 = np.copy(wave[to:tf,0,1])
+        y0 = np.sqrt(y1**2 + y2**2)
+        N = x.size
+        T = (x[-1] - x[0])/N
+        yf1 = fft(y1)
+        yf2 = fft(y2)
+        yf0 = fft(y0)
+        xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
+        
+        fig, ax = plt.subplots()
+        h_plus = 2.0/N * np.abs(yf1[0:N//2])
+        h_min = 2.0/N * np.abs(yf2[0:N//2])
+        ax.plot(xf, h_plus/max(h_plus), label = "h+")
+        ax.plot(xf, h_min/max(h_min), label = "hx")
+        #plt.setp(ax3.get_yticklabels(), visible=False)
+        #plt.setp(ax4.get_yticklabels(), visible=False)
+        ax.set_title("Waveform Fourier Transform")
+        #ax.set_title('Waveform Frequency ' + freq_unit)
+        ax.set_yscale('log')
+        ax.set_xscale('log')
+        if data["inputs"][-1] == "grav":
+            freq_unit = "(Geometric Units)"#'(G\u209C\u207B\u00B9)'
+        else:
+            freq_unit = '(Hz)'
+        ax.set_xlabel("Frequency " + freq_unit)
+        ax.set_ylabel("Relative Intensity")
+        ax.grid()
+        ax.legend()
+        if filename == False:
+            plt.show()
+        else:
+            plt.savefig("%s.png"%(filename), bbox_inches="tight")
     
 '''
 def wavelething(data):
@@ -2199,69 +2425,123 @@ def compsmall2(data, dt=False):
     #print("r0_pd error linear slope:", np.polyfit(T, r0_pd, 1)[0])
     #print("e_pd error linear slope:", np.polyfit(T, e_pd, 1)[0])
     return [np.polyfit(T, r0_pd, 1)[0], np.polyfit(T, e_pd, 1)[0]]
-        
 
-#Thing for plotting not-contour plots
-'''
-import matplotlib.tri as tri
-r0, e, i, mu, a = 100, 0.1, 1, 1e-6, 0.0
-x_base, y_base = mus2[:-1], a_s2
-x = np.sort(np.tile(x_base, len(y_base)))
-y = np.tile(y_base, len(x_base))
-z = np.array([dictfill(all_dots2, (r0, e, i, x[j], y[j]))[-1] for j in range(len(x))])
-Z = my_symlog10(-z)
-levels = np.linspace(Z.min(), Z.max(), 28)
-fig, ax = plt.subplots()
-fig.set(figwidth=5, figheight=3)
-plt.scatter(x, y, c=my_symlog10(-z), cmap="viridis")
-ax.set_xscale("log")
-c = plt.colorbar(label="Powers of 10")
-plt.title("Time Derivative of Eccentricity (e=0.1)", fontsize=16)
-plt.xlabel("Mass Ratio (q)", fontsize=14)
-plt.ylabel("Dimensionless Black Hole Spin (a)", fontsize=14)
-plt.show()
-'''
 
-#thing for fiulling up big dictionary
-'''
-#holds2 = {}
-count = 1
-import time
-start = time.time()
-es2 = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-mus2 = [1e-6, 1e-7, 1e-8, 1e-9, 1e-10, 1e-11]
-a_s2 = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-r0s2 = [10, 20, 50, 100]
-is2 = [1, 2, 3, 4]
-count = 1
-skip = 0
-total = len(list(product(r0s2, es2, is2, mus2, a_s2))) - len(list(holds2.keys()))
-for r0, e, i, mu, a in product(r0s2, es2, is2, mus2, a_s2):
-    try:
-        print(r0, e, i, mu, a)
-        if (r0, e, i, mu, a) not in list(holds2.keys()):
-            lab = "r" + str(r0) + "e" + str(e) + "i" + str(i/2) + "mu" + str(mu) + "a" + str(a)
-            holds2[r0, e, i, mu, a] = clean_inspiral3(1, a, mu, "phi_orbit > 25", 10**(-15), lab, params= [r0, e, np.pi/(2**i)], verbose=False)
-            try:
-                if holds2[r0, e, i, mu, a]["pos"][-1, 2] < 25*2*np.pi:
-                    print("Too short!")
-                    del holds2[r0, e, i, mu, a]
-            except:
-                del holds2[r0, e, i, mu, a]
-            print("average runtime", (time.time() - start)/(count-skip))
-            print("Completed:", count)
-            print("Total:", total)
-            print("estimated time remaining:", ((time.time() - start)/(count-skip))*(total - count)/60, "min")
-        else:
-            skip += 1
-        count += 1
-    except:
-        break
-for key in list(holds2.keys()):
-    try:
-        all_dots2[key] = get_alldots(holds2[key])
-    except:
-        print(key, "acting fucky")
-dict_saver(holds2, "holds2")
-dict_saver(all_dots2, "newdots")
-'''
+# Pretty stuff
+
+def radial_axes_with_ticks(ax, r, ticks=(-0.5, -1, 0.5, 1),
+                           color="0.55", lw=1.0, label_color="0.45"):
+    '''
+    Draw radial axes with ticks and labels
+    
+    :param ax: matplotlib axes object
+    :param r: maximum radius value for plot
+    :param ticks: tick mark locations as fractions of r, make empty to not include ticks
+    :param color: axis color (default gray)
+    :param lw: line width
+    :param label_color: axis label color (default slightly darker gray)
+    '''
+
+    # Axis lines
+    axes = {
+        "x": ([ -r,  r], [0, 0], [0, 0]),
+        "y": ([0, 0], [ -r,  r], [0, 0]),
+        "z": ([0, 0], [0, 0], [ -r,  r]),
+    }
+
+    for x, y, z in axes.values():
+        ax.plot(x, y, z, color=color, lw=lw, zorder=1)
+
+    tick_len = 0.035 * r
+
+    for f in ticks:
+        if abs(f) > 1:
+            continue
+        t = f * r
+
+        # X-axis ticks
+        ax.plot([t, t], [-tick_len, tick_len], [0, 0],
+                color=color, lw=lw)
+        ax.text(t, -3*tick_len, 0, f"{t:.0f}",
+                color=label_color, fontsize=8,
+                ha="center", va="top")
+
+        # Y-axis ticks
+        ax.plot([-tick_len, tick_len], [t, t], [0, 0],
+                color=color, lw=lw)
+        ax.text(3*tick_len, t, 0, f"{t:.0f}",
+                color=label_color, fontsize=8,
+                ha="left", va="center")
+
+        # Z-axis ticks
+        ax.plot([0, 0], [-tick_len, tick_len], [t, t],
+                color=color, lw=lw)
+        ax.text(0, 3*tick_len, t, f"{t:.0f}",
+                color=label_color, fontsize=8,
+                ha="center", va="bottom")
+
+    # Axis labels
+    ax.text(r*1.08, 0, 0, r"$x/M$", fontsize=10, color=label_color)
+    ax.text(0, r*1.08, 0, r"$y/M$", fontsize=10, color=label_color)
+    ax.text(0, 0, r*1.08, r"$z/M$", fontsize=10, color=label_color)
+
+def draw_panel_dividers(fig, gridvals=(2,2), color="0.25", lw=0.8):
+    '''
+    Docstring for draw_panel_dividers
+    
+    :param fig: matplotlib figure object
+    :param gridvals: Tuple in the form (rows, columns), assumes 2x2
+    :param color: divider color, default dark gray
+    :param lw: line width, default kinda skinny
+    '''
+    # Vertical dividers
+    for i in range(gridvals[0] - 1):
+        y_pos = (i + 1)/gridvals[0]
+        fig.add_artist(plt.Line2D(
+            [y_pos, y_pos], [0, 1],
+            transform=fig.transFigure,
+            color=color, lw=lw
+        ))
+    # Horizontal divider
+    for i in range(gridvals[1] - 1):
+        x_pos = (i + 1)/gridvals[1]
+        fig.add_artist(plt.Line2D(
+            [0, 1], [x_pos, x_pos],
+            transform=fig.transFigure,
+            color=color, lw=lw
+        ))
+
+def radial_reference_circles(ax, radii, color="0.55", lw=0.8, alpha=0.7,
+                             z=0.0, label=True, label_color="0.45",
+                             fontsize=10, angle=120):
+    '''
+    Draw concentric circles in the XY plane at given radii.
+    
+    :param ax: matplotlib axes object
+    :param radii: radii of concentric circles
+    :param color: color of circles, default light gray
+    :param lw: line width
+    :param alpha: circle transparency
+    :param z: height of circles, defaults to 0 for XY plane
+    :param label: True if including radius labels
+    :param label_color: default gray
+    :param fontsize: Font size
+    :param angle: Angle at which labels appear on XY plane
+    '''
+
+    phi = np.linspace(0, 2*np.pi, 400)
+
+    for r in radii:
+        x = r * np.cos(phi)
+        y = r * np.sin(phi)
+        zc = np.full_like(x, z)
+
+        ax.plot(x, y, zc, color=color, lw=lw, alpha=alpha * (1 - r / radii[-1]) + 0.2, zorder=5)
+
+        if label:
+            ax.text(r * np.cos(angle*np.pi/180), r * np.sin(angle*np.pi/180), z,
+                    f"{r:.0f}",
+                    color=label_color,
+                    fontsize=fontsize,
+                    ha="left", va="bottom")
+
