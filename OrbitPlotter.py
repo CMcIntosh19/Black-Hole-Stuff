@@ -2086,52 +2086,52 @@ def orth_and_fourier(datalist, start=0, end=-1, filename=False, leg_title=False)
         else:
             plt.savefig("%s.png"%(filename), bbox_inches="tight")
 
-def justfourier(datalist, start=0, end=-1, filename=False):
+def justfourier(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False):
     if type(datalist) != list:
         datalist = [datalist]
     num = len(datalist)
     for data in datalist:
-        cap = max(data["pos"][:,0])
-        wave, time = mm.full_transform(data, cap*1000, supress=True)
+        if not distance:
+            distance = max(data["raw"][:,1])*100000  # distance is in GU
+        h_plus, h_cross, time = mm.full_transform(data, distance, supress=supress, m_bh=m_bh)
         to = get_index(time, start)
         if end > 0.0:
             tf = get_index(time, end)
         else:
-            tf = get_index(time, data["time"][-1])
+            tf = None
+        print(start, end, to, tf)
         x = np.copy(time[to:tf])
-        y1 = np.copy(wave[to:tf,0,0])
-        y2 = np.copy(wave[to:tf,0,1])
-        y0 = np.sqrt(y1**2 + y2**2)
+        y1 = np.copy(h_plus)
+        y2 = np.copy(h_cross)
         N = x.size
-        T = (x[-1] - x[0])/N
-        yf1 = fft(y1)
-        yf2 = fft(y2)
-        yf0 = fft(y0)
-        xf = np.linspace(0.0, 1.0/(2.0*T), N//2)
+        T = x[1] - x[0]
+        yf1 = np.fft.rfft(y1)
+        yf2 = np.fft.rfft(y2)
+        xf = np.fft.rfftfreq(N, d=T)
+        h_plus_fft = 2.0/N * np.abs(yf1)
+        h_cross_fft = 2.0/N * np.abs(yf2)
         
         fig, ax = plt.subplots()
-        h_plus = 2.0/N * np.abs(yf1[0:N//2])
-        h_min = 2.0/N * np.abs(yf2[0:N//2])
-        ax.plot(xf, h_plus/max(h_plus), label = "h+")
-        ax.plot(xf, h_min/max(h_min), label = "hx")
+        ax.plot(xf[1:], h_plus_fft[1:], label = "h+", alpha=0.8)
+        ax.plot(xf[1:], h_cross_fft[1:], label = "hx", alpha=0.8)
         #plt.setp(ax3.get_yticklabels(), visible=False)
         #plt.setp(ax4.get_yticklabels(), visible=False)
         ax.set_title("Waveform Fourier Transform")
         #ax.set_title('Waveform Frequency ' + freq_unit)
         ax.set_yscale('log')
         ax.set_xscale('log')
-        if data["inputs"][-1] == "grav":
+        if data["inputs"][-1] == "grav" and not m_bh:
             freq_unit = "(Geometric Units)"#'(G\u209C\u207B\u00B9)'
         else:
             freq_unit = '(Hz)'
         ax.set_xlabel("Frequency " + freq_unit)
-        ax.set_ylabel("Relative Intensity")
+        ax.set_ylabel("Strain Intensity")
         ax.grid()
         ax.legend()
-        if filename == False:
-            plt.show()
-        else:
+        if filename:
             plt.savefig("%s.png"%(filename), bbox_inches="tight")
+    if not filename:
+        plt.show(block=False)
     
 '''
 def wavelething(data):

@@ -1009,29 +1009,22 @@ def interpolate(data, time, supress=True):
     '''
     data = np.array(data)
     if supress == True:
-        try:
-            rad = data[argrelmin(data[:,0])[0][0], 0]
-        except:
-            rad = data[0,0]
-        new_time = np.arange(time[0], time[-1], min(2*np.pi*np.sqrt(rad**3)/20, (time[-1] - time[0])/10000))
+        phi_per = 2 * np.pi * abs((time[-1] - time[0])/(data[-1, 2] - data[0, 2]))
+        new_time = np.arange(time[0], time[-1], min(phi_per/200, (time[-1] - time[0])/10000))
     else:
         new_time = np.linspace(time[0], time[-1], max(len(time), 10*int(time[-1] - time[0])))
-    try:
-        r_poly = spi.CubicSpline(time, data[:,0])
-        theta_poly = spi.CubicSpline(time, data[:,1])
-        phi_poly = spi.CubicSpline(time, data[:,2])
-        new_data = np.transpose(np.array([r_poly(new_time), theta_poly(new_time), phi_poly(new_time)]))
-        return new_data, new_time
-    except ValueError:
-        fig, ax = plt.subplots(4, 1)
-        ax[0].plot(time)
-        ax[1].plot(data[:,0])
-        ax[2].plot(data[:,1])
-        ax[3].plot(data[:,2])
-        print("yo" if -1 in np.sign(np.diff(time)) else "no negs")
-        print("yop" if 0.0 in np.diff(time) else "no zos")
-        r_poly = spi.CubicSpline(time, data[:,0])
-        return False
+    
+
+    j = np.searchsorted(time, new_time, side='right') - 1
+    j = np.clip(j, 0, len(time)-2)
+    w = (new_time - time[j]) / (time[j + 1] - time[j])
+
+    new_data = np.stack((new_time, new_time, new_time), axis=-1)
+    for i in range(3):
+        new_data[:, i]  = data[j, i]  + w*(data[j+1, i] - data[j, i])
+
+    return new_data, new_time
+
 
 @njit
 def linear_interp(x_vals, y_vals, new_xs):
@@ -1126,7 +1119,7 @@ def traceless_quad(quad):
     
     return result
 
-def sphr2quad(pos):
+def sphr2quad(pos, a):
     '''
     Calculates quadrupole moment of a test particle
 
@@ -1140,12 +1133,38 @@ def sphr2quad(pos):
     qmom : 3 x 3 numpy array of floats
         quadrupole moment of test particle
     '''
-    x = pos[0] * np.sin(pos[1]) * np.cos(pos[2])
-    y = pos[0] * np.sin(pos[1]) * np.sin(pos[2])
+    rho = np.sqrt(pos[0]**2 + a**2)
+    x = rho * np.sin(pos[1]) * np.cos(pos[2])
+    y = rho * np.sin(pos[1]) * np.sin(pos[2])
     z = pos[0] * np.cos(pos[1])
     qmom = np.array([[2*x*x - (y**2 + z**2), 3*x*y,                 3*x*z],
                      [3*y*x,                 2*y*y - (x**2 + z**2), 3*y*z],
                      [3*z*x,                 3*z*y,                 2*z*z - (x**2 + y**2)]], dtype=np.float64)
+    return qmom
+
+def sphr2quad_vec(pos, a):
+    '''
+    Calculates quadrupole moment of a test particle
+
+    Parameters
+    ----------
+    pos : N x 3-element numpy array of floats
+        r, theta, and phi position of test particle
+
+    Returns
+    -------
+    qmom : N x 3 x 3 numpy array of floats
+        quadrupole moment of test particle
+    '''
+    rho = np.sqrt(pos[:, 0]**2 + a**2)
+    carts = np.zeros((len(rho), 3))
+    carts[:, 0] = rho * np.sin(pos[:, 1]) * np.cos(pos[:, 2])
+    carts[:, 1] = rho * np.sin(pos[:, 1]) * np.sin(pos[:, 2])
+    carts[:, 2] = pos[:, 0] * np.cos(pos[:, 1])
+    r2 = np.sum(carts * carts, axis=1)
+    qmom = np.zeros((len(rho), 3, 3))
+    qmom = carts[:, :, None] * carts[:, None, :]
+    qmom -= np.eye(3)[None,:,:] * (r2[:,None,None]/3)
     return qmom
 
 def matrix_derive(data, time, degree):
@@ -1166,15 +1185,12 @@ def matrix_derive(data, time, degree):
     new_data : N x 3 x 3 numpy array of floats
         degree-th derivative of quadrupole moment
     '''
-    polys = [[0, 0, 0],
-             [0, 0, 0],
-             [0, 0, 0]]
+    new_data = np.zeros((len(time), 3, 3))
+    
     for i in range(3):
         for j in range(3):
-            polys[i][j] = spi.CubicSpline(time, data[:,i,j])
-    new_data = np.transpose(np.array([[polys[0][0](time, degree), polys[0][1](time, degree), polys[0][2](time, degree)],
-                                      [polys[1][0](time, degree), polys[1][1](time, degree), polys[1][2](time, degree)],
-                                      [polys[2][0](time, degree), polys[2][1](time, degree), polys[2][2](time, degree)]]))
+            spline = spi.CubicSpline(time, data[:,i,j])
+            new_data[:, i, j] = spline(time, degree)
     return new_data
 
 def matrix_derive2(data, old_time, time, degree):
@@ -1254,9 +1270,9 @@ def matrix_derive3_numba(data, dt):
     
     return d2, d3
 
-def gwaves(quad_moment, time, distance):
+def gwaves(quad_moment, time, distance, e_r = None):
     '''
-    Calculates gravitational wave moment from quadrupole moment and distance
+    Calculates gravitational wave moment from quadrupole moment and distance (but not mass ratio)
 
     Parameters
     ----------
@@ -1273,10 +1289,32 @@ def gwaves(quad_moment, time, distance):
         GW moment over time; waves[:,0,0] is h+ polarization, waves[:,0,1]=waves[:,1,0] is hx polarization
     '''
     der_2 = matrix_derive(quad_moment, time, 2)
-    waves = np.array([(2/distance) * entry for entry in der_2])
-    return waves
 
-def full_transform(data, distance, supress=True):    #defunctish??
+    if e_r is None:
+        e_r = [1, 0, 0]
+    e_r = np.array(e_r) / np.linalg.norm(e_r)
+    # choose any vector not parallel to e_r
+    if np.allclose(e_r, [0,0,1]):
+        ref = np.array([0,1,0])
+    else:
+        ref = np.array([0,0,1])
+    e_th = ref - np.dot(ref, e_r)*e_r
+    e_th /= np.linalg.norm(e_th)
+    e_ph = np.cross(e_th, e_r)
+    print(e_r, e_th, e_ph)
+    P = np.eye(3) - np.outer(e_r, e_r)
+    h_TT = np.zeros_like(der_2)
+    for k in range(len(der_2)):
+        term = P @ der_2[k] @ P
+        trace = np.trace(P @ der_2[k])
+        h_TT[k] = term - 0.5 * P * trace
+    h_TT *= 2/distance
+
+    h_plus = 0.5 * (np.einsum("i, j, kij -> k", e_th, e_th, h_TT) - np.einsum("i, j, kij -> k", e_ph, e_ph, h_TT))
+    h_cross = 0.5 * (np.einsum("i, j, kij -> k", e_th, e_ph, h_TT) + np.einsum("i, j, kij -> k", e_ph, e_th, h_TT))
+    return h_plus, h_cross
+
+def full_transform(data, distance, supress=True, m_bh=False, e_r = None):    #defunctish??
     '''
     Calculates gravitational wave moment from orbit dictionary
 
@@ -1286,6 +1324,8 @@ def full_transform(data, distance, supress=True):    #defunctish??
         full data package of an orbit given by clean_inspiral
     distance : float
         distance from GW source in geometric units
+    m_bh : float
+        central body mass in solar masses - optional
 
     Returns
     -------
@@ -1295,11 +1335,38 @@ def full_transform(data, distance, supress=True):    #defunctish??
         coordinate time of test particle, interpolated to be evenly spaced
         N is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
-    sphere, time = data["pos"], data["time"]
+    sphere, time = data["raw"][:, 1:], data["raw"][:, 0]
     int_sphere, int_time = interpolate(sphere, time, supress)
-    quad = np.array([sphr2quad(pos) for pos in int_sphere])
-    waves = gwaves(quad, int_time, distance)
-    return waves, int_time
+
+    if data["inputs"][-1] == "grav":
+        # Convert to mks units if it's grav
+        if m_bh is False:
+            G, c, mass = 1, 1, 1
+        else:
+            G, c, mass = 6.67e-11, 3e8, 1.989e30 * m_bh
+            int_time *= G * mass / (c**3)
+            int_sphere[:,0] *= G * mass / (c**2)
+
+    elif data["inputs"][-1] != "grav":
+        if data["inputs"][-1] == "mks":
+            G, c, M_sun = 6.67e-11, 3e8, 1.989e30
+        elif data["inputs"][-1] == "cgs":
+            G, c, M_sun = 6.67e-8, 3e10, 1.989e33
+        mass = m_bh * M_sun if m_bh else data["inputs"][0]
+
+    distance *= G * mass / (c**2)
+    rho = np.sqrt(int_sphere[:, 0]**2 + (G * mass * data["inputs"][1] / (c**2))**2)
+    carts = np.zeros((len(rho), 3))
+    carts[:, 0] = rho * np.sin(int_sphere[:, 1]) * np.cos(int_sphere[:, 2])
+    carts[:, 1] = rho * np.sin(int_sphere[:, 1]) * np.sin(int_sphere[:, 2])
+    carts[:, 2] = int_sphere[:, 0] * np.cos(int_sphere[:, 1])
+    r2 = np.sum(carts * carts, axis=1)
+    qmom = np.zeros((len(rho), 3, 3))
+    qmom = carts[:, :, None] * carts[:, None, :]
+    qmom -= np.eye(3)[None,:,:] * (r2[:,None,None]/3)
+
+    h_plus, h_cross = gwaves(qmom, int_time, distance, e_r)
+    return data["inputs"][2]*h_plus, data["inputs"][2]*h_cross, int_time
 
 def trace_ortholize_old(pos_list):
     '''
@@ -1965,10 +2032,234 @@ def peters_integrate_differential(states, a, mu, cons, state, ind1, ind2):
         dcdt_radial = ((2*P*(int_sphere[5:-5,0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:,2])*div*mu*mu
         dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
         dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
-        dcons = np.array([dE, dLz, np.sum(dcdt_radial)])
+        dcons = np.array([dE, dLz, np.sum(dcdt_radial)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])])
     else:
         dcons = np.array([0.0, 0.0, 0.0])
 
+    E, L, C = E0 + dcons[0], L0 + dcons[1], C0 + dcons[2]
+    C = max(0.0, C)
+    new_state = recalc_state([E, L, C], state, a)
+    return new_state, [E, L, C]
+
+def peters_integrate_differential2(states, a, mu, cons, state, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        E0, L0, C0 = cons
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate(sphere, time, False)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
+        dt2 = dt2[5:-5]
+        dt3 = dt3[5:-5]
+        int_time = int_time[5:-5]
+        levciv = np.array([[[0, 0, 0],   #Levi-civita tensor
+                            [0, 0, 1],
+                            [0, -1, 0]],
+                           [[0, 0, -1],
+                            [0, 0, 0],
+                            [1, 0, 0]],
+                           [[0, 1, 0],
+                            [-1, 0, 0],
+                            [0, 0, 0]]])
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+
+        if a == 0:
+            z2 = C0/(L0**2 + C0)
+        else:
+            A = (a**2)*(1 - E0**2)
+            sig = A + L0**2 + C0
+            z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
+        x2 = 1 - z2
+        x = np.sign(L0)*np.sqrt(x2)
+        dC0 = -2*a*a*z2*E0*dE + 2*z2*L0/(1 - z2)*dLz
+        dC_dx = - 2*(a*a*x*(1 - E0*E0) + L0*L0/(x**3))
+        dx = dC0 + 2*(1 - x2)*a*a*E0*dE - 2*L0*dLz*(1 - x2)/x2
+        dx /= -2*(x*(a*a*(1 - E0*E0) + L0*L0/x2) + L0*L0*(1 - x2)/(x**3))
+        dC = dC0 + dC_dx*dx
+        dcons = np.array([dE, dLz, dC])
+    else:
+        dcons = np.array([0.0, 0.0, 0.0])
+
+    E, L, C = E0 + dcons[0], L0 + dcons[1], C0 + dcons[2]
+    C = max(0.0, C)
+    new_state = recalc_state([E, L, C], state, a)
+    return new_state, [E, L, C]
+
+def peters_integrate_differential3(states, a, mu, cons, state, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        E0, L0, C0 = cons
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate(sphere, time, False)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
+        dt2 = dt2[5:-5]
+        dt3 = dt3[5:-5]
+        int_time = int_time[5:-5]
+        levciv = np.array([[[0, 0, 0],   #Levi-civita tensor
+                            [0, 0, 1],
+                            [0, -1, 0]],
+                           [[0, 0, -1],
+                            [0, 0, 0],
+                            [1, 0, 0]],
+                           [[0, 1, 0],
+                            [-1, 0, 0],
+                            [0, 0, 0]]])
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+
+        if a == 0:
+            z2 = C0/(L0**2 + C0)
+        else:
+            A = (a**2)*(1 - E0**2)
+            sig = A + L0**2 + C0
+            z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
+        x2 = 1 - z2
+        x = np.sign(L0)*np.sqrt(x2)
+        dC0 = -2*a*a*z2*E0*dE + 2*z2*L0/(1 - z2)*dLz
+        dC_dx = - 2*(a*a*x*(1 - E0*E0) + L0*L0/(x**3))
+        dx = dC0 + 2*(1 - x2)*a*a*E0*dE - 2*L0*dLz*(1 - x2)/x2
+        dx /= -2*(x*(a*a*(1 - E0*E0) + L0*L0/x2) + L0*L0*(1 - x2)/(x**3))
+        dC_theta = dC0 + dC_dx*dx
+        P = E0*(int_sphere[5:-5,0]**2 + a*a) - a*L0
+        D = int_sphere[5:-5,0]*(int_sphere[5:-5,0] - 2) + a*a
+        dcdt_radial = ((2*P*(int_sphere[5:-5,0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:,2])*div*mu*mu
+        dC = (np.sum(dcdt_radial)*z2 + dC_theta*x2)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dcons = np.array([dE, dLz, dC])
+    else:
+        dcons = np.array([0.0, 0.0, 0.0])
+        
+    E, L, C = E0 + dcons[0], L0 + dcons[1], C0 + dcons[2]
+    C = max(0.0, C)
+    new_state = recalc_state([E, L, C], state, a)
+    return new_state, [E, L, C]
+
+def peters_integrate_differential4(states, a, mu, cons, state, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        E0, L0, C0 = cons
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate(sphere, time, False)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
+        dt2 = dt2[5:-5]
+        dt3 = dt3[5:-5]
+        int_time = int_time[5:-5]
+        levciv = np.array([[[0, 0, 0],   #Levi-civita tensor
+                            [0, 0, 1],
+                            [0, -1, 0]],
+                           [[0, 0, -1],
+                            [0, 0, 0],
+                            [1, 0, 0]],
+                           [[0, 1, 0],
+                            [-1, 0, 0],
+                            [0, 0, 0]]])
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+
+        if a == 0:
+            z2 = C0/(L0**2 + C0)
+        else:
+            A = (a**2)*(1 - E0**2)
+            sig = A + L0**2 + C0
+            z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
+        x2 = 1 - z2
+        x = np.sign(L0)*np.sqrt(x2)
+        dC0 = -2*a*a*z2*E0*dE + 2*z2*L0/(1 - z2)*dLz
+        dC_dx = - 2*(a*a*x*(1 - E0*E0) + L0*L0/(x**3))
+        dx = dC0 + 2*(1 - x2)*a*a*E0*dE - 2*L0*dLz*(1 - x2)/x2
+        dx /= -2*(x*(a*a*(1 - E0*E0) + L0*L0/x2) + L0*L0*(1 - x2)/(x**3))
+        dC_theta = dC0 + dC_dx*dx
+        P = E0*(int_sphere[5:-5,0]**2 + a*a) - a*L0
+        D = int_sphere[5:-5,0]*(int_sphere[5:-5,0] - 2) + a*a
+        dcdt_radial = ((2*P*(int_sphere[5:-5,0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:,2])*div*mu*mu
+        dC = (np.sum(dcdt_radial)*(1 - (x2**10)) + dC_theta*(x2**10))*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dcons = np.array([dE, dLz, dC])
+    else:
+        dcons = np.array([0.0, 0.0, 0.0])
+        
     E, L, C = E0 + dcons[0], L0 + dcons[1], C0 + dcons[2]
     C = max(0.0, C)
     new_state = recalc_state([E, L, C], state, a)
@@ -2381,6 +2672,19 @@ def sph2cart(vec, a):
     vz = vec[5] * np.cos(vec[2]) + vec[1] * vec[6] * (-np.sin(vec[2]))
     new_vec = np.array([vec[0], x, y, z, vec[4], vx, vy, vz])
     return new_vec
+
+def sph2cart_vec(raw, a):
+    rho = np.sqrt(raw[:, 1]**2 + a**2)
+    sin_th, cos_th = np.sin(raw[:, 2]), np.cos(raw[:, 2])
+    sin_ph, cos_ph = np.sin(raw[:, 3]), np.cos(raw[:, 3])
+    x = rho * sin_th * cos_ph
+    y = rho * sin_th * sin_ph
+    z = raw[:, 1] * cos_th 
+    vx = raw[:, 1]*raw[:, 5]/(rho) * sin_th * cos_ph + rho * raw[:, 6] * cos_th * cos_ph + rho * sin_th * raw[:, 7] * (-sin_ph)
+    vy = raw[:, 1]*raw[:, 5]/(rho) * sin_th * sin_ph + rho * raw[:, 6] * cos_th * sin_ph + rho * sin_th * raw[:, 7] * cos_ph
+    vz = raw[:, 5] * cos_th + raw[:, 1] * raw[:, 6] * (-sin_th)
+    new_raw = np.transpose([raw[:, 0], x, y, z, raw[:, 4], vx, vy, vz])
+    return new_raw
 
 def cart2sph(vec, a):
     t, x, y, z, tdot, vx, vy, vz = vec
@@ -2974,6 +3278,73 @@ def solve_for_C(E, Lz, Jtheta0, a,
         )
 
     return brentq(fC, C_lo, C_hi)
+
+def new_recalc_state9n(cons, con_derv, state, a):
+    '''
+    Calculates new state vector from current state and change in orbital constants
+
+    Parameters
+    ----------
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass
+    con_derv : 4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    new_state : 8 element numpy array of floats
+        4-position and 4-velocity of the test particle at a particular moment after correction
+    cons : 3-element array of floats
+        energy, azimuthal angular momentum, and Carter constant per unit mass after correction
+    '''
+    E0, L0, C0 = cons
+
+    # Step 2
+    # z = cos(thet_min)
+    if a == 0:
+        z2 = C0/(L0**2 + C0)
+    else:
+        A = (a**2)*(1 - E0**2)
+        sig = A + L0**2 + C0
+        z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
+    z = np.sqrt(min(1.0, np.abs(z2)))
+    dE, dLx, dLy, dLz = con_derv[:4]
+
+    
+    # Near-circular orbits! This feels a little like cheating?
+    # The theta-potential becomes useless for polar orbits
+    # And it's very easy for near-circular orbits to go out of wack
+    # so in both cases we switch to the radial potential, rearrange that to solve for C
+    # then get dC = (dC_dE)*dE + (dC_dLz)*dLz + (dC_dr)*dr
+    # the especially cheaty part is saying (dC_dr) = (dC_dR)(dR_dr), and that since
+    # we're doing this calculation at roughly r ~ potential minimum, (dR_dr) ~ 0 -> (dC_dr) ~ 0
+    # dr would also be fairly small here (it's not r_dot, but the change in potential minimum, which is slow in most cases)
+    # but again, feels cheaty, might not work, especially in strong field
+    # NUHHH CALCULATE AT APOAPSE
+    poly1 = np.array([(E0**2 - 1), 2, ((a**2)*(E0**2 - 1) - L0**2 - C0), 2*((a*E0 - L0)**2 + C0), -C0*(a**2)])
+    r = np.real(max(np.roots(poly1)))
+    P, D = E0*(r*r + a*a) - a*L0, r*r - 2*r + a*a
+    dC_dE = 2*P*(r*r + a*a)/D - 2*a*(a*E0 - L0)
+    dC_dLz = -2*a*P/D + 2*(a*E0 - L0)
+    dC0 = dC_dE*dE + dC_dLz*dLz
+    dC_dr = (4*E0*r*P - P*P*(2*r - 2))/(D*D) - 2*r
+    poly2 = np.array([((E0 + dE)**2 - 1), 2, ((a**2)*((E0 + dE)**2 - 1) - (L0 + dLz)**2 - (C0 + dC0)), 2*((a*(E0 + dE) - (L0 + dLz))**2 + (C0 + dC0)), -(C0 + dC0)*(a**2)])
+    dr = np.real(max(np.roots(poly2))) - r
+    dC = dC0 + dC_dr*dr
+
+    # Step 4
+    E, L = E0 + dE, L0 + dLz    #make sure L0 is going towards 0, not becoming increasingly negative if retrograde
+                                #I actually don't think I need to make that correction
+    # Step 5
+    C = max(C0 + dC, 0.0)
+
+    # Step 6
+    new_state = recalc_state([E, L, C], state, a)
+    return new_state, [E, L, C]
 
 def new_recalc_state9m(cons, con_derv, state, a, ecc):
     '''

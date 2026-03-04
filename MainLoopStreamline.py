@@ -1030,6 +1030,15 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                         if "differy" in label:
                             new_step_hold, ch_cons = mm.peters_integrate_differential(all_states[int(tracker[j][-1]):i], a, mu,
                                                                                    constants[j], new_step, ctx.j, i)
+                        elif "differo" in label:
+                            new_step_hold, ch_cons = mm.peters_integrate_differential2(all_states[int(tracker[j][-1]):i], a, mu,
+                                                                                   constants[j], new_step, ctx.j, i)
+                        elif "differa" in label:
+                            new_step_hold, ch_cons = mm.peters_integrate_differential3(all_states[int(tracker[j][-1]):i], a, mu,
+                                                                                   constants[j], new_step, ctx.j, i)
+                        elif "differe" in label:
+                            new_step_hold, ch_cons = mm.peters_integrate_differential4(all_states[int(tracker[j][-1]):i], a, mu,
+                                                                                   constants[j], new_step, ctx.j, i)
                         else:
                             dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
                             if "dumb" in label:
@@ -1046,6 +1055,8 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                                 new_step_hold, ch_cons = mm.new_recalc_state9j(constants[j], dcons, new_step, a)
                             elif "zampow" in label:
                                 new_step_hold, ch_cons = mm.new_recalc_state9l(constants[j], dcons, new_step, a)
+                            elif "sketchy" in label:
+                                new_step_hold, ch_cons = mm.new_recalc_state9n(constants[j], dcons, new_step, a)
                             else:
                                 new_step_hold, ch_cons = mm.new_recalc_state9m(constants[j], dcons, new_step, a, ECC)
                         pot_min = viable_cons(ch_cons, constants[j], new_step, a)
@@ -1195,9 +1206,9 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     #print(len(issues), len(all_states))
     #unit conversion stuff
     if units == "mks":
-        G, c = 6.67*(10**-11), 3*(10**8)
+        G, c = 6.67e-11, 3e8
     elif units == "cgs":
-        G, c = 6.67*(10**-8),  3*(10**10)
+        G, c = 6.67e-8,  3e10
     else:
         G, mass, c = 1.0, 1.0, 1.0
         
@@ -1396,7 +1407,7 @@ def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto
     update_index(filename, metadata)
     return filename
 
-def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False):
+def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reconstruct=True):
     print(f"Loading {folder + filename}") if not quiet else None
     with h5py.File(folder + filename, 'r') as f:
         final = {}
@@ -1418,68 +1429,71 @@ def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False):
         # Decode JSONs back into Python objects
         final['inputs'] = json.loads(f['inputs'][()].decode('utf-8', errors='replace'))
         final['issues'] = [tuple(x) for x in json.loads(f['issues'][()].decode('utf-8'))]
-
-        # Reconstruct derived values
-        raw = final["raw"]
-        trackix = final["trackix"]
-        final["pos"] = raw[:,1:4]
-        final["all_vel"] = raw[:,4:]
-        final["time"] = raw[:,0]
-        time = final["time"]
-        final["vel"] = (np.square(raw[:,5]) + np.square(raw[:,1]) * (np.square(raw[:,6]) + (np.sin(raw[:,2])**2)*np.square(raw[:,7])))**(0.5)
-        final["spin"] = final["inputs"][1]
-        final["qarter"] = final["carter"] + (final["spin"]*final["energy"] - final["phi_momentum"])**2
-        final["tracktime"] = time[trackix + 1]
-        final["tracktime"][0] = time[0]
-            # Numba + vectorized version of check_interval
-        final["interval"] = mm.check_interval_vec(raw, final["spin"])
-            # Vectorized version of root_getter
-        stuff = mm.root_getter_vec(final["energy"], final["phi_momentum"], final["carter"], final["spin"])
-        final["pot_min"] = stuff[1][:, -1]
-        incstuff = np.mean(np.abs(stuff[2][:, 1:3]), axis=1)
-        final["inc"] = np.arccos(np.where(incstuff <= 1.0, incstuff, 1.0))
-        final["it"] = stuff[0][:, -2]
-        final["ot"] = stuff[0][:, -1]
-        it, ot = final["it"], final["ot"]
-        final["e"] = (ot - it)/(ot + it)
-        final["r0"] = 0.5*(ot + it)
-        final["p"] = 2*ot*it/(ot + it)
-            # A list of indices that shows how elements of "raw" correspond to the indices in "trackix"
-        ix = np.searchsorted(trackix, np.arange(len(raw)), side='right') - 1
-                # Make sure the values in here actually match "trackix" values
-        ix = np.clip(ix, 0, len(trackix) - 1)
-                # Don't know where the off-by-1 issue keeps coming from (probably original sim) but this fixes it
-        ix = np.insert(ix[:-1], 0, 0)
-            # Vectorized version of get_true_anom
-        denom = final["r0"][ix] * (1 - final["e"][ix]**2) / raw[:,1] - 1
-        pre = np.sign(denom)
-                # Padding for divide by zero errors
-        clipped = np.clip(np.abs(denom / (final["e"][ix] + 1e-15)), 0, 1)
-        val = np.arccos(pre * clipped)
-                # Correct for inward motion (when r_dot < 0)
-        val = np.where(raw[:,5] < 0, 2 * np.pi - val, val)
-                # Unwrap to make values monotonically increasing
-        final["true_anom"] = np.unwrap(val.real)
-            # Get omega and ascending/descinding node info
-        ind = argrelmin(raw[:,1])[0]
-        omega, otime = raw[ind,3] - 2*np.pi*np.arange(len(ind)), raw[ind,0]
-        asc_node, asc_node_time = np.array([]), np.array([])
-        des_node, des_node_time = np.array([]), np.array([])
-        if max(raw[:,2]) - min(raw[:,2]) > 1e-15:
-            theta_derv = np.interp(raw[:,0], 0.5*(raw[:,0][:-1] + raw[:,0][1:]), np.diff(raw[:,2])/np.diff(raw[:,0]))
-            ind2 = argrelmin(theta_derv)[0] #indices for the ascending node
-            ind3 = argrelmin(-theta_derv)[0] #indices for the descending node
-            asc_node, asc_node_time = raw[ind2,3] - 2*np.pi*np.arange(len(ind2)), raw[ind2,0] #subtract the normal phi advancement
-            des_node, des_node_time = raw[ind3,3] - 2*np.pi*np.arange(len(ind3)), raw[ind3,0] #subtract the normal phi advancement
-            if asc_node.size == 0:
-                asc_node = np.array([])
-                asc_node_time = np.array([])
-        final["omega"] = omega
-        final["otime"] = otime
-        final["asc_node"] = asc_node
-        final["asc_node_time"] = asc_node_time
-        final["des_node"] = des_node
-        final["des_node_time"] = des_node_time
+        
+        if reconstruct:
+            # Reconstruct derived values
+            raw = final["raw"]
+            trackix = final["trackix"]
+            final["pos"] = raw[:,1:4]
+            final["all_vel"] = raw[:,4:]
+            final["time"] = raw[:,0]
+            time = final["time"]
+            final["vel"] = (np.square(raw[:,5]) + np.square(raw[:,1]) * (np.square(raw[:,6]) + (np.sin(raw[:,2])**2)*np.square(raw[:,7])))**(0.5)
+            final["spin"] = final["inputs"][1]
+            final["qarter"] = final["carter"] + (final["spin"]*final["energy"] - final["phi_momentum"])**2
+            final["tracktime"] = time[trackix + 1]
+            final["tracktime"][0] = time[0]
+                # Numba + vectorized version of check_interval
+            final["interval"] = mm.check_interval_vec(raw, final["spin"])
+                # Vectorized version of root_getter
+            stuff = mm.root_getter_vec(final["energy"], final["phi_momentum"], final["carter"], final["spin"])
+            final["pot_min"] = stuff[1][:, -1]
+            incstuff = np.mean(np.abs(stuff[2][:, 1:3]), axis=1)
+            final["inc"] = np.arccos(np.where(incstuff <= 1.0, incstuff, 1.0))
+            final["it"] = stuff[0][:, -2]
+            final["ot"] = stuff[0][:, -1]
+            it, ot = final["it"], final["ot"]
+            final["e"] = (ot - it)/(ot + it)
+            final["r0"] = 0.5*(ot + it)
+            final["p"] = 2*ot*it/(ot + it)
+                # A list of indices that shows how elements of "raw" correspond to the indices in "trackix"
+            ix = np.searchsorted(trackix, np.arange(len(raw)), side='right') - 1
+                    # Make sure the values in here actually match "trackix" values
+            ix = np.clip(ix, 0, len(trackix) - 1)
+                    # Don't know where the off-by-1 issue keeps coming from (probably original sim) but this fixes it
+            ix = np.insert(ix[:-1], 0, 0)
+                # Vectorized version of get_true_anom
+            denom = final["r0"][ix] * (1 - final["e"][ix]**2) / raw[:,1] - 1
+            pre = np.sign(denom)
+                    # Padding for divide by zero errors
+            clipped = np.clip(np.abs(denom / (final["e"][ix] + 1e-15)), 0, 1)
+            val = np.arccos(pre * clipped)
+                    # Correct for inward motion (when r_dot < 0)
+            val = np.where(raw[:,5] < 0, 2 * np.pi - val, val)
+                    # Unwrap to make values monotonically increasing
+            final["true_anom"] = np.unwrap(val.real)
+                # Get omega and ascending/descinding node info
+            ind = argrelmin(raw[:,1])[0]
+            omega, otime = raw[ind,3] - 2*np.pi*np.arange(len(ind)), raw[ind,0]
+            asc_node, asc_node_time = np.array([]), np.array([])
+            des_node, des_node_time = np.array([]), np.array([])
+            if max(raw[:,2]) - min(raw[:,2]) > 1e-15:
+                theta_derv = np.interp(raw[:,0], 0.5*(raw[:,0][:-1] + raw[:,0][1:]), np.diff(raw[:,2])/np.diff(raw[:,0]))
+                ind2 = argrelmin(theta_derv)[0] #indices for the ascending node
+                ind3 = argrelmin(-theta_derv)[0] #indices for the descending node
+                asc_node, asc_node_time = raw[ind2,3] - 2*np.pi*np.arange(len(ind2)), raw[ind2,0] #subtract the normal phi advancement
+                des_node, des_node_time = raw[ind3,3] - 2*np.pi*np.arange(len(ind3)), raw[ind3,0] #subtract the normal phi advancement
+                if asc_node.size == 0:
+                    asc_node = np.array([])
+                    asc_node_time = np.array([])
+            final["omega"] = omega
+            final["otime"] = otime
+            final["asc_node"] = asc_node
+            final["asc_node_time"] = asc_node_time
+            final["des_node"] = des_node
+            final["des_node_time"] = des_node_time
+        else:
+            print("Skipping derived value reconstruction") if not quiet else None
         print(f"Done") if not quiet else None
         return final
 
