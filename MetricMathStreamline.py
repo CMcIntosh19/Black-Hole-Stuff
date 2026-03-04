@@ -985,6 +985,47 @@ def recalc_state2(constants, state, a):
     new_state[4:] = np.array([ttau, rtau, thetau, phitau])
     return new_state
 
+def interpolate2(data, time, supress=True):
+    '''
+    interpolates coordinate data to be evenly spaced in coordinate time
+    Fail state plots time against index twice?
+
+    Parameters
+    ----------
+    data : N x 3 numpy array of floats
+        r, theta, and phi position of test particle
+    time : N element numpy array of floats
+        coordinate time of test particle
+    suppress : bool, defaults to True
+        limits the size of the final array to 10000 entries or ~20 samples per phase (assuming circular orbit), whichever is greater
+
+    Returns
+    -------
+    new_data : M x 3 numpy array of floats
+        r, theta, and phi position of test particle, interpolated to be evenly spaced along new_time
+    new_time : M element numpy array of floats
+        coordinate time of test particle, interpolated to be evenly spaced
+        M is maximum of the length of the original time array or the integerized number of time units that have passed
+    '''
+    # Use this one for gwaves
+    data = np.array(data)
+    if supress == True:
+        phi_per = 2 * np.pi * abs((time[-1] - time[0])/(data[-1, 2] - data[0, 2]))
+        new_time = np.arange(time[0], time[-1], min(phi_per/200, (time[-1] - time[0])/10000))
+    else:
+        new_time = np.linspace(time[0], time[-1], max(len(time), 10*int(time[-1] - time[0])))
+    
+
+    j = np.searchsorted(time, new_time, side='right') - 1
+    j = np.clip(j, 0, len(time)-2)
+    w = (new_time - time[j]) / (time[j + 1] - time[j])
+
+    new_data = np.stack((new_time, new_time, new_time), axis=-1)
+    for i in range(3):
+        new_data[:, i]  = data[j, i]  + w*(data[j+1, i] - data[j, i])
+
+    return new_data, new_time
+
 def interpolate(data, time, supress=True):
     '''
     interpolates coordinate data to be evenly spaced in coordinate time
@@ -1009,22 +1050,29 @@ def interpolate(data, time, supress=True):
     '''
     data = np.array(data)
     if supress == True:
-        phi_per = 2 * np.pi * abs((time[-1] - time[0])/(data[-1, 2] - data[0, 2]))
-        new_time = np.arange(time[0], time[-1], min(phi_per/200, (time[-1] - time[0])/10000))
+        try:
+            rad = data[argrelmin(data[:,0])[0][0], 0]
+        except:
+            rad = data[0,0]
+        new_time = np.arange(time[0], time[-1], min(2*np.pi*np.sqrt(rad**3)/20, (time[-1] - time[0])/10000))
     else:
         new_time = np.linspace(time[0], time[-1], max(len(time), 10*int(time[-1] - time[0])))
-    
-
-    j = np.searchsorted(time, new_time, side='right') - 1
-    j = np.clip(j, 0, len(time)-2)
-    w = (new_time - time[j]) / (time[j + 1] - time[j])
-
-    new_data = np.stack((new_time, new_time, new_time), axis=-1)
-    for i in range(3):
-        new_data[:, i]  = data[j, i]  + w*(data[j+1, i] - data[j, i])
-
-    return new_data, new_time
-
+    try:
+        r_poly = spi.CubicSpline(time, data[:,0])
+        theta_poly = spi.CubicSpline(time, data[:,1])
+        phi_poly = spi.CubicSpline(time, data[:,2])
+        new_data = np.transpose(np.array([r_poly(new_time), theta_poly(new_time), phi_poly(new_time)]))
+        return new_data, new_time
+    except ValueError:
+        fig, ax = plt.subplots(4, 1)
+        ax[0].plot(time)
+        ax[1].plot(data[:,0])
+        ax[2].plot(data[:,1])
+        ax[3].plot(data[:,2])
+        print("yo" if -1 in np.sign(np.diff(time)) else "no negs")
+        print("yop" if 0.0 in np.diff(time) else "no zos")
+        r_poly = spi.CubicSpline(time, data[:,0])
+        return False
 
 @njit
 def linear_interp(x_vals, y_vals, new_xs):
@@ -1336,7 +1384,7 @@ def full_transform(data, distance, supress=True, m_bh=False, e_r = None):    #de
         N is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
     sphere, time = data["raw"][:, 1:], data["raw"][:, 0]
-    int_sphere, int_time = interpolate(sphere, time, supress)
+    int_sphere, int_time = interpolate2(sphere, time, supress)
 
     if data["inputs"][-1] == "grav":
         # Convert to mks units if it's grav
