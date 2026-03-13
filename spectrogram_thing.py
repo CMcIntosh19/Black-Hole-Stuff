@@ -150,11 +150,11 @@ gorf = ml.load_index()
 
 spin = None
 mass = 1e7 # solar masses
-cutoff = True
+cutoff = 100
 f_big, t_spec_big, Sxx_plus_big, Sxx_cross_big = [], [], [], []
 for key, val in gorf.items():
     try:
-        if "Quasi-Circular" not in val["Label"]:
+        if "Near-Polar" not in val["Label"]:
             continue
 
         if spin is None:
@@ -263,7 +263,6 @@ plt.figure(figsize=(8,6))
 bit = np.random.randint(0, len(t_spec_big))
 plt.loglog(f_big, Sxx_plus_big[:, bit], label="h+")
 plt.loglog(f_big, Sxx_cross_big[:, bit], label="hx")
-plt.axvline(f_cutoff)
 plt.title(f"Random Slice at t={t_spec_big[bit]:.4e}")
 plt.tight_layout()
 plt.grid()

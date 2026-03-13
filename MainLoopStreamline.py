@@ -1054,11 +1054,11 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                             elif "power" in label:
                                 new_step_hold, ch_cons = mm.new_recalc_state9j(constants[j], dcons, new_step, a)
                             elif "zampow" in label:
-                                new_step_hold, ch_cons = mm.new_recalc_state9l(constants[j], dcons, new_step, a)
+                                new_step_hold, ch_cons = mm.new_recalc_state9m(constants[j], dcons, new_step, a, ECC)
                             elif "sketchy" in label:
                                 new_step_hold, ch_cons = mm.new_recalc_state9n(constants[j], dcons, new_step, a)
                             else:
-                                new_step_hold, ch_cons = mm.new_recalc_state9m(constants[j], dcons, new_step, a, ECC)
+                                new_step_hold, ch_cons = mm.new_recalc_state9l(constants[j], dcons, new_step, a)
                         pot_min = viable_cons(ch_cons, constants[j], new_step, a)
                         subcount = 0
                         if pot_min < -err_target:
