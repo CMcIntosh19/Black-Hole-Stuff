@@ -68,7 +68,7 @@ def run_single_inspiral(inspiral_str, write_poll=20.0, min_spacing=60.0):
 
     heartbeat(f"Started {title}")
     # ---- Load latest checkpoint ONCE ----
-    heartbeat("Searching index for pre-existing chunks...")
+    heartbeat("Searching index for pre-existing chunks...")  
     index = ml.load_index()
     refs = [
         name for name, dat in index.items()
@@ -82,7 +82,7 @@ def run_single_inspiral(inspiral_str, write_poll=20.0, min_spacing=60.0):
         refs.append(ml.save_emri_data(ins, auto=True))
     else:
         heartbeat("Pre-existing chunks found.")
-        ins = ml.load_emri_data(refs[-1], quiet=True)
+        ins = ml.load_emri_data(refs[-1], quiet=True, reconstruct=False)
 
     chunk_counter = max(1, len(refs))
 
@@ -95,8 +95,8 @@ def run_single_inspiral(inspiral_str, write_poll=20.0, min_spacing=60.0):
         # Advance trajectory
         heartbeat(f"Starting chunk {chunk_counter + 1}.")
         ins = ml.EMRIGenerator(
-            ins["spin"],
-            1e-4,
+            ins["inputs"][1],
+            ins["inputs"][2],
             pos=ins["raw"][-1, :4],
             veltrue=ins["raw"][-1, 4:],
             label=f"{title} {chunk_counter + 1}",
@@ -129,10 +129,10 @@ def run_single_inspiral(inspiral_str, write_poll=20.0, min_spacing=60.0):
 
 def main():
     inspiral_strs = [
-        'ml.EMRIGenerator(-0.9, 1e-4, params=[10, 1e-3, 60*np.pi/180], label="Quasi-Circular Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)',
-        'ml.EMRIGenerator(0.0, 1e-5, cons=[0.99410372,3.9525, 0], label="Eq. Zoom-Whirl Inspiral (Paper)", err_target=1e-15, verbose=0, force_stop=should_stop)',
-        'ml.EMRIGenerator(-0.8, 1e-4, params=[30/(1 - 0.4**2), 0.4, 30*np.pi/180], label="Generic Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)',
-        'ml.EMRIGenerator(0.95, 1e-4, cons=[0.962076494,0.31252652, 12.4], label="Near-Polar Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)'
+        'ml.EMRIGenerator(-0.9, 1e-3, params=[10, 1e-3, 60*np.pi/180], label="Quasi-Circular Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)',
+        'ml.EMRIGenerator(0.0, 1e-3, cons=[0.99410372,3.9525, 0], label="Eq. Zoom-Whirl Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)',
+        'ml.EMRIGenerator(-0.8, 1e-3, params=[30/(1 - 0.4**2), 0.4, 30*np.pi/180], label="Generic Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)',
+        'ml.EMRIGenerator(0.95, 1e-3, cons=[0.962076494,0.31252652, 12.4], label="Near-Polar Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)'
     ]
 
     # stagger write poll intervals to avoid simultaneous writes
