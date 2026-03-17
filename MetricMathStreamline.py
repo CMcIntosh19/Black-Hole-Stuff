@@ -3121,6 +3121,63 @@ def new_recalc_state8c(cons, con_derv, state, a):
     print("************")
     return new_state, [newE, newLz, newC]
 
+def new_recalc_state8d(cons, con_derv, state, a, eps=1e-7, svd=False):
+    """
+    Enforces dE, dLz exactly while minimizing |dC| to linear order.
+    Uses a true orthonormal spatial triad in the particle rest frame.
+    """
+    metric, chris = kerr_2(state, a)
+    r, theta, phi = state[1:4]
+    sint, cost, sinp, cosp = np.sin(theta), np.cos(theta), np.sin(phi), np.cos(phi)
+    rho2, tri = r**2 + (a**2)*(cost**2), r**2 - 2*r + a**2
+    al2 = (rho2*tri)/(rho2*tri + 2*r*(a**2 + r**2))
+    w = (2*r*a)/(rho2*tri + 2*r*(a**2 + r**2))
+    wbar2 = ((rho2*tri + 2*r*(a**2 + r**2))/rho2)*(sint**2)
+    tet2kerr = np.array([[1/np.sqrt(al2), 0.0,               0.0,             0.0],
+                         [0.0,            np.sqrt(tri/rho2), 0.0,             0.0],
+                         [0.0,            0.0,               1/np.sqrt(rho2), 0.0],
+                         [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
+    kerr2tet = np.linalg.inv(tet2kerr)
+    tetrad = kerr2tet @ state[4:]
+    v = tetrad[1:]/tetrad[0].copy()
+    fmom = np.matmul(metric, state[4:])
+    L = np.sqrt(fmom[2]**2 + (fmom[3]**2)/(np.sin(theta)**2))
+    cart_state = sph2cart(state, a)
+    L_dir = np.cross(cart_state[1:4], cart_state[5:])
+    L_vec = L*L_dir/np.linalg.norm(L_dir)
+
+    A = np.zeros((4,3))
+    for i in range(3):
+        div = np.zeros(3)
+        div[i] += eps
+        gamma = 1/np.sqrt(1 - np.dot(v + div, v + div))
+        new_tet = np.array([gamma, *(gamma*(v + div))])
+        new_vel = tet2kerr @ new_tet
+        new_fmom = metric @ new_vel
+        A[i%4, i] = (-new_fmom[0] - cons[0])/eps
+        new_L = np.sqrt(new_fmom[2]**2 + (new_fmom[3]**2)/(np.sin(theta)**2))
+        new_cart_state = sph2cart([*state[:4], *new_vel], a)
+        new_L_dir = np.cross(new_cart_state[1:4], new_cart_state[5:])
+        new_L_vec = new_L * new_L_dir/np.linalg.norm(new_L_dir)
+        A[1:, i] = (new_L_vec[i] - L_vec[i])/eps
+            
+    try:
+        if svd:
+            true_div = np.linalg.lstsq(A, con_derv, rcond=None)[0]
+        else:
+            true_div = np.linalg.inv(A.T @ A) @ (A.T @ con_derv)
+        new_v = v + true_div
+        true_gamma = 1/np.sqrt(1 - np.dot(new_v, new_v))
+        true_tet = np.array([true_gamma, *(true_gamma * new_v)])
+        true_vel = tet2kerr @ true_tet
+        new_state = np.array([*state[:4], *true_vel])
+        true_fmom = metric @ true_vel
+        newE, newLz, newQ = -true_fmom[0], true_fmom[3], np.matmul(np.matmul(kill_tensor(new_state, a), new_state[4:]), new_state[4:])
+        newC = newQ - (a*newE - newLz)**2
+        return new_state, [newE, newLz, newC]
+    except Exception as e:
+        return np.nan * np.arange(8), np.nan * np.arange(3)
+
 def new_recalc_state9(cons, con_derv, state, a):
     '''
     Calculates new state vector from current state and change in orbital constants
@@ -3616,7 +3673,7 @@ def new_recalc_state9j(cons, con_derv, state, a):
     dE, dLx, dLy, dLz = con_derv[:4]
     dL_vec = [dLx, dLy, dLz]
     cosinc = np.cos(np.mean(np.abs(root_getter(E0, L0, C0, a)[2][1:3])))
-    dC = 2*(np.dot(L_vec, dL_vec) + L0*dLz - ((a*np.cos(state[2]))**2)*E0*dE)
+    dC = 2*(np.dot(L_vec, dL_vec) - L0*dLz - ((a*np.cos(state[2]))**2)*E0*dE)
         #From glamp A3, thetadot term goes away because I don't change position!
 
     # Step 4
