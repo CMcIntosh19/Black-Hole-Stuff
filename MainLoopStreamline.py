@@ -543,9 +543,9 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         # Get roots and extrema
         turns, flats, _ = mm.root_getter(E2, L2, C2, a)
 
-        # Keep only real roots
-        turns = np.real(turns[np.isreal(turns)]).astype(float)
-        flats = np.real(flats[np.isreal(flats)]).astype(float)
+        # Keep sufficiently real roots
+        turns = np.real(turns[np.abs(np.imag(turns)/np.real(turns + 1e-4)) < 1e-4]).astype(float)
+        flats = np.real(flats[np.abs(np.imag(flats)/np.real(flats + 1e-4)) < 1e-4]).astype(float)
 
         if len(turns) < 2:
             return -np.inf
@@ -629,6 +629,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         pot_min = viable_cons([initE, initLz, initC], [initE, initLz, initC], all_states[0], a)
         if count >= 21:
             print("Don't trust this!", pot_min, inputs)
+            initE -= count*err_target
             break
                 
     coeff = np.array([initE**2 - 1, 2.0, (a**2)*(initE**2 - 1) - initLz**2 - initC, 2*((a*initE - initLz)**2) + 2*initC, -initC*(a**2)])
@@ -914,23 +915,23 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     # inc is the minimum value of theta, pretend the particle is traveling on a straight line between
                     # current theta value and inc, then flash to the other side (same theta). Find phi!
                     k = abs(inc)/new_step[2] if new_step[2] < np.pi/2 else abs(inc)/(np.pi - new_step[2])
-                    cosp, sinp = np.cos(new_step[3]), np.sin(new_step[3])
-                    m = (cosp*sinp + np.array([1, -1])*k*np.sqrt(1 - k*k))/(cosp**2 - k*k)
-                    H = (sinp - m*cosp)/k
-                    phi_min = (np.arctan(m) + np.arcsin(np.clip(H/np.sqrt(1 + m*m), -1, 1)))%(2*np.pi)
-                    # This gives us 2 values of phi_min. We need the one that corresponds to the correct direction of motion
-                    arr = (phi_min - new_step[3]%(2*np.pi))/new_step[7]
-                    phi_min_real = phi_min[0] if arr[0] > 0 else phi_min[1]
-                    # Now get the distance from the current phi, add double that to get the NEW phi
-                    if True in np.isnan(phi_min_real):
-                        # Most likely failed because orbit is very polar
+                    if k == 0.0:
+                        # Orbit is polar!
                         phi_dist = np.pi/2
                     else:
+                        cosp, sinp = np.cos(new_step[3]), np.sin(new_step[3])
+                        m = (cosp*sinp + np.array([1, -1])*k*np.sqrt(1 - k*k))/(cosp**2 - k*k)
+                        H = (sinp - m*cosp)/k
+                        phi_min = (np.arctan(m) + np.arcsin(np.clip(H/np.sqrt(1 + m*m), -1, 1)))%(2*np.pi)
+                        # This gives us 2 values of phi_min. We need the one that corresponds to the correct direction of motion
+                        arr = (phi_min - new_step[3]%(2*np.pi))/new_step[7]
+                        phi_min_real = phi_min[0] if arr[0] > 0 else phi_min[1]
+                        # Now get the distance from the current phi, add double that to get the NEW phi
                         phi_dist = 2*min(abs(phi_min - old_step[3]%(2*np.pi)))*np.sign(old_step[7])
                     new_step[3] += phi_dist
                     # Estimate the elapsed time as d(phi)/phi_dot
                     t_change = phi_dist/new_step[7]
-                    if True in np.isnan(t_change):
+                    if np.isnan(t_change):
                         # Same polar issue
                         t_change = 2*old_step[2]/old_step[6]
                     new_step[0] += t_change
