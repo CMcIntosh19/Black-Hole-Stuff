@@ -95,8 +95,8 @@ def run_single_inspiral(inspiral_str, write_poll=20.0, min_spacing=60.0):
         # Advance trajectory
         heartbeat(f"Starting chunk {chunk_counter + 1}.")
         ins = ml.EMRIGenerator(
-            ins["spin"],
-            1e-4,
+            ins["inputs"][1],
+            ins["inputs"][2],
             pos=ins["raw"][-1, :4],
             veltrue=ins["raw"][-1, 4:],
             label=f"{title} {chunk_counter + 1}",

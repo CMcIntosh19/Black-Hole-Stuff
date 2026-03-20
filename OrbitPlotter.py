@@ -312,7 +312,7 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
     else:
         plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
 
-def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, end=False, xscale='linear', yscale='linear', filename=False, derv=0):
+def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, end=False, xscale='linear', yscale='linear', filename=False, derv=0, grid=False):
     '''
     Parameters
     ----------
@@ -448,7 +448,10 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
     ax.set_xscale(xscale)
     ax.set_yscale(yscale)
     ax.set_title(title+title_add)
-    if filename == False:
+    if grid:
+        plt.grid()
+    
+    if not filename:
         plt.show()
     else:
         plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')

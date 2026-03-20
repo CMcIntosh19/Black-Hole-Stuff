@@ -1041,7 +1041,12 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                             new_step_hold, ch_cons = mm.peters_integrate_differential4(all_states[int(tracker[j][-1]):i], a, mu,
                                                                                    constants[j], new_step, ctx.j, i)
                         else:
-                            dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                            if "mark1" in label:
+                                dcons = mm.peters_integrate6_6_4_2(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                            elif "mark2" in label:
+                                dcons = mm.peters_integrate6_6_4_3(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                            else:
+                                dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
                             if "dumb" in label:
                                 dcons *= -1
                             if "hoopa" in label:
