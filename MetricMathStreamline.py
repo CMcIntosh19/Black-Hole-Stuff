@@ -1985,6 +1985,102 @@ def peters_integrate6_6_4(states, a, mu, ind1, ind2):
     else:
         return np.array([0.0, 0.0, 0.0, 0.0])
 
+def peters_integrate6_6_4_2(states, a, mu, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate(sphere, time, False)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt1 = np.gradient(coolquad, dt, axis=0)
+        dt2 = np.gradient(dt1, dt, axis=0)
+        dt3 = np.gradient(dt2, dt, axis=0)
+        dt2 = dt2[5:-5]
+        dt3 = dt3[5:-5]
+        int_time = int_time[5:-5]
+
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        #print((states[-1,0] - states[0,0]), (int_time[-1] - int_time[0]), "wa")
+        dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        #print(dE, dLx, dLy, dLz)
+        #print(states[-1,0] - states[0,0])
+        return np.array([dE, dLx, dLy, dLz])
+    else:
+        return np.array([0.0, 0.0, 0.0, 0.0])
+
+from scipy.signal import savgol_filter
+def peters_integrate6_6_4_3(states, a, mu, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate(sphere, time, False)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt1 = savgol_filter(coolquad, window_length=7, polyorder=3, deriv=1, delta=dt, axis=0)
+        dt2 = savgol_filter(coolquad, window_length=7, polyorder=4, deriv=2, delta=dt, axis=0)
+        dt3 = savgol_filter(coolquad, window_length=9, polyorder=5, deriv=3, delta=dt, axis=0)
+        dt2 = dt2[5:-5]
+        dt3 = dt3[5:-5]
+        int_time = int_time[5:-5]
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        #print((states[-1,0] - states[0,0]), (int_time[-1] - int_time[0]), "wa")
+        dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        #print(dE, dLx, dLy, dLz)
+        #print(states[-1,0] - states[0,0])
+        return np.array([dE, dLx, dLy, dLz])
+    else:
+        return np.array([0.0, 0.0, 0.0, 0.0])
+
 def peters_integrate6_6_5(states, a, mu, ind1, ind2):
     '''
     Calculates change in characteristic orbital values from path of test particle through space 
@@ -5440,6 +5536,10 @@ def get_sep_inc(a, inc, mult=1, getELC=False):
     return p_sep, e_sep, r, E_sep, L_sep, C_sep, r_out, E_out, L_out, C_out
 
 def get_sep_cosi(a, cosi, mult=1, getELC=False):
+    if np.isclose(cosi, 0.0, atol=1e-12):
+        # for small cosi it should be basically the same as inc, even with spin
+        return get_sep_inc(a, cosi, mult=mult, getELC=getELC)
+    
     mult = max(1, int(mult))
     cosi2 = cosi**2
     sini2, sini = 1 - cosi2, np.sqrt(1 - cosi2)
