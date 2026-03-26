@@ -7,7 +7,10 @@ import MetricMathStreamline as mm
 import MainLoopStreamline as ml
 import OrbitPlotter as op
 from email.utils import parsedate_to_datetime
-from multiprocessing import Process
+from multiprocessing import Process, Lock
+import argparse
+import yaml
+import re
 
 def last_index_write_time():
     try:
@@ -29,8 +32,7 @@ def last_index_write_time():
 
     return 0.0
 
-
-def run_single_inspiral(inspiral_str, write_poll=20.0, min_spacing=60.0):
+def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=None):
     """
     inspiral_str : string defining initial EMRI
     write_poll   : seconds to wait when checking if it's safe to write
@@ -38,7 +40,8 @@ def run_single_inspiral(inspiral_str, write_poll=20.0, min_spacing=60.0):
     """
 
     stop_requested = False
-    title = inspiral_str.split('"')[-2]
+    inspiral_str = make_inspiral_str(inspiral_cfg)
+    title = inspiral_str.split("label")[1].split("'")[1]
     heartbeat_path = f"D:/EMRIData/inspiral_{title.replace(' ', '_')}.log"
 
     def heartbeat(msg):
@@ -69,92 +72,194 @@ def run_single_inspiral(inspiral_str, write_poll=20.0, min_spacing=60.0):
     heartbeat(f"Started {title}")
     # ---- Load latest checkpoint ONCE ----
     heartbeat("Searching index for pre-existing chunks...")  
-    index = ml.load_index()
+    with lock:
+        index = ml.load_index()
+        
     refs = [
         name for name, dat in index.items()
         if (title in dat["Label"]) and ("copy" not in dat["Label"])
     ]
 
     if len(refs) == 0:
-        heartbeat("No pre-existing chunks found, starting chunk 1.")
-        ins = eval(inspiral_str)
-        heartbeat(f"Completed chunk 1, saving...")
-        refs.append(ml.save_emri_data(ins, auto=True))
+        heartbeat("No pre-existing chunks found.")
+        ins = False
+        #ins = eval(inspiral_str)
+        #heartbeat(f"Completed chunk 1, saving...")
+        #refs.append(ml.save_emri_data(ins, auto=True))
     else:
         heartbeat("Pre-existing chunks found.")
         ins = ml.load_emri_data(refs[-1], quiet=True, reconstruct=False)
+        if (ins["plunge"] or ins["unbind"]) or (not ins["stop"] and len(ins["raw"]) < 10**7):
+            heartbeat(f"{title} already completed!")
+            stop_requested = True
 
-    chunk_counter = max(1, len(refs))
+    chunk_counter = len(refs)
 
     # ---- Main evolution loop ----
     while not stop_requested:
-        if ins["plunge"]:
-            heartbeat(f"{title} complete!")
-            break
-
         # Advance trajectory
         heartbeat(f"Starting chunk {chunk_counter + 1}.")
-        ins = ml.EMRIGenerator(
-            ins["inputs"][1],
-            ins["inputs"][2],
-            pos=ins["raw"][-1, :4],
-            veltrue=ins["raw"][-1, 4:],
-            label=f"{title} {chunk_counter + 1}",
-            verbose=0,
-            err_target=ins["inputs"][4],
-            force_stop=should_stop,
-        )
+        if not ins:
+            ins = eval(inspiral_str)
+        else:
+            ins = ml.EMRIGenerator(
+                ins["inputs"][1],
+                ins["inputs"][2],
+                endflag=ins["inputs"][3],
+                pos=ins["raw"][-1, :4],
+                veltrue=ins["raw"][-1, 4:],
+                label=f"{title} {chunk_counter + 1}",
+                verbose=0,
+                err_target=ins["inputs"][4],
+                force_stop=should_stop,
+            )
 
         heartbeat(f"Completed chunk {chunk_counter + 1}, attempting to save...")
-        time.sleep(write_poll)
-        while True:
-            last_write = last_index_write_time()
-            now = time.time()
-            if now - last_write >= min_spacing:
-                break
-            heartbeat(f"Last write to index too recent, waiting...")
-            time.sleep(write_poll)
-
-        chunk_name = ml.save_emri_data(ins, auto=True)
+        with lock:            
+            chunk_name = ml.save_emri_data(ins, auto=True)   
         heartbeat(f"Chunk {chunk_counter + 1} saved as {chunk_name}.")
         chunk_counter += 1
 
         if ins.get("stop", False):
             break
 
+        if ((ins["plunge"] or ins["unbind"]) or ins["stop"]) or (not ins["stop"] and len(ins["raw"]) < 10**7):
+            heartbeat(f"{title} complete!")
+            break
+
     heartbeat(f"{title} exiting cleanly.")
 
+def format_value(val):
+    # Handle lists recursively
+    if isinstance(val, list):
+        return "[" + ", ".join(format_value(v) for v in val) + "]"
+
+    # Handle strings
+    if isinstance(val, str):
+        if val == "should_stop" or bool(re.search(r"[+\-*/()**]|np\.", val)):
+            return val
+        
+        # Try to interpret as number
+        try:
+            num = float(val)
+            return repr(num)
+        except ValueError:
+            return repr(val)
+
+    # Numbers
+    if isinstance(val, (int, float)):
+        return repr(val)
+
+    # Booleans
+    if isinstance(val, bool):
+        return "True" if val else "False"
+
+    return repr(val)
+
+def make_inspiral_str(cfg):
+    # Go through this list of accepted inputs
+    defaults = {"a": 0.0,
+                "mu": 0.0,
+                "endflag": "min_radius < 0.5", 
+                "mass": 1.0, 
+                "err_target": 1e-15, 
+                "label": "default", 
+                "cons": False, 
+                "velorient": False, 
+                "vel4": False, 
+                "params": False, 
+                "pos": False, 
+                "veltrue": False, 
+                "units": "grav",
+                "verbose": 0,
+                "force_stop": "should_stop"
+                } 
+    
+    insp_str = "ml.EMRIGenerator("
+    for keyword, value in defaults.items():
+        if keyword in cfg.keys():
+            value = cfg[keyword]
+
+        f_value = format_value(value)
+        if keyword == "label":
+            if "'" not in f_value:
+                f_value = f"'{f_value}'"
+        insp_str += f"{keyword} = {f_value}, "
+    insp_str += ")"
+
+    return insp_str
 
 # ----------- Main launcher -----------
 
 def main():
-    inspiral_strs = [
-        'ml.EMRIGenerator(-0.9, 1e-3, params=[10, 1e-3, 60*np.pi/180], label="Quasi-Circular Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)',
-        'ml.EMRIGenerator(0.0, 1e-3, cons=[0.99410372,3.9525, 0], label="Eq. Zoom-Whirl Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)',
-        'ml.EMRIGenerator(-0.8, 1e-3, params=[30/(1 - 0.4**2), 0.4, 30*np.pi/180], label="Generic Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)',
-        'ml.EMRIGenerator(0.95, 1e-3, cons=[0.962076494,0.31252652, 12.4], label="Near-Polar Inspiral (Paper)", err_target=1e-12, verbose=0, force_stop=should_stop)'
-    ]
+
+    shutdown_requested = False
+
+    def handle_main_shutdown(signum, frame):
+        nonlocal shutdown_requested
+        shutdown_requested = True
+        print("\nMain process received shutdown signal.", flush=True)
+
+    signal.signal(signal.SIGINT, handle_main_shutdown)
+    signal.signal(signal.SIGTERM, handle_main_shutdown)
+
+    lock = Lock()
+
+    parser = argparse.ArgumentParser(description="Run EMRI inspirals from YAML config.")
+    parser.add_argument("config", help="Path to YAML config file")
+    parser.add_argument("--timeout", type=float, default=30.0)
+
+    args = parser.parse_args()
+
+    with open(args.config, "r") as f:
+        config = yaml.safe_load(f)
+
+    inspiral_cfgs = config["inspirals"]
 
     # stagger write poll intervals to avoid simultaneous writes
-    polls = np.random.uniform(0.5, 6, len(inspiral_strs))
+    polls = np.random.uniform(0.5, 6, len(inspiral_cfgs))
     polls = np.cumsum(polls)
 
     print("Preparing workers.", flush=True)
 
-    max_workers = min(len(inspiral_strs), os.cpu_count() - 1)
+    max_workers = min(len(inspiral_cfgs), os.cpu_count() - 2)
 
     processes = []
-    for s, p in zip(inspiral_strs, polls):
-        proc = Process(target=run_single_inspiral, args=(s, p, 30.0))
-        processes.append(proc)
-        proc.start()
+    active = []
 
-    try:
-        for proc in processes:
+    for cfg, p in zip(inspiral_cfgs, polls):
+        if shutdown_requested:
+            break
+        while len(active) >= max_workers and not shutdown_requested:
+            for proc in active[:]:
+                if not proc.is_alive():
+                    proc.join()
+                    active.remove(proc)
+            time.sleep(0.5)
+
+        proc = Process(target=run_single_inspiral, args=(cfg, p, args.timeout, lock))
+        proc.start()
+        processes.append(proc)
+        active.append(proc)
+    
+    for proc in active[:]:
+        while proc.is_alive():
+            if shutdown_requested:
+                break
+            time.sleep(0.2)
+        proc.join()
+
+    if shutdown_requested:
+        print("Shutting down workers...", flush=True)
+
+        for proc in active[:]:
+            if proc.is_alive():
+                proc.terminate()
+
+        for proc in active:
             proc.join()
-    except KeyboardInterrupt:
-        for proc in processes:
-            proc.join()
+
+        print("All workers terminated.")
 
 if __name__ == "__main__":
     main()

@@ -433,8 +433,8 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             pos = [0.0, params[0]*(1 - params[1]**2), np.pi/2, 0.0]
         new = recalc_state(cons, pos, a)
     else:
-        print("Insufficent information provided, begone")
-        new = np.array([0.0, 2000000.0, np.pi/2, 0.0, 7.088812050083354, -0.99, 0.0, 0.0])
+        print("Insufficent information provided, have a plunge")
+        return set_u_kerr(a, params=[find_rms(a), 0.2, np.pi/2])
     if np.shape(cons) != (3,):
         metric, chris = kerr(new, a)
         energy = -np.matmul(new[4:], np.matmul(metric, [1, 0, 0, 0]))        #initial energy
@@ -1057,6 +1057,48 @@ def interpolate(data, time, supress=True):
         new_time = np.arange(time[0], time[-1], min(2*np.pi*np.sqrt(rad**3)/20, (time[-1] - time[0])/10000))
     else:
         new_time = np.linspace(time[0], time[-1], max(len(time), 10*int(time[-1] - time[0])))
+    try:
+        r_poly = spi.CubicSpline(time, data[:,0])
+        theta_poly = spi.CubicSpline(time, data[:,1])
+        phi_poly = spi.CubicSpline(time, data[:,2])
+        new_data = np.transpose(np.array([r_poly(new_time), theta_poly(new_time), phi_poly(new_time)]))
+        return new_data, new_time
+    except ValueError:
+        fig, ax = plt.subplots(4, 1)
+        ax[0].plot(time)
+        ax[1].plot(data[:,0])
+        ax[2].plot(data[:,1])
+        ax[3].plot(data[:,2])
+        print("yo" if -1 in np.sign(np.diff(time)) else "no negs")
+        print("yop" if 0.0 in np.diff(time) else "no zos")
+        r_poly = spi.CubicSpline(time, data[:,0])
+        return False
+
+def interpolate3(data, time):
+    '''
+    interpolates coordinate data to be evenly spaced in coordinate time
+    Fail state plots time against index twice?
+    automatically sets it to 400 points or length of original data, whichever is shorter
+
+    Parameters
+    ----------
+    data : N x 3 numpy array of floats
+        r, theta, and phi position of test particle
+    time : N element numpy array of floats
+        coordinate time of test particle
+    suppress : bool, defaults to True
+        limits the size of the final array to 10000 entries or ~20 samples per phase (assuming circular orbit), whichever is greater
+
+    Returns
+    -------
+    new_data : M x 3 numpy array of floats
+        r, theta, and phi position of test particle, interpolated to be evenly spaced along new_time
+    new_time : M element numpy array of floats
+        coordinate time of test particle, interpolated to be evenly spaced
+        M is maximum of the length of the original time array or the integerized number of time units that have passed
+    '''
+    data = np.array(data)
+    new_time = np.linspace(time[0], time[-1], min(len(data), 400))
     try:
         r_poly = spi.CubicSpline(time, data[:,0])
         theta_poly = spi.CubicSpline(time, data[:,1])
@@ -2064,12 +2106,118 @@ def peters_integrate6_6_4_3(states, a, mu, ind1, ind2):
         quad = trace_ortholize_njit(int_sphere, a)
         coolquad = traceless_quad(quad)
         dt = np.mean(np.diff(int_time))
-        dt1 = savgol_filter(coolquad, window_length=7, polyorder=3, deriv=1, delta=dt, axis=0)
-        dt2 = savgol_filter(coolquad, window_length=7, polyorder=4, deriv=2, delta=dt, axis=0)
-        dt3 = savgol_filter(coolquad, window_length=9, polyorder=5, deriv=3, delta=dt, axis=0)
+        dt2 = savgol_filter(coolquad, window_length=21, polyorder=3, deriv=2, delta=dt, axis=0)
+        dt3 = savgol_filter(coolquad, window_length=21, polyorder=3, deriv=3, delta=dt, axis=0)
         dt2 = dt2[5:-5]
         dt3 = dt3[5:-5]
         int_time = int_time[5:-5]
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        #print((states[-1,0] - states[0,0]), (int_time[-1] - int_time[0]), "wa")
+        dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        #print(dE, dLx, dLy, dLz)
+        #print(states[-1,0] - states[0,0])
+        return np.array([dE, dLx, dLy, dLz])
+    else:
+        return np.array([0.0, 0.0, 0.0, 0.0])
+
+from scipy.interpolate import UnivariateSpline
+def peters_integrate6_6_4_4(states, a, mu, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate(sphere, time, False)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt2 = np.zeros_like(coolquad)
+        dt3 = np.zeros_like(coolquad)
+        for i in range(3):
+            for j in range(i+1):
+                spl = UnivariateSpline(int_time, coolquad[:, i, j], s=10)
+
+                d2 = spl.derivative(2)
+                d3 = spl.derivative(3)
+
+                dt2[:, i, j] = d2(int_time)
+                dt3[:, i, j] = d3(int_time)
+                if i != j:
+                    dt2[:, j, i] = d2(int_time)
+                    dt3[:, j, i] = d3(int_time)
+
+        dt2 = dt2[5:-5]
+        dt3 = dt3[5:-5]
+        int_time = int_time[5:-5]
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        #print((states[-1,0] - states[0,0]), (int_time[-1] - int_time[0]), "wa")
+        dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        #print(dE, dLx, dLy, dLz)
+        #print(states[-1,0] - states[0,0])
+        return np.array([dE, dLx, dLy, dLz])
+    else:
+        return np.array([0.0, 0.0, 0.0, 0.0])
+    
+def peters_integrate6_6_4_5(states, a, mu, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate3(sphere, time)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
+        dt2 = dt2[5:-5]
+        dt3 = dt3[5:-5]
+        int_time = int_time[5:-5]
+
         dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
         dldt = compute_dldt(dt2, dt3)
         #print((states[-1,0] - states[0,0]), (int_time[-1] - int_time[0]), "wa")
@@ -5754,8 +5902,9 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
     f4 = lambda x: 61/24 + (63/8)*(x**2) + (95/64)*(x**4)
     f5 = lambda x: 61/8 + (91/4)*(x**2) + (461/64)*(x**4)
     f6 = lambda x: 97/12 + (37/2)*(x**2) + (211/32)*(x**4)
-    b = (64/5)*mu*M*(mu + M)
-    dt = eps*np.real(((M*r0)**4)/(4*b))/1e37
+    #b = (64/5)*mu*M*(mu + M)
+    #dt = eps*np.real(((M*r0)**4)/(4*b))/1e37
+    dt = (2 * np.pi * (6.67e-11 * M / ((3e8)**3)) * (p**(1.5) - a*np.sign(L))) * 100 * eps
     vals = [[0, E, L, C, p, e, cosi, inc, *turns]]
     oldp = p
     if verbose == True:
@@ -5810,7 +5959,8 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
                 else:
                     dt *= -5.5*(delta) + 1.6
 
-                dt = max(dt, np.real(((M*p)**4)/(4*b))/1e37)
+                #dt = max(dt, np.real(((M*p)**4)/(4*b))/1e37)
+                dt = max(dt, 10*(2 * np.pi * (6.67e-11 * M / ((3e8)**3)) * (p**(1.5) - a*np.sign(L))))
                 vals.append([vals[-1][0] + dt, E, L, C, p, e, cosi, inc, *turns])
         except Exception as bad:
             print(bad)
@@ -5819,7 +5969,8 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
 
     vals = np.real(np.array(vals))
     # Return stuff in the same format as EMRIGenerator for convenience
-    dct = {"tracktime": vals[:, 0],
+    dct = {"name": "g2002",
+           "tracktime": vals[:, 0],
            "energy": vals[:, 1],
            "phi_momentum": vals[:, 2],
            "carter": vals[:, 3],
@@ -5886,8 +6037,9 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
     
     # Get initial dt - this is supposed to be ~1/10 of the full inspiral according to Peters
     #  but it seems to be way smaller
-    b = (64/5)*mu*M*(mu + M)
-    dt = eps*np.real(((M*r0)**4)/(4*b))/1e37
+    #b = (64/5)*mu*M*(mu + M)
+    #dt = eps*np.real(((M*r0)**4)/(4*b))/1e37
+    dt = (2 * np.pi * (6.67e-11 * M / ((3e8)**3)) * (p**(1.5) - a*np.sign(L))) * 100 * eps
 
     # Initialize final output and also save the first semilatus rectum for comparison
     vals = [[0, E, L, C, p, e, inc, cosi, *turns[-2:]]]
@@ -5977,7 +6129,8 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
                 else:
                     dt *= -5.5*(delta) + 1.6
 
-                dt = max(dt, np.real(((M*p)**4)/(4*b))/1e37)
+                #dt = max(dt, np.real(((M*p)**4)/(4*b))/1e37)
+                dt = max(dt, 10*(2 * np.pi * (6.67e-11 * M / ((3e8)**3)) * (p**(1.5) - a*np.sign(L))))
 
                 # Tell the user where we're at right now
                 if verbose == True:
@@ -5998,7 +6151,8 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
     pbar.close() if verbose == True else None
     vals = np.real(np.array(vals))
     # Return stuff in the same format as EMRIGenerator for convenience
-    dct = {"tracktime": vals[:, 0],
+    dct = {"name": "gg2006",
+           "tracktime": vals[:, 0],
            "energy": vals[:, 1],
            "phi_momentum": vals[:, 2]*((-1)**flip),
            "carter": vals[:, 3],

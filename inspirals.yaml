@@ -1,0 +1,28 @@
+inspirals:
+  - label: 'Tester Tester A'
+    a: -0.9
+    mu: 1e-3
+    params: [15, 1e-3, np.pi/2]
+    err_target: 1e-12
+    endflag: 'rad_orbit > 10'
+
+  - label: 'Tester Tester B'
+    a: -0.9
+    mu: 1e-3
+    params: [15, 1e-3, 60 * np.pi / 180]
+    err_target: 1e-12
+    endflag: 'rad_orbit > 10'
+  
+  - label: 'Tester Tester C'
+    a: -0.9
+    mu: 1e-3
+    params: [15, 1e-3, 30 * np.pi / 180]
+    err_target: 1e-12
+    endflag: 'rad_orbit > 10'
+
+  - label: 'Tester Tester D'
+    a: -0.9
+    mu: 1e-3
+    params: [15, 1e-3, 0.01 * np.pi / 180]
+    err_target: 1e-12
+    endflag: 'rad_orbit > 10'

@@ -1017,6 +1017,9 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             # if (chosen trigger evals true) AND (it has been it least 11 steps since the last constant modification)
             #if ((S2-comph) > 0 and (comph-S1) > 0) and i - int(tracker[j][-1]) > 10:
             if (state[1] > POT_MIN and new_step[1] <= POT_MIN) and i - int(tracker[j][-1]) > 10:
+                if force_stop is not None:
+                    if force_stop():
+                        raise KeyboardInterrupt
                 if skip_count >= skip_tar:  #Allows you to average over some integer number of orbit
                     skip_count = 0
                     update = True
@@ -1024,9 +1027,6 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     if ( np.sign(new_step[1] - pot_min) != orbitside):
                         orbitside *= -1
                     if mu != 0.0:
-                        if force_stop is not None:
-                            if force_stop():
-                                raise KeyboardInterrupt
                         condate = True
                         if "differy" in label:
                             new_step_hold, ch_cons = mm.peters_integrate_differential(all_states[int(tracker[j][-1]):i], a, mu,
@@ -1045,6 +1045,10 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                                 dcons = mm.peters_integrate6_6_4_2(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
                             elif "mark2" in label:
                                 dcons = mm.peters_integrate6_6_4_3(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                            elif "mark3" in label:
+                                dcons = mm.peters_integrate6_6_4_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                            elif "mark4" in label:
+                                dcons = mm.peters_integrate6_6_4_5(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
                             else:
                                 dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
                             if "dumb" in label:
@@ -1327,23 +1331,24 @@ def decode_filename(name):
     unix = (mjd - 40587)*86400
     return unix
 
+from filelock import FileLock
 def update_index(filename, metadata, index_path="D:/EMRIData/saved_sims/index.json"):
-    if os.path.exists(index_path):
-        with open(index_path, 'r') as f:
-            index = json.load(f)
-    else:
-        new_path = input(f"{index_path} is not a valid index path.\nWould you like to create a new index at this location? (y/n): ").lower()
-        if "y" in new_path:
-            print("Creating new index.")
-            index = {}
+    with FileLock(index_path + ".lock"):
+        if os.path.exists(index_path):
+            with open(index_path, 'r') as f:
+                index = json.load(f)
         else:
-            print("Index Update Aborted.")
-            return False
+            print(f"{index_path} is not a valid index path. Creating new index.")
+            index = {}
 
-    index[filename] = metadata
+        index[filename] = metadata
 
-    with open(index_path, 'w') as f:
-        json.dump(index, f, indent=2)
+        tmp_path = index_path + ".tmp"
+
+        with open(tmp_path, 'w') as f:
+            json.dump(index, f, indent=2)
+
+        os.replace(tmp_path, index_path)
 
 def load_index(index_path="D:/EMRIData/saved_sims/index.json"):
     if os.path.exists(index_path):

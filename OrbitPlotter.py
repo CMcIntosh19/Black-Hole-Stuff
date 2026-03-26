@@ -368,7 +368,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
             "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
             "pot_min": ['data["pot_min"]', "Effective Potential Minimum", 'data["tracktime"]'],
             "ecc": ['data["e"]', "Eccentricity", 'data["tracktime"]'],
-            "semilat": ['data["r0"]*(1 - data["e"]**2)', "Semilatus-Rectum", 'data["tracktime"]'],
+            "semilat": ['data["p"]', "Semilatus-Rectum", 'data["tracktime"]'],
             "inc": ['data["inc"]', "Inclination", 'data["tracktime"]'],
             "periapse": ['data["it"]', "Periapse", 'data["tracktime"]'],
             "apoapse": ['data["ot"]', "Apoapse", 'data["tracktime"]'],
@@ -427,7 +427,10 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
                     print("Could not calculate derivative! Maybe use a different x value?")
                     title_add = ""
             try:
-                ax.plot(xvals, yvals, color=colors[thing%len(colors)])
+                if len(xvals > 1):
+                    ax.plot(xvals, yvals, color=colors[thing%len(colors)])
+                else:
+                    ax.scatter(xvals, yvals, color=colors[thing%len(colors)])
             except Exception as e:
                 print(e)
                 ax.plot(np.real(xvals), np.real(yvals), color=colors[thing%len(colors)])
@@ -437,7 +440,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
                     ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[thing%len(colors)])
                     ax.legend(title="Linear Fit")
                 except:
-                    print("Could not plot linear fit.")
+                    print(f"Could not plot linear fit for {datalist[thing]["name"]}")
         
         else:
             print("Not a valid plottable. Chose one of the following:")
