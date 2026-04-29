@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import os
+import sys
 import time
 import signal
 import numpy as np
@@ -39,6 +40,7 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
     min_spacing  : minimum seconds to wait between global writes
     """
 
+    drain_requested = False
     stop_requested = False
     inspiral_str = make_inspiral_str(inspiral_cfg)
     title = inspiral_str.split("label")[1].split("'")[1]
@@ -49,14 +51,18 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         with open(heartbeat_path, "a") as f:
             f.write(f"[{timestamp}] - [worker_{pid}] {msg}\n")
-            f.flush()
         print(f"[{timestamp}] - [worker_{pid}] {msg}", flush=True)
 
     # To bring everything to a stop and prevent horrible loops!
     def handle_shutdown(signum, frame):
-        nonlocal stop_requested
-        stop_requested = True
-        heartbeat("Shutdown signal received, ending current chunk...")
+        nonlocal drain_requested, stop_requested
+        if not drain_requested:
+            heartbeat("Drain signal received, finishing current chunk...")
+            drain_requested = True
+        else:
+            heartbeat("Shutdown signal received, ending current chunk...")
+            stop_requested = True
+
 
     #def should_stop():
     #    heartbeat(f"Sending shutdown signal...")
@@ -83,9 +89,7 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
     if len(refs) == 0:
         heartbeat("No pre-existing chunks found.")
         ins = False
-        #ins = eval(inspiral_str)
-        #heartbeat(f"Completed chunk 1, saving...")
-        #refs.append(ml.save_emri_data(ins, auto=True))
+
     else:
         heartbeat("Pre-existing chunks found.")
         ins = ml.load_emri_data(refs[-1], quiet=True, reconstruct=False)
@@ -97,6 +101,9 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
 
     # ---- Main evolution loop ----
     while not stop_requested:
+        if drain_requested:
+            heartbeat("Drain signal registered, exiting...")
+            break
         # Advance trajectory
         heartbeat(f"Starting chunk {chunk_counter + 1}.")
         if not ins:
@@ -115,9 +122,10 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
             )
 
         heartbeat(f"Completed chunk {chunk_counter + 1}, attempting to save...")
-        with lock:            
-            chunk_name = ml.save_emri_data(ins, auto=True)   
+        time.sleep(np.random.uniform(1, 6))
+        chunk_name = ml.save_emri_data(ins, auto=True, lock=lock)   
         heartbeat(f"Chunk {chunk_counter + 1} saved as {chunk_name}.")
+        time.sleep(np.random.uniform(1, 5))
         chunk_counter += 1
 
         if ins.get("stop", False):
@@ -191,14 +199,30 @@ def make_inspiral_str(cfg):
 
 # ----------- Main launcher -----------
 
+def lower_priority(proc):
+    try:
+        if sys.platform.startswith("win"):
+            import psutil
+            psutil.Process(proc.pid).nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        else:
+            os.setpriority(os.PRIO_PROCESS, proc.pid, 10)
+    except Exception as e:
+        print(f"Priority set failed: {e}", flush=True)
+
 def main():
 
+    main_drain_requested = False
     shutdown_requested = False
 
     def handle_main_shutdown(signum, frame):
-        nonlocal shutdown_requested
-        shutdown_requested = True
-        print("\nMain process received shutdown signal.", flush=True)
+        nonlocal main_drain_requested, shutdown_requested
+        if main_drain_requested:
+            shutdown_requested = True
+            print("\nMain process received shutdown signal.", flush=True)
+        else:
+            main_drain_requested = True
+            print("\nMain process received drain signal; use Ctrl+C again to initiate full shutdown.", flush=True)
+
 
     signal.signal(signal.SIGINT, handle_main_shutdown)
     signal.signal(signal.SIGTERM, handle_main_shutdown)
@@ -222,14 +246,12 @@ def main():
 
     print("Preparing workers.", flush=True)
 
-    max_workers = min(len(inspiral_cfgs), os.cpu_count() - 2)
+    max_workers = min(len(inspiral_cfgs), max(1, int(os.cpu_count()//2)))
 
     processes = []
     active = []
 
     for cfg, p in zip(inspiral_cfgs, polls):
-        if shutdown_requested:
-            break
         while len(active) >= max_workers and not shutdown_requested:
             for proc in active[:]:
                 if not proc.is_alive():
@@ -237,8 +259,12 @@ def main():
                     active.remove(proc)
             time.sleep(0.5)
 
+        if shutdown_requested or main_drain_requested:
+            break
+        
         proc = Process(target=run_single_inspiral, args=(cfg, p, args.timeout, lock))
         proc.start()
+        lower_priority(proc)
         processes.append(proc)
         active.append(proc)
     

@@ -23,6 +23,8 @@ import statistics as st
 import time
 from dataclasses import dataclass
 import operator
+import traceback
+import matplotlib.pyplot as plt
 
 def getEnergy(state, a):
     '''
@@ -72,7 +74,7 @@ def getCons(state, a):
     
 @njit
 def getCons_2(state, a):
-    metric = mm.kerr_2(state, a)[0]  # assuming this returns (metric, chris), and we only need metric
+    metric, _ = mm.kerr_2(state, a)  # assuming this returns (metric, chris), and we only need metric
     u = state[4:]
 
     # Replace np.matmul(metric, u) with explicit dot product
@@ -95,7 +97,7 @@ def getCons_2(state, a):
 
 @njit
 def getCons_3(state, a):
-    metric = mm.kerr_2(state, a)[0]  # assuming this returns (metric, chris), and we only need metric
+    metric, _ = mm.kerr_2(state, a)  # assuming this returns (metric, chris), and we only need metric
     u = state[4:]
 
     # Replace np.matmul(metric, u) with explicit dot product
@@ -161,12 +163,15 @@ def big_sph2cart(vec, a):
     return new_vec
 
 def new_sph2cart(vec, a):
-    x = np.sqrt(vec[1]**2 + a**2) * np.sin(vec[2]) * np.cos(vec[3])
-    y = np.sqrt(vec[1]**2 + a**2) * np.sin(vec[2]) * np.sin(vec[3])
-    z = vec[1] * np.cos(vec[2]) 
-    vx = vec[1]*vec[5]/(np.sqrt(vec[1]**2 + a**2)) * np.sin(vec[2]) * np.cos(vec[3]) + np.sqrt(vec[1]**2 + a**2) * vec[6] * np.cos(vec[2]) * np.cos(vec[3]) + np.sqrt(vec[1]**2 + a**2) * np.sin(vec[2]) * vec[7] * (-np.sin(vec[3]))
-    vy = vec[1]*vec[5]/(np.sqrt(vec[1]**2 + a**2)) * np.sin(vec[2]) * np.sin(vec[3]) + np.sqrt(vec[1]**2 + a**2) * vec[6] * np.cos(vec[2]) * np.sin(vec[3]) + np.sqrt(vec[1]**2 + a**2) * np.sin(vec[2]) * vec[7] * np.cos(vec[3])
-    vz = vec[5] * np.cos(vec[2]) + vec[1] * vec[6] * (-np.sin(vec[2]))
+    rho = np.sqrt(vec[1]**2 + a**2)
+    sint, cost = np.sin(vec[2]), np.cos(vec[2])
+    sinp, cosp = np.sin(vec[3]), np.cos(vec[3])
+    x = rho * sint * cosp
+    y = rho * sint * sinp
+    z = vec[1] * cost 
+    vx = vec[1]*vec[5]/(rho) * sint * cost + rho * vec[6] * cost * cost + rho * sint * vec[7] * (-sinp)
+    vy = vec[1]*vec[5]/(rho) * sint * sinp + rho * vec[6] * cost * sinp + rho * sint * vec[7] * cost
+    vz = vec[5] * cost + vec[1] * vec[6] * (-sint)
     new_vec = np.array([vec[0], x, y, z, vec[4], vx, vy, vz])
     return new_vec
 
@@ -431,7 +436,8 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     #            "semilat": "2*tracker[j][3]*tracker[j][4]/(tracker[j][3] + tracker[j][4])",
     #            "eccentricity": "tracker[j][1]"}
     
-    endvars = {"time": lambda c: abs(c.all_states[c.i][0] - c.all_states[0][0]),
+    endvars = {"time": lambda c: c.all_states[c.i][0],
+               "elapsed_time": lambda c: abs(c.all_states[c.i][0] - c.all_states[0][0]),
                "min_radius": lambda c: c.last_chunk[:,1].min(),
                "max_radius": lambda c: c.last_chunk[:,1].max(),
                "rad_orbit": lambda c: abs((c.true_anom[c.i] - c.true_anom[0]) / (2*np.pi)),
@@ -490,7 +496,6 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         R = lambda r, E, L, C, a: ((r**2 + a**2)*E - a*L)**2 - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
         Rpoly = lambda E, L, C, a: np.array([(E**2 - 1.0), 2.0*np.ones_like(E), ((a**2)*(E**2 - 1.0) - L**2 - C),  (2*((L - a*E)**2) + 2*C), -(a**2)*C])
         if scream == True:
-            import matplotlib.pyplot as plt
             turns1, flats1, zs1 = mm.root_getter(E1, L1, C1, a)
             turns2, flats2, zs2 = mm.root_getter(E2, L2, C2, a)
             low, high = min(turns1[-2], turns2[-2]), max(turns1[-1], turns2[-1])
@@ -520,7 +525,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     
     def viable_cons(new_cons, old_cons, state, a,
                     scream=False,
-                    rtol=1e-12):
+                    rtol=err_target):
         """
         Checks whether updated constants of motion admit a viable bound orbit
         consistent with the current radial phase.
@@ -536,12 +541,12 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         r0 = state[1]
 
         # Radial potential
-        def R(r, E, L, C, a):
-            return ((r**2 + a**2)*E - a*L)**2 \
-                - (r**2 - 2*r + a**2)*(r**2 + (L - a*E)**2 + C)
+        def R(E, L, C, a):
+            return np.array([ E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
 
         # Get roots and extrema
-        turns, flats, _ = mm.root_getter(E2, L2, C2, a)
+        R2 = R(E2, L2, C2, a)
+        turns, flats = np.sort(np.roots(R2)), np.sort(np.roots(np.polyder(R2)))
 
         # Keep sufficiently real roots
         turns = np.real(turns[np.abs(np.imag(turns)/np.real(turns + 1e-4)) < 1e-4]).astype(float)
@@ -564,7 +569,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             return -np.inf
 
         # Evaluate R at all candidate minima
-        Rvals = R(valid_flats, E2, L2, C2, a)
+        Rvals = np.polyval(R(E2, L2, C2, a), valid_flats)
         Rmin = np.min(Rvals)
 
         # Optional diagnostic plot
@@ -573,9 +578,9 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             r_plot = np.linspace(r_peri*0.98, r_apo*1.02, 400)
             plt.figure()
             plt.axhline(0, color='k', lw=0.5)
-            plt.plot(r_plot, R(r_plot, E2, L2, C2, a))
+            plt.plot(r_plot, np.polyval(R(E2, L2, C2, a), r_plot))
             plt.scatter(valid_flats, Rvals, color='red')
-            plt.scatter([r0], [R(r0, E2, L2, C2, a)], color='blue')
+            plt.scatter(r0, np.polyval(R(E2, L2, C2, a), r0), color='blue')
             plt.title("Radial potential viability check")
             plt.xlabel("r")
             plt.ylabel("R(r)")
@@ -620,7 +625,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         #initQ = np.matmul(np.matmul(mm.kill_tensor(all_states[0], a), all_states[0][4:]), all_states[0][4:])    #initial Carter constant Q
         #initC = initQ - (a*initE - initLz)**2                                          #initial adjusted Carter constant 
         initQ = initC + (a*initE - initLz)**2
-    pot_min = viable_cons([initE, initLz, initC], [initE, initLz, initC], all_states[0], a)
+    pot_min = viable_cons(np.array([initE, initLz, initC]), np.array([initE, initLz, initC]), all_states[0], a)
     count = 0
     while pot_min < 0.0:
         #print(pot_min)
@@ -701,8 +706,10 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     val = get_true_anom(all_states[0], 0.5*(outer_turn + inner_turn), e)
     P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
     POT_MIN = max(flats)
+    PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
     true_anom = [val if np.isnan(val) == False else 0.0]
     stop = False
+    radial_fail = 0
     
     if label == "default":
         label = "r" + str(pot_min) + "e" + str(e) + "zU+03C0" + str(inc/np.pi) + "mu" + str(mu) + "a" + str(a)
@@ -731,9 +738,8 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     getval, op, threshold = parse_endflag(endflag)
     ctx = EndContext(i, all_states, true_anom, tracker, j)
     ctx.last_chunk = np.asarray(all_states)
-    #min(np.array(ctx.all_states)[ctx.tracker[ctx.j][-2]:c.i, 1])
     start_val, ctx_val = getval(ctx), getval(ctx)
-    #while (not(eval(newflag)) and (i < 10**7 or override)):
+    
     while not(ctx_val and op(ctx_val, threshold)) and (i < 10**7 or override):
         try:
             update = False
@@ -986,7 +992,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     delt = (-2*gtp*new_step[4]*new_step[7] - np.sqrt(disc))/(2*gtt*new_step[4]*new_step[4])
                     new_step[4] *= delt
                 else:
-                    new_step = mm.recalc_state(constants[j], new_step, a)
+                    new_step = mm.recalc_state3(constants[j], new_step, a)
                 test = mm.check_interval_w_metric(metric, new_step, a)
                 looper += 1
             if (test+1) > err_target or new_step[4] < 0.0:
@@ -1014,76 +1020,196 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             
             compl, comph = np.arccos(-ECC), 2*np.pi - np.arccos(-ECC)
             #S1, S2 = get_true_anom(state, R0, ECC), get_true_anom(new_step, R0, ECC)
-            # if (chosen trigger evals true) AND (it has been it least 11 steps since the last constant modification)
+            # if (chosen trigger evals true) AND (it has been at least half a period since the last constant modification)
             #if ((S2-comph) > 0 and (comph-S1) > 0) and i - int(tracker[j][-1]) > 10:
-            if (state[1] > POT_MIN and new_step[1] <= POT_MIN) and i - int(tracker[j][-1]) > 10:
+            if ((state[1] > POT_MIN and new_step[1] <= POT_MIN) and new_step[0] - tracker[j][-2] > PERIOD*0.75) or (new_step[0] - tracker[j][-2] > PERIOD and ((new_step[5] - state[5] >= 0 and all_states[i-1][5] - state[5] > 0) and new_step[1] < state[1])):
+                #print(f"(({state[1] > POT_MIN and new_step[1] <= POT_MIN}) and {new_step[0] - tracker[j][-2] > PERIOD*0.75}) or ({new_step[0] - tracker[j][-2] > PERIOD*5} and ({new_step[5] - state[5] >= 0 and all_states[i-1][5] - state[5] > 0} and {new_step[1] < state[1]} )), period = {PERIOD}")
+                #print(f"dong! index = {i}")
+                #print(i, state[1], POT_MIN, new_step[1])
                 if force_stop is not None:
                     if force_stop():
                         raise KeyboardInterrupt
-                if skip_count >= skip_tar:  #Allows you to average over some integer number of orbit
+                energy, lmom, cart = constants[j]
+                cos_th = np.cos(new_step[2])
+                Theta = cart - cos_th**2 * (cart + a**2 * (1 - energy**2) + lmom**2) + a**2 * (1 - energy**2) * (cos_th)**4
+                if skip_count >= skip_tar and abs(Theta) >= err_target * cart / (cart + lmom*lmom + a*a*(1 - energy*energy)):  #Allows you to average over some integer number of orbit
+                    #print(f"ping! index = {i}, cons = {energy}, {lmom}, {cart}")
                     skip_count = 0
                     update = True
                     concount = time.perf_counter()
                     if ( np.sign(new_step[1] - pot_min) != orbitside):
                         orbitside *= -1
-                    if mu != 0.0:
-                        condate = True
-                        if "differy" in label:
-                            new_step_hold, ch_cons = mm.peters_integrate_differential(all_states[int(tracker[j][-1]):i], a, mu,
-                                                                                   constants[j], new_step, ctx.j, i)
-                        elif "differo" in label:
-                            new_step_hold, ch_cons = mm.peters_integrate_differential2(all_states[int(tracker[j][-1]):i], a, mu,
-                                                                                   constants[j], new_step, ctx.j, i)
-                        elif "differa" in label:
-                            new_step_hold, ch_cons = mm.peters_integrate_differential3(all_states[int(tracker[j][-1]):i], a, mu,
-                                                                                   constants[j], new_step, ctx.j, i)
-                        elif "differe" in label:
-                            new_step_hold, ch_cons = mm.peters_integrate_differential4(all_states[int(tracker[j][-1]):i], a, mu,
-                                                                                   constants[j], new_step, ctx.j, i)
+                    if mu == 0.0:
+                        mu = 1e-100
+                    condate = True
+                    if "differy" in label:
+                        new_step_hold, ch_cons = mm.peters_integrate_differential(all_states[int(tracker[j][-1]):i], a, mu,
+                                                                                constants[j], new_step, ctx.j, i)
+                    elif "differo" in label:
+                        new_step_hold, ch_cons = mm.peters_integrate_differential2(all_states[int(tracker[j][-1]):i], a, mu,
+                                                                                constants[j], new_step, ctx.j, i)
+                    elif "differa" in label:
+                        new_step_hold, ch_cons = mm.peters_integrate_differential3(all_states[int(tracker[j][-1]):i], a, mu,
+                                                                                constants[j], new_step, ctx.j, i)
+                    elif "differe" in label:
+                        new_step_hold, ch_cons = mm.peters_integrate_differential4(all_states[int(tracker[j][-1]):i], a, mu,
+                                                                                constants[j], new_step, ctx.j, i)
+                    elif "differu" in label:
+                        new_step_hold, ch_cons = mm.peters_integrate_differential5(all_states[int(tracker[j][-1]) - 20:i], a, mu,
+                                                                                constants[j], new_step, ctx.j - 20, i)
+                    else:
+                        if "mark1" in label:
+                            dcons = mm.peters_integrate6_6_4_2(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                        elif "mark2" in label:
+                            dcons = mm.peters_integrate6_6_4_3(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                        elif "mark3" in label:
+                            dcons = mm.peters_integrate6_6_4_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                        elif "mark4" in label:
+                            dcons = mm.peters_integrate6_6_4_5(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                        elif "mark5" in label:
+                            dcons = mm.peters_integrate6_6_4_6(all_states[max(int(tracker[j][-1]) - 20, 0):i], a, mu, ctx.j - 20, i)
                         else:
-                            if "mark1" in label:
-                                dcons = mm.peters_integrate6_6_4_2(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                            elif "mark2" in label:
-                                dcons = mm.peters_integrate6_6_4_3(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                            elif "mark3" in label:
-                                dcons = mm.peters_integrate6_6_4_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                            elif "mark4" in label:
-                                dcons = mm.peters_integrate6_6_4_5(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                            else:
-                                dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                            if "dumb" in label:
-                                dcons *= -1
-                            if "hoopa" in label:
-                                new_step_hold, ch_cons = mm.new_recalc_state8(constants[j], dcons, new_step, a)
-                            elif "chatty" in label:
-                                new_step_hold, ch_cons = mm.new_recalc_state9k(constants[j], dcons, new_step, a)
-                            elif "hooper" in label:
-                                new_step_hold, ch_cons = mm.new_recalc_state8b(constants[j], dcons, new_step, a)
-                            elif "hoopla" in label:
-                                new_step_hold, ch_cons = mm.new_recalc_state8c(constants[j], dcons, new_step, a)
-                            elif "power" in label:
-                                new_step_hold, ch_cons = mm.new_recalc_state9j(constants[j], dcons, new_step, a)
-                            elif "zampow" in label:
-                                new_step_hold, ch_cons = mm.new_recalc_state9m(constants[j], dcons, new_step, a, ECC)
-                            elif "sketchy" in label:
-                                new_step_hold, ch_cons = mm.new_recalc_state9n(constants[j], dcons, new_step, a)
-                            else:
-                                new_step_hold, ch_cons = mm.new_recalc_state9l(constants[j], dcons, new_step, a)
-                        pot_min = viable_cons(ch_cons, constants[j], new_step, a)
-                        subcount = 0
-                        if pot_min < -err_target:
-                            if "woosh" in label:
-                                update = False
-                                condate = False
-                                #print("try just going for another loop?", i)
-                            else:
-                                viable_cons(ch_cons, constants[j], new_step, a, True)
-                                print("BADVALS", *ch_cons)
-                                raise KeyError
+                            dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
+                        if "dumb" in label:
+                            dcons *= -1
+                        if "hoopa" in label:
+                            new_step_hold, ch_cons = mm.new_recalc_state8(constants[j], dcons, new_step, a)
+                        elif "chatty" in label:
+                            new_step_hold, ch_cons = mm.new_recalc_state9k(constants[j], dcons, new_step, a)
+                        elif "hooper" in label:
+                            new_step_hold, ch_cons = mm.new_recalc_state8b(constants[j], dcons, new_step, a)
+                        elif "hoopla" in label:
+                            new_step_hold, ch_cons = mm.new_recalc_state8c(constants[j], dcons, new_step, a)
+                        elif "power" in label:
+                            new_step_hold, ch_cons = mm.new_recalc_state9j(constants[j], dcons, new_step, a)
+                        elif "zampow" in label:
+                            new_step_hold, ch_cons = mm.new_recalc_state9m(constants[j], dcons, new_step, a, ECC)
+                        elif "sketchy" in label:
+                            new_step_hold, ch_cons = mm.new_recalc_state9n(constants[j], dcons, new_step, a)
                         else:
-                            new_step = new_step_hold
-                        if subcount > 0:
-                            print(subcount, "oof", pot_min)
+                            new_step_hold, ch_cons = mm.new_recalc_state9l(constants[j], dcons, new_step, a, err_target)
+
+                    
+                    if radial_fail == 0 and new_step_hold is False:
+                        #Radial issue, actual problem
+                        E_hold, L_hold, C_hold = constants[j]
+                        sep_cosi = mm.get_sep_cosi(a, L_hold/np.sqrt(L_hold*L_hold + C_hold), 100)
+                        circ_ixs = np.where(sep_cosi["e"] == 0.0)
+                        circEs, circLs, circCs, circrs = sep_cosi["energy"][circ_ixs], sep_cosi["phi_momentum"][circ_ixs], sep_cosi["carter"][circ_ixs], sep_cosi["p"][circ_ixs]
+                        radial_fail = 1
+
+                    if radial_fail == 1 and new_step_hold is False:
+                        #print("------")
+                        #ixs = np.sort(np.argsort(np.abs(circEs - ch_cons[0]))[:4])
+                        #ch_cons[1] = np.polyval(np.polyfit(circEs[ixs], circLs[ixs], 3), ch_cons[0])
+                        #ch_cons[2] = np.polyval(np.polyfit(circEs[ixs], circCs[ixs], 3), ch_cons[0])
+                        ix1, ix2 = np.sort(np.argsort(np.abs(circEs - ch_cons[0]))[:2])
+                        con_frac = (ch_cons[0] - circEs[ix2])/(circEs[ix1] - circEs[ix2])
+                        ch_cons[1] = (1 - con_frac)*circLs[ix2] + con_frac*circLs[ix1]
+                        ch_cons[2] = (1 - con_frac)*circCs[ix2] + con_frac*circCs[ix1]
+                        gorp = np.array([ ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
+                        tick = 0
+                        rooty = np.sort(np.roots(gorp))
+                        while True in np.iscomplex(rooty[-2:]):
+                            tick += 1
+                            dL = - ch_cons[1] * 1e-10
+                            ch_cons[2] += 2 * ch_cons[2] * dL/ch_cons[1]
+                            ch_cons[1] += dL
+                            gorp = np.array([ ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
+                            rooty = np.sort(np.roots(gorp))
+                        #print("waaa??", np.roots(gorp))
+                        #print(new_step[1], rooty[-2] <= new_step[1] <= rooty[-1])
+                        #print("tick", tick)
+                        #print("what, you ecc?", (rooty[-1] - rooty[-2])/(rooty[-1] + rooty[-2]))
+                        tick0 = tick
+                        while not (rooty[-1] >= new_step[1] >= rooty[-2]):
+                            tick += 1
+                            dL = - ch_cons[1] * 1e-11
+                            ch_cons[2] += 2 * ch_cons[2] * dL/ch_cons[1]
+                            ch_cons[1] += dL
+                            gorp = np.array([ ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
+                            rooty = np.sort(np.roots(gorp))
+
+                        #print("chill")
+                        #print("wonk")
+                        new_step_hold = mm.recalc_state3(ch_cons, new_step, a, metric, err_target)
+                        #print("wonk")
+                        #print("tick2", tick)
+                        #if tick0 != tick:
+                            #print("what, you ecc? ECCC???", (rooty[-1] - rooty[-2])/(rooty[-1] + rooty[-2]))
+                        '''else:
+                            print("nNOT CHILL")
+                            #good_r = max(np.roots(np.polyder(gorp)))
+                            print(rooty[-1])
+                            print(new_step[1])
+                            print(rooty[-2])
+                            good_r_ix = np.argmin(np.abs(rooty - new_step[1]))
+                            if good_r_ix == 3:
+                                good_r = rooty[3]*0.9 + rooty[2]*0.1
+                            else:
+                                good_r = rooty[2]*0.9 + rooty[3]*0.1
+                            rs = np.linspace(rooty[2], rooty[3], 10001)
+                            plt.plot(rs, np.polyval(gorp, rs))
+                            plt.scatter(good_r, np.polyval(gorp, good_r))
+                            plt.axhline(0, c="k", linewidth=0.5)
+                            #plt.show()
+                            #good_r = np.polyval(np.polyfit(circEs[ixs], circrs[ixs], 2), ch_cons[0])
+                            #p = np.polyfit([thing[1] for thing in all_states[-3:]], dTau_change[-3:], 3)
+                            frac = (good_r - state[1])/(new_step[1] - state[1])
+                            #falseTau = np.polyval(p, good_r)
+                            new_step_hold = np.copy(new_step)
+                            new_step_hold[:4] = (1 - frac)*state[:4] + frac*new_step[:4]
+                            plt.show()
+                            for m in range(4):
+                                plt.plot([all_states[n][0] for n in range(-100, 0)], [all_states[n][m] for n in range(-100, 0)])
+                                plt.scatter(new_step_hold[0], new_step_hold[m])
+                                plt.show()
+                            print("---")
+                            print(good_r)
+                            print(new_step_hold[1])
+                            new_step_hold = mm.recalc_state3(ch_cons, new_step_hold, a, metric, err_target)
+                            print("gorf")
+                            print(new_step)
+                            print(new_step_hold)
+                            #for m in range(4):
+                                #new_step_hold[m] = np.polyval(np.polyfit(dTau_change[-3:], [thing[m] for thing in all_states[-3:]], 2), falseTau)
+                                #new_step_hold[m] = (1 - frac)*state
+                            print(f"\nBad here? frac = {frac}, cons = {ch_cons[0], ch_cons[1], ch_cons[2]}, spin = {a}, good_r = {good_r}, state_r={state[1]}, new_r = {new_step[1]}, potmin = {POT_MIN}, i = {i}")'''
+                        
+                        
+                        
+                        #print(f"still match? (good_r - poly_r)/good_r = {(good_r - new_step_hold[1])/good_r}")
+                        
+                        #print("here?")
+                    #print("*************************************")
+                    if new_step_hold is None:
+                        #Theta issue, just try running longer
+                        new_step_hold = new_step
+                        update = False
+                        condate = False
+                        #print("Passing!-------------------------------------")
+                        
+                    subcount = 0 
+                    pot_min = viable_cons(ch_cons, constants[j], new_step_hold, a)                      
+                    if pot_min < -err_target:
+                        #print("HURM", new_step_hold)
+                        ch_cons = getCons_2(new_step_hold, a)
+                        #print("GARF")
+                        pot_min = viable_cons(ch_cons, constants[j], new_step_hold, a)
+                        #print("URG")
+                    if pot_min < -err_target:
+                        if "woosh" in label:
+                            update = False
+                            condate = False
+                            #print("try just going for another loop?", i)
+                        else:
+                            viable_cons(ch_cons, constants[j], new_step, a, True)
+                            print("BADVALS", *ch_cons)
+                            raise KeyError
+                    else:
+                        new_step = new_step_hold
+                    if subcount > 0:
+                        print(subcount, "oof", pot_min)
                     confull.append(time.perf_counter() - concount)
                 else:
                     skip_count += 1
@@ -1095,6 +1221,8 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             upcount = time.perf_counter()
             #Update stuff!
             if (update == True):
+                #print(f"pong! index = {i}, cons = {energy}, {lmom}, {cart}")
+                #print(f"buda! index = {i}, cons = {ch_cons}")
                 if condate == False:
                     #metric = mm.kerr(new_step, a)[0]
                     newE, newLz, newC = getCons_2(state, a)
@@ -1111,6 +1239,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     #freqs.append(mm.freqs_finder(newE, newLz, newC, a))
                     P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
                     POT_MIN = max(flats)
+                    PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
                 else:
                     turns, flats, zs = mm.root_getter(*ch_cons, a)
                     pot_min = flats[-1]
@@ -1124,6 +1253,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2)
                     P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
                     POT_MIN = max(flats)
+                    PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
                     if verbose > 0 and verbose < 3:
                         pbar.set_postfix_str("Semilat: %s, Ecc %s, Peri: %s, Theta_min: %s*pi" %(np.round( 0.5*(tracker[j][3] + tracker[j][4])*(1 - tracker[j][1]**2), 3), np.round(tracker[j][1], 3), np.round(tracker[j][3], 3), np.round(tracker[j][2]/np.pi, 3)))
                 ctx.j = j
@@ -1175,41 +1305,38 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
 
         #Lets you end the program before the established end without breaking anything
         except KeyboardInterrupt:
-            print("\nEnding program", flush=True)
+            print("\nEnding program - Halted", flush=True)
             stop = True
             cap = len(all_states) - 1
-            all_states = all_states[:cap]
-            #interval = interval[:cap]
-            dTau_change = dTau_change[:cap]
-            constants = constants[:cap]
-            qarter = qarter[:cap]
-            true_anom = true_anom[:cap]
-            #freqs = freqs[:cap]
+            del all_states[cap:]
+            del dTau_change[cap:]
+            del constants[cap:]
+            del qarter[cap:]
+            del true_anom[cap:]
             break
+
         except KeyError:
-            print("\nEnding program", flush=True)
+            print("\nEnding program - Bad Values", flush=True)
             stop = True
             cap = len(all_states) - 1
-            all_states = all_states[:cap]
-            #interval = interval[:cap]
-            dTau_change = dTau_change[:cap]
-            constants = constants[:cap]
-            qarter = qarter[:cap]
-            true_anom = true_anom[:cap]
-            #freqs = freqs[:cap]
+            del all_states[cap:]
+            del dTau_change[cap:]
+            del constants[cap:]
+            del qarter[cap:]
+            del true_anom[cap:]
             break
         
         except Exception as e:
             print("\nEnding program - ERROR", flush=True)
             print(type(e), e)
+            print(traceback.format_exc())
             stop = True
             cap = len(all_states) - 1
-            all_states = all_states[:cap]
-        #    interval = interval[:cap]
-            dTau_change = dTau_change[:cap]
-            constants = constants[:cap]
-            qarter = qarter[:cap]
-        #    freqs = freqs[:cap]
+            del all_states[cap:]
+            del dTau_change[cap:]
+            del constants[cap:]
+            del qarter[cap:]
+            del true_anom[cap:]
             break
     if verbose > 0 and verbose < 3:
         pbar.close()
@@ -1222,38 +1349,32 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     else:
         G, mass, c = 1.0, 1.0, 1.0
         
-    if mu == 0.0:
+    if mu == 1e-100:
         #so it gives actual numbers for pure geodesics
         mu = 1.0
     
     if j != -1:
-        constants = constants[:j+1]
-        tracker = tracker[:j+1]
-        qarter = qarter[:j+1]
+        del constants[j+1:]
+        del tracker[j+1:]
+        del qarter[j+1:]
     constants = np.array(constants)
     constants[:,0] *= mass*(c**2)
     constants[:,1] *= mass*mass*G/c
     constants[:,2] *= (mass*mass*G/c)**2
-    #constants = np.array([entry*np.array([mass*(c**2), mass*mass*G/c, (mass*mass*G/c)**2]) for entry in np.array(constants)], dtype=np.float64)
-    #false_constants = np.array(false_constants)
     qarter = np.array(qarter)
-    #freqs = np.array(freqs)*(c**3)/(G*mass)
-    #interval = np.array(interval)
-    dTau_change = np.array(dTau_change) * (G*mass)/(c**3)
-    #           np.array([entry * (G*mass)/(c**3) for entry in dTau_change])
+    t_scale, r_scale = (G*mass)/(c**3), (G*mass)/(c**2) 
+    dTau_change = np.array(dTau_change) * t_scale
     all_states = np.array(all_states)
-    all_states[:,0] *= (G*mass)/(c**3) 
-    all_states[:,1] *= (G*mass)/(c**2)
+    all_states[:,0] *= t_scale 
+    all_states[:,1] *= r_scale
     all_states[:,5] *= c
-    all_states[:,6] *= (c**3)/(G*mass)
-    all_states[:,7] *= (c**3)/(G*mass)
-    #all_states = np.array([entry*np.array([(G*mass)/(c**3), (G*mass)/(c**2), 1.0, 1.0, 1.0, c, (c**3)/(G*mass), (c**3)/(G*mass)]) for entry in np.array(all_states)])
+    all_states[:,6] /= t_scale
+    all_states[:,7] /= t_scale
     tracker = np.array(tracker)
-    tracker[:,0] *= (G*mass)/(c**2)
-    tracker[:,3] *= (G*mass)/(c**2)
-    tracker[:,4] *= (G*mass)/(c**2)
-    tracker[:,5] *= (G*mass)/(c**3)
-    #tracker = np.array([entry*np.array([(G*mass)/(c**2), 1.0, 1.0, (G*mass)/(c**2), (G*mass)/(c**2), (G*mass)/(c**3), 1]) for entry in tracker])
+    tracker[:,0] *= r_scale
+    tracker[:,3] *= r_scale
+    tracker[:,4] *= r_scale
+    tracker[:,5] *= t_scale
     
     ind = argrelmin(all_states[:,1])[0]
     omega, otime = all_states[ind,3] - 2*np.pi*np.arange(len(ind)), all_states[ind,0]
@@ -1357,27 +1478,51 @@ def load_index(index_path="D:/EMRIData/saved_sims/index.json"):
     else:
         print(f"{index_path} does not exist.")
 
-def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto=False):
+def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto=False, lock=None):
     if filename == False:
         filename = "auto_" + encode_filename()
 
     if not filename.endswith('.h5') and not filename.endswith('.hdf5'):
         filename += '.h5' 
 
-    if os.path.exists(f"{folder}{filename}"):
-        if auto == False:
-            overwrite = input(f"Data for {filename} already exists. Overwrite? (y/n): ").strip().lower()
+    full = os.path.join(folder, filename)
+    if lock:
+        with lock:
+            if not os.path.exists(full):
+                pass
+            else:
+                if not auto:
+                    overwrite = input(f"Data for {filename} already exists. Overwrite? (y/n): ").strip().lower()
+                else:
+                    overwrite = 'n'
+
+                if overwrite == 'y':
+                    print(f"Overwriting {filename}...")
+                else:
+                    num = 1
+                    base, ext = os.path.splitext(filename)
+                    while os.path.exists(f"{folder}{filename}"):
+                        filename = f"{base}_{num}{ext}"
+                        num += 1
+                    print(f"File now saved as {filename}")
+    else:
+        if not os.path.exists(full):
+            pass
         else:
-            overwrite = 'n'
-        if overwrite == 'y':
-            print(f"Overwriting {filename}...")
-        else:
-            num = 1
-            base, ext = os.path.splitext(filename)
-            while os.path.exists(f"{folder}{filename}"):
-                filename = f"{base}_{num}{ext}"
-                num += 1
-            print(f"File now saved as {filename}")
+            if not auto:
+                overwrite = input(f"Data for {filename} already exists. Overwrite? (y/n): ").strip().lower()
+            else:
+                overwrite = 'n'
+
+            if overwrite == 'y':
+                print(f"Overwriting {filename}...")
+            else:
+                num = 1
+                base, ext = os.path.splitext(filename)
+                while os.path.exists(f"{folder}{filename}"):
+                    filename = f"{base}_{num}{ext}"
+                    num += 1
+                print(f"File now saved as {filename}")
 
     with h5py.File(folder + filename, 'w') as f:
         # String attributes
@@ -1389,12 +1534,12 @@ def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto
         f.attrs['unbind'] = final['unbind']
 
         # Raw numerical data
-        f.create_dataset('raw', data=final['raw'], compression='gzip')
-        f.create_dataset('dTau_change', data=final['dTau_change'], compression='gzip')
-        f.create_dataset('energy', data=final['energy'], compression='gzip')
-        f.create_dataset('phi_momentum', data=final['phi_momentum'], compression='gzip')
-        f.create_dataset('carter', data=final['carter'], compression='gzip')
-        f.create_dataset('trackix', data=final['trackix'], compression='gzip')
+        f.create_dataset('raw', data=final['raw'], compression='lzf')
+        f.create_dataset('dTau_change', data=final['dTau_change'], compression='lzf')
+        f.create_dataset('energy', data=final['energy'], compression='lzf')
+        f.create_dataset('phi_momentum', data=final['phi_momentum'], compression='lzf')
+        f.create_dataset('carter', data=final['carter'], compression='lzf')
+        f.create_dataset('trackix', data=final['trackix'], compression='lzf')
 
         # Store inputs and issues as JSON strings
         inputs_json = json.dumps(final['inputs'])
@@ -1415,7 +1560,12 @@ def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto
     for key, value in moredata.items():
         metadata[key] = value
 
-    update_index(filename, metadata)
+    if lock:
+        with lock:
+            update_index(filename, metadata)
+    else:
+        update_index(filename, metadata)
+
     return filename
 
 def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reconstruct=True):
@@ -1544,6 +1694,48 @@ def delete_emri_data(filename, index_path="D:/EMRIData/saved_sims/index.json", f
     else:
         print("Index file does not exist.")
 
+import glob
+import re
+
+def normalize(s: str) -> str:
+    return re.sub(r"[ _]+", "", s.lower())
+
+
+def clean_logs(log_folder="D:/EMRIDATA/", json_path="D:/EMRIDATA/saved_sims/index.json", delete=False):
+    # Load JSON
+    if not os.path.exists(json_path):
+        print(f"JSON file not found: {json_path}")
+        return
+
+    with open(json_path, "r") as f:
+        data = json.load(f)
+
+    # Precompute normalized labels
+    labels = []
+    for entry in data.values():
+        if isinstance(entry, dict) and "Label" in entry:
+            labels.append(normalize(entry["Label"]))
+
+    # Scan logs
+    pattern = os.path.join(log_folder, "inspiral_*.log")
+    files = glob.glob(pattern)
+
+    for path in files:
+        filename = os.path.basename(path)
+
+        # extract x from inspiral_x.log
+        x = filename.replace("inspiral_", "").replace(".log", "")
+        nx = normalize(x)
+
+        # match check
+        match = any(nx in label for label in labels)
+
+        if not match:
+            if delete:
+                os.remove(path)
+                print(f"Deleted: {filename}")
+            else:
+                print(f"Would delete: {filename}")
 
 def EMRIGenMin(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, override=False, bonk2=True):
     '''

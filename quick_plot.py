@@ -8,7 +8,12 @@ ins_refs = [name for name, val in goof.items() if "Paper" in val["Label"]]
 data_stuff, cool_stuff = {}, {}
 for name in ins_refs:
     data = ml.load_emri_data(name)
-    lab = data["name"].split()[0]
+    lab = data["name"].split()
+    try:
+        thing = int(lab[-1])
+        lab = " ".join(lab[:-1])
+    except:
+        lab = data["name"]
     if lab not in data_stuff.keys():
         print(lab)
         data_stuff[lab] = [[], [], []]

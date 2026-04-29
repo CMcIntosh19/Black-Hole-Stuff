@@ -354,16 +354,16 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
         data = datalist[thing]
         # ["value": [location in data dict, Value name, extra bit if timing is weird]]
         termdict = {
-            "index": ['np.arange(len(data["time"]))', "Index", 'np.arange(len(data["time"]))'],
-            "time": ['data["time"]', "Coordinate Time", 'data["time"]'],
+            "index": ['np.arange(len(data["raw"]))', "Index", 'np.arange(len(data["raw"]))'],
+            "time": ['data["raw"][:, 0]', "Coordinate Time", 'data["raw"][:, 0]'],
             "tracktime": ['data["tracktime"]', "Coordinate Time", 'data["tracktime"]'],
-            "radius": ['data["pos"][:,0]', "Radius", 'data["time"]'],
-            "theta": ['data["pos"][:,1]', "Theta", 'data["time"]'],
-            "phi": ['data["pos"][:,2]%(2*np.pi)', "Phi", 'data["time"]'],
-            "phase": ['data["pos"][:,2]/(2*np.pi)', "Phase", 'data["time"]'],
-            "x": ['np.sqrt(data["pos"][:,0]**2 + data["spin"]**2)*np.sin(data["pos"][:,1])*np.cos(data["pos"][:,2])', "X", 'data["time"]'],
-            "y": ['np.sqrt(data["pos"][:,0]**2 + data["spin"]**2)*np.sin(data["pos"][:,1])*np.sin(data["pos"][:,2])', "Y", 'data["time"]'],
-            "z": ['data["pos"][:,0]*np.cos(data["pos"][:,1])', "Z", 'data["time"]'],
+            "radius": ['data["raw"][:,1]', "Radius", 'data["raw"][:, 0]'],
+            "theta": ['data["raw"][:,2]', "Theta", 'data["raw"][:, 0]'],
+            "phi": ['data["raw"][:,3]%(2*np.pi)', "Phi", 'data["raw"][:, 0]'],
+            "phase": ['data["raw"][:,3]/(2*np.pi)', "Phase", 'data["raw"][:, 0]'],
+            "x": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.cos(data["raw"][:,3])', "X", 'data["raw"][:, 0]'],
+            "y": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.sin(data["raw"][:,3])', "Y", 'data["raw"][:, 0]'],
+            "z": ['data["raw"][:,1]*np.cos(data["raw"][:,3])', "Z", 'data["raw"][:, 0]'],
             "true_anom": ['data["true_anom"]/(2*np.pi)', "True Anomaly", 'data["tracktime"]'],
             "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
             "pot_min": ['data["pot_min"]', "Effective Potential Minimum", 'data["tracktime"]'],
@@ -380,21 +380,21 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
             "asc_node_time": ['data["asc_node_time"]', "Time of Ascending Node", 'asc_node_time'],
             "semi_maj": ['0.5*(data["it"] + data["ot"])', "Semimajor Axis", 'data["tracktime"]'],
             "semi_lat": ['data["p"]', "Semilatus Rectum", 'data["tracktime"]'],
-            "radial_v": ['data["all_vel"][:,1]', "Radial Velocity", 'data["time"]'],
-            "theta_v": ['data["all_vel"][:,2]', "Theta Velocity", 'data["time"]'],
-            "phi_v": ['data["all_vel"][:,3]', "Phi Velocity", 'data["time"]'],
-            "total_v": ['data["vel"]', "Velocity", 'data["time"]'],
+            "radial_v": ['data["all_vel"][:,1]', "Radial Velocity", 'data["raw"][:, 0]'],
+            "theta_v": ['data["all_vel"][:,2]', "Theta Velocity", 'data["raw"][:, 0]'],
+            "phi_v": ['data["all_vel"][:,3]', "Phi Velocity", 'data["raw"][:, 0]'],
+            "total_v": ['data["vel"]', "Velocity", 'data["raw"][:, 0]'],
             "energy": ['data["energy"]', "Specific Energy", 'data["tracktime"]'],
             "L_z": ['data["phi_momentum"]', "Specific Axial Angular Momentum", 'data["tracktime"]'],
             "carter": ['data["carter"]', "Carter Constant", 'data["tracktime"]'],
             "qarter": ['data["qarter"]', "Carter Constant (Unnormalized)", 'data["tracktime"]'],
             "approx_L": ['np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Full Angular Momentum sqrt(C + L\u2080\u00B2)", 'data["tracktime"]'],
-            "interval": ['data["interval"]', "Spacetime Interval", 'data["time"]']
+            "interval": ['data["interval"]', "Spacetime Interval", 'data["raw"][:, 0]']
             }
         
         if ((type(xvalue) == str) and (xvalue in termdict)) and ((type(yvalue) == str) and (yvalue in termdict)):
-            xstuff = [eval(termdict[xvalue][0]), termdict[xvalue][1], eval(termdict[xvalue][2])]
-            ystuff = [eval(termdict[yvalue][0]), termdict[yvalue][1], eval(termdict[yvalue][2])]
+            xstuff = [eval(termdict[xvalue][0]), termdict[xvalue][1], termdict[xvalue][2]]
+            ystuff = [eval(termdict[yvalue][0]), termdict[yvalue][1], termdict[yvalue][2]]
             title = "%s vs %s"%(termdict[yvalue][1], termdict[xvalue][1])
             title_add = ""
             if len(xstuff[0]) == len(ystuff[0]):
@@ -405,10 +405,10 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
             else: 
                 #if the values don't have the same length, interpolate using time
                 xvals, yvals = np.real_if_close(xstuff[0], 1000), np.real_if_close(ystuff[0], 1000)
-                if len(xvals) != len(data["time"]):
-                    xvals = np.interp(data["time"], xstuff[2], xstuff[0])
-                if len(yvals) != len(data["time"]):
-                    yvals = np.interp(data["time"], ystuff[2], ystuff[0])
+                if len(xvals) != len(data["raw"][:, 0]):
+                    xvals = np.interp(data["raw"][:, 0], eval(xstuff[2]), xstuff[0])
+                if len(yvals) != len(data["raw"][:, 0]):
+                    yvals = np.interp(data["raw"][:, 0], eval(ystuff[2]), ystuff[0])
                 xo = 0 if start==False else get_index(xvals, start)
                 xf = len(xvals) if end==False else get_index(xvals, end)
                 xvals, yvals = xvals[xo:xf], yvals[xo:xf]

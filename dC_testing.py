@@ -43,25 +43,29 @@ def all_dcons(states, a, mu, cons, ind1, ind2):
         E0, L0, C0 = cons
         states = np.array(states)
         sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
-        int_sphere, int_time = mm.interpolate(sphere, time, False)
+        int_sphere, int_time = mm.interpolate3(sphere, time)
         div = np.mean(np.diff(int_time))
         quad = mm.trace_ortholize_njit(int_sphere, a)
-        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
         coolquad = mm.traceless_quad(quad)
         dt = np.mean(np.diff(int_time))
         dt2, dt3 = mm.matrix_derive3_numba(coolquad, dt) 
-        dt2 = dt2[5:-5]
-        dt3 = dt3[5:-5]
-        int_time = int_time[5:-5]
-        levciv = np.array([[[0, 0, 0],   #Levi-civita tensor
-                            [0, 0, 1],
-                            [0, -1, 0]],
-                           [[0, 0, -1],
-                            [0, 0, 0],
-                            [1, 0, 0]],
-                           [[0, 1, 0],
-                            [-1, 0, 0],
-                            [0, 0, 0]]])
+        ref_r = int_sphere[-5, 0]
+        drdt = np.zeros_like(int_time)
+        drdt[1:-1] = (int_sphere[2:, 0] - int_sphere[:-2, 0]) / (int_time[2:] - int_time[:-2])
+        ref_drdt = drdt[-5]
+        r_scale = np.std(int_sphere[:, 0])
+        v_scale = np.std(drdt)
+        phase_space_diffs = ((int_sphere[:, 0] - ref_r)/r_scale)**2 + ((drdt - ref_drdt)/v_scale)**2
+
+        N = 12
+        sorted_ix = np.argsort(phase_space_diffs)   # Sort the indices of the smallest diff values (smallest values first)
+        candidates = sorted_ix[:N]                  # Grab the first 12   (best 12 matches)
+        ref_ix = np.min(candidates)                 # Grab the first of the best
+
+        dt2 = dt2[ref_ix:-5]
+        dt3 = dt3[ref_ix:-5]
+        int_time = int_time[ref_ix:-5]
+        int_sphere = int_sphere[ref_ix:-5]
         dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
         dldt = mm.compute_dldt(dt2, dt3)
         if a == 0:
@@ -71,13 +75,13 @@ def all_dcons(states, a, mu, cons, ind1, ind2):
             sig = A + L0**2 + C0
             z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
         
-        dE = mu*mu*np.sum(dedt*div)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
-        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dE = mu*mu*np.sum(dedt*div)
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)
 
-        P = E0*(int_sphere[5:-5,0]**2 + a*a) - a*L0
-        D = int_sphere[5:-5,0]*(int_sphere[5:-5,0] - 2) + a*a
-        dcdt_polar = (-2*a*a*z2*E0*dedt + 2*z2*L0*dldt[:,2]/(1 - z2))*div*mu*mu
-        dcdt_radial = ((2*P*(int_sphere[5:-5,0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:,2])*div*mu*mu
+        P = E0*(int_sphere[:, 0]**2 + a*a) - a*L0
+        D = int_sphere[:, 0]*(int_sphere[:, 0] - 2) + a*a
+        dcdt_polar = (-2*a*a*z2*E0*dedt + 2*z2*L0*dldt[:, 2]/(1 - z2))*div*mu*mu
+        dcdt_radial = ((2*P*(int_sphere[:, 0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:, 2])*div*mu*mu
         return np.array([dE, dLx, dLy, dLz, np.sum(dcdt_polar), np.sum(dcdt_radial)])
     else:
         return np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -87,7 +91,7 @@ def get_dC_stuff2(a, p, e, inc):
 
     try:
         r_start, the_start = np.random.uniform(p/(1 + e), p/(1 - e)), np.random.uniform(abs(inc), np.pi - abs(inc))
-        data = ml.EMRIGenerator(a, 0.0, "rad_orbit > 3", params=[p/(1 - e**2), e, inc], pos=[0.0, r_start, the_start, 0.0], verbose=0)
+        data = ml.EMRIGenerator(a, 0.0, "rad_orbit > 10", params=[p/(1 - e**2), e, inc], pos=[0.0, r_start, the_start, 0.0], verbose=0, label="mark5")
         E0, L0, C0 = data["energy"][0], data["phi_momentum"][0], data["carter"][0]
         if data["plunge"] == True or data["stop"] == True:
             skip = True
@@ -96,7 +100,8 @@ def get_dC_stuff2(a, p, e, inc):
         
     if not skip:
         # Calculate dE, dL_vec, and dC for the EPTD integrated along the orbit
-        dE, dLx, dLy, dLz, dC_polar_int, dC_radial_int = all_dcons(data["raw"], a, 1e-5, [E0, L0, C0], 0, len(data["raw"]))
+        start, end = 0, data["trackix"][-1]
+        dE, dLx, dLy, dLz, dC_polar_int, dC_radial_int = all_dcons(data["raw"][start:end], a, 1e-5, [E0, L0, C0], start, end)
 
         # Calculate dC for LS method
         _, new_cons = mm.new_recalc_state8d([E0, L0, C0], [dE, dLx, dLy, dLz], data["raw"][-1], a)
@@ -266,8 +271,8 @@ def compute_pair(args):
     dC_grid = [[None] * val for _ in range(val)]
 
     for i, inc in enumerate(incs):
-        p_sep, e_sep, _ = mm.get_sep_inc(a, inc)
-        p_min = p_sep[op.get_index(e_sep, e)]
+        sep = mm.get_sep_inc(a, inc)
+        p_min = sep["p"][op.get_index(sep["e"], e)]
 
         p_row = np.geomspace(p_min + 0.1, 75, val)
         p_grid[i] = p_row
@@ -281,11 +286,13 @@ def compute_point(args):
     a, e, inc = args
 
     # separatrix
-    p_sep, e_sep, _ = mm.get_sep_inc(a, inc)
-    p_min = p_sep[op.get_index(e_sep, e)]
+    sep = mm.get_sep_inc(a, inc)
+    p_min = sep["p"][op.get_index(sep["e"], e)]
 
     p_row = np.geomspace(p_min + 0.1, 75, val)
+    print(f"Running point a={a:.4f}, e={e:.4f}, inc={inc/np.pi:4f}", flush=True)
     dC_row = [get_dC_stuff2(a, p, e, inc) for p in p_row]
+    print(f"-------------- Finished point a={a:.4f}, e={a:.4f}, inc={inc/np.pi:4f}", flush=True)
 
     return a, e, inc, p_row, dC_row
 

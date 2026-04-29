@@ -355,14 +355,14 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         #print("Calculating initial velocity from constants E,L,C")
         if np.shape(pos) == (4,):
             pos = np.real(pos)
-            new = recalc_state(cons, pos, a)
+            new = recalc_state3(cons, pos, a)
         else:
             E, L, C = cons
-            R = [(E**2 - 1), 2, ((a**2)*(E**2 - 1) - L**2 - C), 2*((a*E - L)**2 + C), -a*a*C]
+            R = np.array([ E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
             turns = np.roots(R)
             turns = np.sort(turns.real[abs(turns.imag)<1e-14])
-            pos = [0.0, 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), np.pi/2, 0.0]
-            new = recalc_state(cons, pos, a)
+            pos = np.array([0.0, 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), np.pi/2, 0.0])
+            new = recalc_state3(cons, pos, a)
     elif (np.shape(velorient) == (3,)) and np.shape(pos) == (4,):
         velorient, pos = np.real(velorient), np.real(pos)
         #print("Calculating intial velocity from tetrad velocity and orientation")
@@ -431,7 +431,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             print("Non-viable parameters")
         if np.shape(pos) != (4,):
             pos = [0.0, params[0]*(1 - params[1]**2), np.pi/2, 0.0]
-        new = recalc_state(cons, pos, a)
+        new = recalc_state3(cons, pos, a)
     else:
         print("Insufficent information provided, have a plunge")
         return set_u_kerr(a, params=[find_rms(a), 0.2, np.pi/2])
@@ -535,7 +535,7 @@ def schmidtparam3(r0, e, i, a):
     while np.polyval(coeff, ro) < -1e-12 and count < 20:
         count += 1
         E += 10**(-16)
-        coeff = np.array([E**2 - 1.0, 2.0, (a**2)*(E**2 - 1.0) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+        coeff = np.array([ E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
         coeff2 = np.polyder(coeff)
         turns = np.roots(coeff)
         flats = np.roots(coeff2)
@@ -985,6 +985,131 @@ def recalc_state2(constants, state, a):
     new_state[4:] = np.array([ttau, rtau, thetau, phitau])
     return new_state
 
+def recalc_state3(constants, state, a, g=None, tol=1e-12):
+    '''
+    Calculates a new state vector based on a given position and constants of motion
+    (numerically stabilized version)
+
+    Parameters
+    ----------
+    constants : [E, L, C]
+    state : 4- or 8-element array
+    a : spin (0 ≤ a ≤ 1)
+    tol : tolerance for numerical errors
+
+    Returns
+    -------
+    new_state : 8-element numpy array
+    '''
+    energy, lmom, cart = constants
+    rad, theta = state[1], state[2]
+
+    sin_th = np.sin(theta)
+    cos_th = np.cos(theta)
+
+    # Metric functions
+    sig = rad**2 + (a**2)*(cos_th**2)
+    tri = rad**2 - 2*rad + a**2
+
+    # ===== Radial potential R(r) =====
+    p_r = np.array([energy, 0, a*(a*energy - lmom)])
+    r_r = np.array([
+        energy**2 - 1,
+        2,
+        (a**2)*(energy**2 - 1) - lmom**2 - cart,
+        2*((a*energy - lmom)**2 + cart),
+        -cart*(a**2)
+    ])
+
+    R = np.polyval(r_r, rad)
+    if R < -tol:
+        #print(f"Radial potential negative: {R}")
+        #print(f"turns = {np.roots(r_r)}")
+        #print(f"rad {rad}")
+        #print(f"Locking to psuedo-spherical orbit.")
+        return False
+    R = max(R, 0.0)
+
+    # ===== Polar potential Θ(θ) (stable form) =====
+    if abs(sin_th) < 1e-14:
+        print(f"Theta too close to pole; numerical instability: {theta:.4e}")
+
+    Theta = cart - cos_th**2 * (a**2 * (1 - energy**2) + (lmom**2) / (sin_th**2))
+
+    if Theta < -tol:
+        #print(f"Theta potential negative: {Theta}")
+        #print(f"Extending geodesic section.")
+        return None
+    Theta = max(Theta, 0.0)
+
+    # ===== First integrals =====
+    tlam = -a*(a*energy*(sin_th**2) - lmom) + ((rad**2 + a**2)/tri)*np.polyval(p_r, rad)
+    rlam = np.sqrt(R)
+    thelam = np.sqrt(Theta)
+    philam = -(a*energy - (lmom/(sin_th**2))) + (a/tri)*np.polyval(p_r, rad)
+
+    # Convert to proper time
+    ttau = tlam / sig
+    rtau = rlam / sig
+    thetau = thelam / sig
+    phitau = philam / sig
+
+    # ===== Sign handling =====
+    if len(state) != 8:
+        # default: inward and downward
+        rtau = -abs(rtau)
+        thetau = -abs(thetau)
+
+        new_state = np.zeros(8)
+        new_state[:4] = state[:4]
+
+    else:
+        new_state = np.copy(state)
+
+        # Radial direction
+        if abs(state[5]) > tol:
+            rtau = abs(rtau) * np.sign(state[5])
+        else:
+            # fallback: use slope of potential
+            dR = np.polyval(np.polyder(r_r), rad)
+            rtau = abs(rtau) * np.sign(dR)
+
+        # Theta direction
+        if abs(state[6]) > tol:
+            thetau = abs(thetau) * np.sign(state[6])
+        else:
+            thetau = abs(thetau)
+
+    new_state[4:] = np.array([ttau, rtau, thetau, phitau])
+
+    # ===== Enforce normalization u^μ u_μ = -1 =====
+    # You MUST have a metric function defined elsewhere
+    u = new_state[4:]
+    if g is None:
+        g, _ = kerr_2(state, a)
+
+    norm = np.einsum('ij,i,j->', g, u, u)
+
+    if norm >= 0:
+        #print(f"Non-timelike 4-velocity detected: norm = {norm}")
+        #print(f"Here vals! {energy}, {lmom}, {cart}, {a}")
+        return None
+
+    u *= np.sqrt(-1.0 / norm)
+    new_state[4:] = u
+
+    # ===== Optional consistency check (VERY useful for debugging) =====
+    # Uncomment if needed
+    """
+    E_check = -np.dot(g[0], u)  # depends on your conventions
+    L_check = np.dot(g[3], u)
+    # Carter check depends on your implementation
+
+    print("ΔE:", E_check - energy, "ΔL:", L_check - lmom)
+    """
+
+    return new_state
+
 def interpolate2(data, time, supress=True):
     '''
     interpolates coordinate data to be evenly spaced in coordinate time
@@ -1078,7 +1203,7 @@ def interpolate3(data, time):
     '''
     interpolates coordinate data to be evenly spaced in coordinate time
     Fail state plots time against index twice?
-    automatically sets it to 400 points or length of original data, whichever is shorter
+    automatically sets it to number of phi degrees traversed or length of original data, whichever is shorter
 
     Parameters
     ----------
@@ -1086,8 +1211,7 @@ def interpolate3(data, time):
         r, theta, and phi position of test particle
     time : N element numpy array of floats
         coordinate time of test particle
-    suppress : bool, defaults to True
-        limits the size of the final array to 10000 entries or ~20 samples per phase (assuming circular orbit), whichever is greater
+
 
     Returns
     -------
@@ -1098,7 +1222,8 @@ def interpolate3(data, time):
         M is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
     data = np.array(data)
-    new_time = np.linspace(time[0], time[-1], min(len(data), 400))
+    num = int(abs(data[-1, 2] - data[0, 2]) * 180 / np.pi)
+    new_time = np.linspace(time[0], time[-1], min(len(data), num))
     try:
         r_poly = spi.CubicSpline(time, data[:,0])
         theta_poly = spi.CubicSpline(time, data[:,1])
@@ -2229,6 +2354,79 @@ def peters_integrate6_6_4_5(states, a, mu, ind1, ind2):
     else:
         return np.array([0.0, 0.0, 0.0, 0.0])
 
+def peters_integrate6_6_4_6(states, a, mu, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate3(sphere, time)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
+        ref_r = int_sphere[-5, 0]
+        drdt = np.zeros_like(int_time)
+        drdt[1:-1] = (int_sphere[2:, 0] - int_sphere[:-2, 0]) / (int_time[2:] - int_time[:-2])
+        ref_drdt = drdt[-5]
+        r_candidates = int_sphere[:len(int_time)//2, 0]
+        drdt_candidates = drdt[:len(drdt)//2]
+        r_scale = np.std(r_candidates)
+        v_scale = np.std(drdt_candidates)
+        phase_space_diffs = ((r_candidates - ref_r)/r_scale)**2 + ((drdt_candidates - ref_drdt)/v_scale)**2
+        phase_space_diffs = ((int_sphere[:, 0] - ref_r)/r_scale)**2 + ((drdt - ref_drdt)/v_scale)**2
+
+        rad = np.mean(int_sphere[:,0])
+        Omega_phi = 1.0 / (rad**1.5 + a)
+        Omega_r = Omega_phi * np.sqrt(
+            1 - 6/rad + 8*a/(rad**1.5) - 3*a*a/(rad**2)
+        )
+        T_r = 2*np.pi / Omega_r
+        N = max(1, int(np.ceil(int_time[-1]/T_r)))
+        sorted_ix = np.argsort(phase_space_diffs)   # Sort the indices of the smallest diff values (smallest values first)
+        candidates = sorted_ix[:N]                  # Grab the first N (best N matches)
+        ref_ix = np.min(candidates)                 # Grab the first of the best
+
+        #ref_ix = np.argmin(phase_space_diffs)
+        if np.sign(drdt[-5]) != np.sign(drdt[ref_ix]):
+            ref_ix = 5
+        dt2 = dt2[ref_ix:-5]
+        dt3 = dt3[ref_ix:-5]
+        int_time = int_time[ref_ix:-5]        
+
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        #print((states[-1,0] - states[0,0]), (int_time[-1] - int_time[0]), "wa")
+        dE = mu*mu*np.sum(dedt*div)
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)
+        #print(dE, dLx, dLy, dLz)
+        #print(states[-1,0] - states[0,0])
+        return np.array([dE, dLx, dLy, dLz])
+    else:
+        #print("----------- kaput!")
+        return np.array([0.0, 0.0, 0.0, 0.0])
+
 def peters_integrate6_6_5(states, a, mu, ind1, ind2):
     '''
     Calculates change in characteristic orbital values from path of test particle through space 
@@ -2547,7 +2745,78 @@ def peters_integrate_differential4(states, a, mu, cons, state, ind1, ind2):
         P = E0*(int_sphere[5:-5,0]**2 + a*a) - a*L0
         D = int_sphere[5:-5,0]*(int_sphere[5:-5,0] - 2) + a*a
         dcdt_radial = ((2*P*(int_sphere[5:-5,0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:,2])*div*mu*mu
-        dC = (np.sum(dcdt_radial)*(1 - (x2**10)) + dC_theta*(x2**10))*(states[-1,0] - states[0,0])/(int_time[-1] - int_time[0])
+        dC = (np.sum(dcdt_radial)*(1 - (x2**10)) + dC_theta*(x2**10))
+        dcons = np.array([dE, dLz, dC])
+    else:
+        dcons = np.array([0.0, 0.0, 0.0])
+        
+    E, L, C = E0 + dcons[0], L0 + dcons[1], C0 + dcons[2]
+    C = max(0.0, C)
+    new_state = recalc_state([E, L, C], state, a)
+    return new_state, [E, L, C]
+
+def peters_integrate_differential5(states, a, mu, cons, state, ind1, ind2):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        E0, L0, C0 = cons
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate3(sphere, time)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
+        ref_r = int_sphere[-5, 0]
+        ref_ix = op.get_index(int_sphere[:len(int_time)//2, 0], ref_r)
+        dt2 = dt2[ref_ix:-5]
+        dt3 = dt3[ref_ix:-5]
+        int_time = int_time[ref_ix:-5]
+        int_sphere = int_sphere[ref_ix:-5]
+
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        dE = mu*mu*np.sum(dedt*div)
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)
+
+        if a == 0:
+            z2 = C0/(L0**2 + C0)
+        else:
+            A = (a**2)*(1 - E0**2)
+            sig = A + L0**2 + C0
+            z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
+        x2 = 1 - z2
+        x = np.sign(L0)*np.sqrt(x2)
+        dC0 = -2*a*a*z2*E0*dE + 2*z2*L0/(1 - z2)*dLz
+        dC_dx = - 2*(a*a*x*(1 - E0*E0) + L0*L0/(x**3))
+        dx = dC0 + 2*(1 - x2)*a*a*E0*dE - 2*L0*dLz*(1 - x2)/x2
+        dx /= -2*(x*(a*a*(1 - E0*E0) + L0*L0/x2) + L0*L0*(1 - x2)/(x**3))
+        dC_theta = dC0 + dC_dx*dx
+        P = E0*(int_sphere[:,0]**2 + a*a) - a*L0
+        D = int_sphere[:,0]*(int_sphere[:,0] - 2) + a*a
+        dcdt_radial = ((2*P*(int_sphere[:,0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:,2])*div*mu*mu
+        dC = (np.sum(dcdt_radial)*(1 - (x2**10)) + dC_theta*(x2**10))
         dcons = np.array([dE, dLz, dC])
     else:
         dcons = np.array([0.0, 0.0, 0.0])
@@ -3774,7 +4043,7 @@ def new_recalc_state9m(cons, con_derv, state, a, ecc):
     new_state = recalc_state([E, L, C], state, a)
     return new_state, [E, L, C]
 
-def new_recalc_state9l(cons, con_derv, state, a):
+def new_recalc_state9l(cons, con_derv, state, a, tol=1e-12):
     '''
     Calculates new state vector from current state and change in orbital constants
 
@@ -3831,7 +4100,8 @@ def new_recalc_state9l(cons, con_derv, state, a):
     C = max(C0 + dC, 0.0)
 
     # Step 6
-    new_state = recalc_state([E, L, C], state, a)
+    #new_state = recalc_state([E, L, C], state, a)
+    new_state = recalc_state3([E, L, C], state, a, metric, tol)
     return new_state, [E, L, C]
 
 def new_recalc_state9k(cons, con_derv, state, a):
@@ -5326,9 +5596,11 @@ def circC_inc(r, a, inc):
     return C
 
 def Yfunc(r, a, C):
+    #From Teo 2021
     return r**5 - C*(r - 3)*r**3 + (a*C)**2
 
 def circE_C(r, a, C, p=1):
+    #From Teo 2021
     p = float(np.sign(p))**np.sign(p)
     Y = Yfunc(r, a, C)
     sqrt_Y = np.sqrt(Y)
@@ -5337,6 +5609,7 @@ def circE_C(r, a, C, p=1):
     return numer / denom
 
 def circL_C(r, a, C, p=1):
+    #From Teo 2021
     p = float(np.sign(p))**np.sign(p)
     Y = Yfunc(r, a, C)
     sqrt_Y = np.sqrt(Y)
@@ -5345,6 +5618,7 @@ def circL_C(r, a, C, p=1):
     return numer / denom
 
 def circE_L_C(r, a, C, p=1):
+    #From Teo 2021
     """
     Vectorized: returns tuple (E, L) for arrays r.
     Assumes r is numpy array (or scalar).
@@ -5612,11 +5886,16 @@ def is_in_ELC_region3(E_test, L_test, C_test, a, tol=1e-4, rmax=1000):
 
     return val 
 
-def get_sep_inc(a, inc, mult=1, getELC=False):
+def get_sep_inc(a, inc, mult=1):
+    flip = False
+    if a < 0:
+        flip = True
+        a *= -1
+        inc *= -1
     mult = max(1, int(mult))
     x = np.sin(inc)
     a2, x2 = a**2, x**2
-    r = np.linspace(2*(1 + np.cos((2/3)*np.arccos(-a))), 10, 50*mult)
+    r = np.geomspace(2*(1 + np.cos((2/3)*np.arccos(-a))), 10, 50*mult)
     sqrt_r = np.sqrt(r)
     D = r*r - 2*r + a2
     Lamb = np.sqrt(r*r - a2*(1 - x2)) - a*x*sqrt_r
@@ -5632,7 +5911,7 @@ def get_sep_inc(a, inc, mult=1, getELC=False):
     while (len(high) > 1 or len(low) > 1) and count < 20:
         min_r = max(low) if len(low) else min(r)
         max_r = min(high) if len(high) else max(r)
-        r = np.linspace(min_r, max_r, 100)
+        r = np.geomspace(min_r, max_r, 50*mult)
         sqrt_r = np.sqrt(r)
         D = r*r - 2*r + a2
         Lamb = np.sqrt(r*r - a2*(1 - x2)) - a*x*sqrt_r
@@ -5645,16 +5924,13 @@ def get_sep_inc(a, inc, mult=1, getELC=False):
         low = r[1 <= e_sep]
         count += 1
 
-    if not getELC:
-        return p_sep, e_sep, r
-
     r2 = r*r
     Y = r*(r2 - a2*(1 - x2))
     G = r*(r2 + a2*(1 - x2))*(r2*(r - 3) + a2*(r + 1)*(1 - x2) + 2*a*x*np.sqrt(Y))
     E_sep = (r2*(r - 2) + a2*r*(1 - x2) + a*x*np.sqrt(Y))/np.sqrt(G)
     L_sep = (-2*a*r2*x2 + (r2 + a2)*x*np.sqrt(Y))/np.sqrt(G)
 
-    mask = E_sep <= 1.0
+    mask = (E_sep <= 1.0)*(e_sep >= 0.0) 
     p_sep = p_sep[mask]
     e_sep = e_sep[mask]
     L_sep = L_sep[mask]
@@ -5662,7 +5938,7 @@ def get_sep_inc(a, inc, mult=1, getELC=False):
     r2 = r*r
     E_sep = E_sep[mask]
 
-    r_out = np.linspace(max(r), max(r)*10, len(r))
+    r_out = np.geomspace(max(r), 100, len(r))
     r_out2 = r_out*r_out
     sig, q = r_out2 + a2*(1 - x2), np.sqrt(r_out2 - a2*(1 - x2))
     p = 1 if a >= 0 else -1
@@ -5680,19 +5956,35 @@ def get_sep_inc(a, inc, mult=1, getELC=False):
     else:
         C_sep = (1 - x2)*(a*(1 - E_sep**2) + (L_sep**2)/x2)
         C_out = (1 - x2)*(a*(1 - E_out**2) + (L_out**2)/x2)
-    
-    return p_sep, e_sep, r, E_sep, L_sep, C_sep, r_out, E_out, L_out, C_out
 
-def get_sep_cosi(a, cosi, mult=1, getELC=False):
+    if flip:
+        L_sep *= -1
+        L_out *= -1
+    
+    return {"p": np.concatenate((p_sep, r_out)),
+            "e": np.concatenate((e_sep, 0 * e_sep)),
+            "it": np.concatenate((r, r_out)), 
+            "ot": np.concatenate((p_sep / (1 - e_sep), r_out)), 
+            "energy": np.concatenate((E_sep, E_out)),
+            "phi_momentum": np.concatenate((L_sep, L_out)), 
+            "carter": np.concatenate((C_sep, C_out))}
+
+def get_sep_cosi(a, cosi, mult=1):
     if np.isclose(cosi, 0.0, atol=1e-12):
         # for small cosi it should be basically the same as inc, even with spin
-        return get_sep_inc(a, cosi, mult=mult, getELC=getELC)
+        return get_sep_inc(a, cosi, mult=mult)
+    
+    flip = False
+    if a < 0:
+        flip = True
+        a *= -1
+        cosi *= -1
     
     mult = max(1, int(mult))
     cosi2 = cosi**2
     sini2, sini = 1 - cosi2, np.sqrt(1 - cosi2)
     a2 = a*a
-    r = np.linspace(2*(1 + np.cos((2/3)*np.arccos(-a))), 10, 50*mult)
+    r = np.geomspace(2*(1 + np.cos((2/3)*np.arccos(-a))), 10, 50*mult)
     r2 = r*r
 
     D = r2 - 2*r + a2
@@ -5710,7 +6002,7 @@ def get_sep_cosi(a, cosi, mult=1, getELC=False):
     while (len(high) > 1 or len(low) > 1) and count < 20:
         min_r = max(low) if len(low) else min(r)
         max_r = min(high) if len(high) else max(r)
-        r = np.linspace(min_r, max_r, 100)
+        r = np.geomspace(min_r, max_r, 50*mult)
         r2 = r*r
         D = r2 - 2*r + a2
         Xi = r2*r2 + 2*a2*r2 - 4*a2*r + a2*a2
@@ -5724,18 +6016,13 @@ def get_sep_cosi(a, cosi, mult=1, getELC=False):
         low = r[1 <= e_sep]
         count += 1
 
-    if not getELC or np.isclose(cosi, 0.0, atol=1e-12):
-        if getELC and np.isclose(cosi, 0.0, atol=1e-12):
-            print("No E solution for cosi = 0")
-        return p_sep, e_sep, r
-
     r2 = r*r
     Y = r*(r2*r2 + (2*r2 - 4*r + a2)*a2*sini2)
     G = (r2*(r*r2 - 3*r2 - 2*a2) + (2*r*r2 + a2*r + a2)*a2*sini2)*Xi + 2*r*(3*r2 + a2)*(r*(3*r2 - 4*r + a2)*a*cosi + D*np.sqrt(Y))*a*cosi
     E_sep = (r*(3*r2 - 4*r + a2)*a*cosi + D*np.sqrt(Y))/np.sqrt(G)
     L_sep = r*cosi*Xi/np.sqrt(G)
 
-    mask = E_sep <= 1.0
+    mask = (E_sep <= 1.0)*(e_sep >= 0.0) 
     p_sep = p_sep[mask]
     e_sep = e_sep[mask]
     L_sep = L_sep[mask]
@@ -5743,7 +6030,7 @@ def get_sep_cosi(a, cosi, mult=1, getELC=False):
     E_sep = E_sep[mask]
     C_sep = (L_sep**2)*sini2/cosi2
 
-    r_out = np.linspace(max(r), max(r)*10, len(r))
+    r_out = np.geomspace(max(r), 100, len(r))
     r_out2 = r_out*r_out
     f1, f2 = r_out2*r_out2 + a2*r_out2 + 2*a2*r_out, 4*r_out2*r_out + 2*a2*r_out + 2*a2
     g1, g2 = 2*a*r_out, 2*a
@@ -5756,11 +6043,22 @@ def get_sep_cosi(a, cosi, mult=1, getELC=False):
     E_out = np.sign(cosi)*k*L_out
     L_out *= np.sign(cosi)
     C_out = (L_out**2)*sini2/cosi2
-    
-    return p_sep, e_sep, r, E_sep, L_sep, C_sep, r_out, E_out, L_out, C_out
 
-def peters_sim(a, q, cons=False, params=False, endflag="False"):
+    if flip:
+        L_sep *= -1
+        L_out *= -1
+    
+    return {"p": np.concatenate((p_sep, r_out)),
+            "e": np.concatenate((e_sep, 0 * e_sep)),
+            "it": np.concatenate((r, r_out)), 
+            "ot": np.concatenate((p_sep / (1 - e_sep), r_out)), 
+            "energy": np.concatenate((E_sep, E_out)),
+            "phi_momentum": np.concatenate((L_sep, L_out)), 
+            "carter": np.concatenate((C_sep, C_out))}
+
+def peters_sim_EL(a, q, cons=False, params=False, endflag="False"):
     '''
+    LESS DUMB BUT A LITTLE DUMB
     Reproduce 2-body system results from Peters 1964
     
     :param a: Black Hole Spin - between -1 and 1 (Peters assumes spin=0)
@@ -5792,12 +6090,10 @@ def peters_sim(a, q, cons=False, params=False, endflag="False"):
     Ep, Lp = -q/(2*r0), np.sqrt(q*q*r0*(1 - e*e)/(1 + q))
     # Inclination approximation for cosine of inclination
     A = (a**2)*(1 - E**2)
-    cosi = ((A + L**2 + C) - ((A + L**2 + C)**2 - 4*A*C)**(1/2))/(2*A) if A != 0 else L/np.sqrt(C + L**2)
+    cosi = L/np.sqrt(C + L**2)
     # Get changes to values as Peters wrote them (G = c = 1)
     dEpdt = lambda maj, ecc: (-32/5)*q*q*(1+q)*(1 + 73*(ecc**2)/24 + 37*(ecc**4)/96)/((maj**5)*((1 - ecc**2)**(7/2)))
     dLpdt = lambda maj, ecc: (-32/5)*q*q*np.sqrt(1+q)*(1 + 7*(ecc**2)/8)/((maj**(7/2))*((1 - ecc**2)**2))
-    dr0dt = lambda maj, ecc: (-64/5)*q*(1+q)*(1 + 73*(ecc**2)/24 + 37*(ecc**4)/96)/((maj**3)*((1 - ecc**2)**(7/2)))
-    dedt = lambda maj, ecc: (-304/15)*ecc*q*(1+q)*(1 + 121*(ecc**2)/304)/((maj**4)*((1 - ecc**2)**(5/2)))
 
     # Get initial dt - this is supposed to be ~1/100 of the full inspiral according to Peters
     beta = (64/5)*q*(1 + q)
@@ -5806,7 +6102,6 @@ def peters_sim(a, q, cons=False, params=False, endflag="False"):
     # Initialize final data
     vals = [[0, E, L, C, r0, e, Ep, Lp]]#, inc, cosi]]
     
-
     # A way to track our progress so we don't get bored out of our minds
     pbar = tqdm(total = 10000, position=0)
     pbar.set_postfix_str(f"Semilat: {r0*(1 - e**2):.4f}, Ecc {e:.4f}, Peri: {r0*(1 - e):.4f}")
@@ -5820,9 +6115,120 @@ def peters_sim(a, q, cons=False, params=False, endflag="False"):
             # Get changes to values
             dEp = dEpdt(r0, e)*dt
             dLp = dLpdt(r0, e)*dt
-            dr0 = dr0dt(r0, e)*dt
-            de = dedt(r0, e)*dt
-            # If the change in dr0 is way too big, shrink the step size and try again
+            new_r0 = -q/(2 * (Ep + dEp))
+            new_e = np.sqrt(1 - ((Lp + dLp)**2)*(1 + q)/(new_r0 * q * q))
+            if -(new_r0 - r0)/r0 > 0.25:
+                dt *= 0.5
+                continue
+            # Assume inclination remains constant because a=0
+            E, L, C = schmidtparam3(new_r0, new_e, inc, a)
+            # If we get complex orbital constants, try taking a smaller step size
+            # Use Q = C + (a*E - L)**2 so that equatorial orbits don't make division by zero errors
+            tester = np.array([E, L, C + (a*E - L)**2])
+            if True in np.abs(np.imag(tester)/np.real(tester)) < 1e-5:
+                wack += 1
+                if wack < 3:
+                    dt *= 0.5
+                    continue
+                # If you get the complexity issue three times in a row, just stop
+                else:
+                    break
+            else:
+                wack = 0
+
+            # Get all your new values    
+            # We actuall don't really do anything with Ep or Lp, we just keep track of them
+            Ep, Lp, r0, e = Ep + dEp, Lp + dLp, new_r0, new_e
+            # Update so that the user knows what's going on
+            pbar.set_postfix_str(f"Semilat: {r0*(1 - e**2):.4f}, Ecc {e:.4f}, Peri: {r0*(1 - e):.4f}")
+            pbar.update(int(10000*(p - r0*(1 - e**2))/(p - (6 + 2*e))) - prog)
+            prog = int(10000*(p - r0*(1 - e**2))/(p - (6 + 2*e)))
+            vals.append([vals[-1][0] + dt, E, L, C, r0, e, Ep, Lp])
+            # Make the step size a little bigger, just as a treat
+            dt *= 1.001
+        except KeyboardInterrupt:
+            break
+    pbar.close()
+    vals = np.real(np.array(vals))
+    A = (a**2)*(1 - vals[:, 0]**2)
+    dct = {"name": "peters1964_EL",
+           "tracktime": vals[:, 0],
+           "energy": vals[:, 1],
+           "phi_momentum": vals[:, 2],
+           "carter": vals[:, 3],
+           "r0": vals[:, 4],
+           "p": vals[:, 4]*(1 - vals[:, 5]**2),
+           "e": vals[:, 5],
+           "Ep": vals[:, 6],
+           "Lp": vals[:, 7],
+           "inc": inc*np.ones_like(vals[:,0]),
+           "cosi": np.where(A != 0, ((A + vals[:, 2]**2 + vals[:, 3]) - ((A + vals[:, 2]**2 + vals[:, 3])**2 - 4*A*vals[:, 3])**(1/2))/(2*A), vals[:, 2]/np.sqrt(vals[:, 3] + vals[:, 2]**2)),
+           "it": vals[:, 4]*(1 - vals[:, 5]),
+           "ot": vals[:, 4]*(1 + vals[:, 5]),
+           "spin": a}
+    return dct
+
+def peters_sim_EL2(a, q, cons=False, params=False, endflag="False"):
+    '''
+    DUMB
+    Reproduce 2-body system results from Peters 1964
+    
+    :param a: Black Hole Spin - between -1 and 1 (Peters assumes spin=0)
+    :param q: Mass Ratio - <= 10^-4 for EMRIs
+    :param cons: Orbital Constants (optional) - [Energy, Axial Angular Momentum, Carter Constant] per unit mass
+    :param params: Orbital Parameters (optional) - [Semimajor Axis, Eccentricity, Inclination]
+    :param endflag: End state of orbit (optional) - Boolean statement to end simulation at a certain condition.
+                                                    Defaults to False, so the sim ends at plunge
+    '''
+    # Use Orbital Constants
+    if cons != False:
+        E, L, C = cons
+        turns, flats, zs = root_getter(E, L, C, a)
+        p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+        inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+        r0 = p/(1 - e**2)
+    # Use Orbital Parameters
+    elif params != False:
+        r0, e, inc = params
+        p = r0*(1 - e**2)
+        E, L, C = schmidtparam3(*params, a)
+        turns, flats, zs = root_getter(E, L, C, a)
+    # Nuffin
+    else:
+        print("No starting input.")
+        return 0
+    
+    # E and L as defined by Peters, not the same as the calculated ones
+    Ep, Lp = -q/(2*r0), np.sqrt(q*q*r0*(1 - e*e)/(1 + q))
+    # Inclination approximation for cosine of inclination
+    A = (a**2)*(1 - E**2)
+    cosi = L/np.sqrt(C + L**2)
+    # Get changes to values as Peters wrote them (G = c = 1)
+    dEpdt = lambda maj, ecc: (-32/5)*q*q*(1+q)*(1 + 73*(ecc**2)/24 + 37*(ecc**4)/96)/((maj**5)*((1 - ecc**2)**(7/2)))
+    dLpdt = lambda maj, ecc: (-32/5)*q*q*np.sqrt(1+q)*(1 + 7*(ecc**2)/8)/((maj**(7/2))*((1 - ecc**2)**2))
+
+    # Get initial dt - this is supposed to be ~1/100 of the full inspiral according to Peters
+    beta = (64/5)*q*(1 + q)
+    dt = 0.01*(r0**4)/(4*beta)
+
+    # Initialize final data
+    vals = [[0, E, L, C, r0, e, Ep, Lp]]#, inc, cosi]]
+    
+    # A way to track our progress so we don't get bored out of our minds
+    pbar = tqdm(total = 10000, position=0)
+    pbar.set_postfix_str(f"Semilat: {r0*(1 - e**2):.4f}, Ecc {e:.4f}, Peri: {r0*(1 - e):.4f}")
+    prog = 0
+    # Counter for how many times we find complex orbital constants in a row
+    wack = 0
+    # Continue while periapse is greater than marginally bound radius for a=0 and 
+    #  semilatus rectum is not super complex
+    while r0*(1 - e) > 4 and np.abs(np.imag(r0*(1 - e*e))/np.real(r0*(1 - e*e))) < 1e-5:
+        try:
+            # Get changes to values
+            dEp = dEpdt(r0, e)*dt
+            dLp = dLpdt(r0, e)*dt
+            dr0 = (q/2)*(1/(Ep*Ep))*dEp
+            de = (Lp*Lp/(2*r0*r0))*((1+q)/q)*(q/2)*(1/(Ep*Ep))*dEp/np.sqrt(1 - (Lp*Lp/r0)*((1+q)/q)) - (Lp/r0)*((1+q)/q)*dLp/np.sqrt(1 - (Lp*Lp/r0)*((1+q)/q))
             if -dr0/r0 > 0.25:
                 dt *= 0.5
                 continue
@@ -5857,7 +6263,8 @@ def peters_sim(a, q, cons=False, params=False, endflag="False"):
     pbar.close()
     vals = np.real(np.array(vals))
     A = (a**2)*(1 - vals[:, 0]**2)
-    dct = {"tracktime": vals[:, 0],
+    dct = {"name": "peters1964_EL2",
+           "tracktime": vals[:, 0],
            "energy": vals[:, 1],
            "phi_momentum": vals[:, 2],
            "carter": vals[:, 3],
@@ -5873,9 +6280,130 @@ def peters_sim(a, q, cons=False, params=False, endflag="False"):
            "spin": a}
     return dct
 
+def peters_sim_re(a, q, cons=False, params=False, endflag="False"):
+    '''
+    FOR COOL KIDS
+    Reproduce 2-body system results from Peters 1964
+    
+    :param a: Black Hole Spin - between -1 and 1 (Peters assumes spin=0)
+    :param q: Mass Ratio - <= 10^-4 for EMRIs
+    :param cons: Orbital Constants (optional) - [Energy, Axial Angular Momentum, Carter Constant] per unit mass
+    :param params: Orbital Parameters (optional) - [Semimajor Axis, Eccentricity, Inclination]
+    :param endflag: End state of orbit (optional) - Boolean statement to end simulation at a certain condition.
+                                                    Defaults to False, so the sim ends at plunge
+    '''
+    # Use Orbital Constants
+    if cons != False:
+        E, L, C = cons
+        turns, flats, zs = root_getter(E, L, C, a)
+        p, e = 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), (turns[-1] - turns[-2])/(turns[-1] + turns[-2])
+        inc = np.arccos(min(1, np.mean(np.abs(zs[1:3]))))
+        r0 = p/(1 - e**2)
+    # Use Orbital Parameters
+    elif params != False:
+        r0, e, inc = params
+        p = r0*(1 - e**2)
+        E, L, C = schmidtparam3(*params, a)
+        turns, flats, zs = root_getter(E, L, C, a)
+    # Nuffin
+    else:
+        print("No starting input.")
+        return 0
+    
+    # E and L as defined by Peters, not the same as the calculated ones
+    Ep, Lp = -q/(2*r0), np.sqrt(q*q*r0*(1 - e*e)/(1 + q))
+    # Inclination approximation for cosine of inclination
+    A = (a**2)*(1 - E**2)
+    cosi =  L/np.sqrt(C + L**2)
+    # Get changes to values as Peters wrote them (G = c = 1)
+    dEpdt = lambda maj, ecc: (-32/5)*q*q*(1+q)*(1 + 73*(ecc**2)/24 + 37*(ecc**4)/96)/((maj**5)*((1 - ecc**2)**(7/2)))
+    dLpdt = lambda maj, ecc: (-32/5)*q*q*np.sqrt(1+q)*(1 + 7*(ecc**2)/8)/((maj**(7/2))*((1 - ecc**2)**2))
+    dr0dt = lambda maj, ecc: (-64/5)*q*(1+q)*(1 + 73*(ecc**2)/24 + 37*(ecc**4)/96)/((maj**3)*((1 - ecc**2)**(7/2)))
+    dedt = lambda maj, ecc: (-304/15)*ecc*q*(1+q)*(1 + 121*(ecc**2)/304)/((maj**4)*((1 - ecc**2)**(5/2)))
+
+    # Get initial dt - this is supposed to be ~1/100 of the full inspiral according to Peters
+    beta = (64/5)*q*(1 + q)
+    dt = 0.01*(r0**4)/(4*beta)
+
+    # Initialize final data
+    vals = [[0, E, L, C, r0, e, Ep, Lp]]#, inc, cosi]]
+    
+
+    # A way to track our progress so we don't get bored out of our minds
+    sep_stuff = get_sep_inc(a, inc)
+    line = np.polyfit(sep_stuff["p"], sep_stuff["e"], 1)
+    pbar = tqdm(total = 10000, position=0)
+    pbar.set_postfix_str(f"Semilat: {r0*(1 - e**2):.4f}, Ecc {e:.4f}, Peri: {r0*(1 - e):.4f}")
+    prog = 0
+    # Counter for how many times we find complex orbital constants in a row
+    wack = 0
+    # Continue while periapse is greater than marginally bound radius for a=0 and 
+    #  semilatus rectum is not super complex
+    while (e - line[0]*(r0*(1 - e*e)) < line[1] and np.abs(np.imag(r0*(1 - e*e))/np.real(r0*(1 - e*e))) < 1e-5) and not eval(endflag):
+        try:
+            # Get changes to values
+            #dEp = dEpdt(r0, e)*dt
+            #dLp = dLpdt(r0, e)*dt
+            dr0 = dr0dt(r0, e)*dt
+            de = dedt(r0, e)*dt
+            dEp = ((q/2)/(r0*r0)) * dr0
+            dLp = np.sqrt(q*q/(1 + q)) * (0.5*np.sqrt((1 - e*e)/r0)*dr0 - e*np.sqrt(r0/(1 - e*e))*de)
+            # If the change in dr0 is way too big, shrink the step size and try again
+            if -dr0/r0 > 0.1:
+                dt *= 0.5
+                continue
+            # Assume inclination remains constant because a=0
+            E, L, C = schmidtparam3(r0 + dr0, e + de, inc, a)
+            # If we get complex orbital constants, try taking a smaller step size
+            # Use Q = C + (a*E - L)**2 so that equatorial orbits don't make division by zero errors
+            tester = np.array([E, L, C + (a*E - L)**2])
+            if True in np.abs(np.imag(tester)/np.real(tester)) < 1e-5:
+                wack += 1
+                if wack < 3:
+                    dt *= 0.5
+                    continue
+                # If you get the complexity issue three times in a row, just stop
+                else:
+                    break
+            else:
+                wack = 0
+
+            # Get all your new values    
+            # We actuall don't really do anything with Ep or Lp, we just keep track of them
+            Ep, Lp, r0, e = Ep + dEp, Lp + dLp, r0 + dr0, e + de
+            # Update so that the user knows what's going on
+            pbar.set_postfix_str(f"Semilat: {r0*(1 - e**2):.4f}, Ecc {e:.4f}, Peri: {r0*(1 - e):.4f}")
+            pbar.update(int(10000*(p - r0*(1 - e**2))/(p - line[0]*(e - line[1]))) - prog)
+            prog = int(10000*(p - r0*(1 - e**2))/(p - line[0]*(e - line[1])))
+            vals.append([vals[-1][0] + dt, E, L, C, r0, e, Ep, Lp])
+            # Make the step size a little bigger, just as a treat
+            dt *= 1.001
+        except KeyboardInterrupt:
+            break
+    pbar.close()
+    vals = np.real(np.array(vals))
+    A = (a**2)*(1 - vals[:, 0]**2)
+    dct = {"name": "peters1964_re",
+           "tracktime": vals[:, 0],
+           "energy": vals[:, 1],
+           "phi_momentum": vals[:, 2],
+           "carter": vals[:, 3],
+           "r0": vals[:, 4],
+           "p": vals[:, 4]*(1 - vals[:, 5]**2),
+           "e": vals[:, 5],
+           "Ep": vals[:, 6],
+           "Lp": vals[:, 7],
+           "inc": inc*np.ones_like(vals[:,0]),
+           "cosi": vals[:, 2]/np.sqrt(vals[:, 3] + vals[:, 2]**2),
+           "it": vals[:, 4]*(1 - vals[:, 5]),
+           "ot": vals[:, 4]*(1 + vals[:, 5]),
+           "spin": a}
+    return dct
+
 def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbose=True):
     M = 1.989e30 * 1e7
-    mu = q*M
+    true_q = q
+    q = min(1e-6, q)
     # matches glampedakis 2002
     if cons != False:
         # Use constants to start
@@ -5905,6 +6433,7 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
     #b = (64/5)*mu*M*(mu + M)
     #dt = eps*np.real(((M*r0)**4)/(4*b))/1e37
     dt = (2 * np.pi * (6.67e-11 * M / ((3e8)**3)) * (p**(1.5) - a*np.sign(L))) * 100 * eps
+    print(dt)
     vals = [[0, E, L, C, p, e, cosi, inc, *turns]]
     oldp = p
     if verbose == True:
@@ -5946,7 +6475,7 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
                 p, e, cosi = p_1, e_1, cosi_1
                 # Tell the user where we're at right now
                 if verbose == True:
-                    pbar.set_postfix_str(f"Semilat: {np.real(p_1):.4f}, Ecc {np.real(e_1):.4f}, Peri: {np.real(p_1*(1 - e_1)):.4f}, dt={dt:.4e}")
+                    pbar.set_postfix_str(f"Semilat: {np.real(p_1):.4f}, Ecc {np.real(e_1):.4f}, Peri: {np.real(p_1*(1 - e_1)):.4f}, dt={dt * (q/true_q)**2:.4e}")
                     pbar.update(int(np.real(10000*(oldp - p_1)/(oldp - (r_isco + e*(2*r_mb - r_isco))))) - prog)
                     prog = int(np.real(10000*(oldp - p_1)/(oldp - (r_isco + e*(2*r_mb - r_isco)))))
                 # Calculate distance and rate of approach to separatrix
@@ -5957,7 +6486,7 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
                 elif delta > eps / 5:
                     dt *= 0.5
                 else:
-                    dt *= -5.5*(delta) + 1.6
+                    dt *= (0.5 - 1.05)*(delta - eps/5)/(eps/5 - eps/10) + 0.5
 
                 #dt = max(dt, np.real(((M*p)**4)/(4*b))/1e37)
                 dt = max(dt, 10*(2 * np.pi * (6.67e-11 * M / ((3e8)**3)) * (p**(1.5) - a*np.sign(L))))
@@ -5970,7 +6499,7 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
     vals = np.real(np.array(vals))
     # Return stuff in the same format as EMRIGenerator for convenience
     dct = {"name": "g2002",
-           "tracktime": vals[:, 0],
+           "tracktime": vals[:, 0]*(q/true_q)**2,
            "energy": vals[:, 1],
            "phi_momentum": vals[:, 2],
            "carter": vals[:, 3],
@@ -5997,7 +6526,9 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
     :param dt_cap: Maximum Multiplier for Step Size (optional) - limits step size to maintain accuracy. Should be <= 1
     '''
     M = 1.989e30 * 1e7
-    mu = q*M
+    true_q = q
+    q = 1e-7
+    #Acts dumb when I give it the real q for some reason, here's a bandaid
     flip = False
     if cons != False:
         # Use constants to start
@@ -6042,7 +6573,7 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
     dt = (2 * np.pi * (6.67e-11 * M / ((3e8)**3)) * (p**(1.5) - a*np.sign(L))) * 100 * eps
 
     # Initialize final output and also save the first semilatus rectum for comparison
-    vals = [[0, E, L, C, p, e, inc, cosi, *turns[-2:]]]
+    vals = [[0, E, L, C, p, e, inc, cosi, *turns[-2:], 0]]
     oldp = p
     
     # A way to track our progress so we don't get bored out of our minds
@@ -6051,7 +6582,9 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
         pbar.set_postfix_str(f"Semilat: {r0*(1 - e**2):.4f}, Ecc {e:.4f}, Peri: {r0*(1 - e):.4f}")
         prog = 0
     # Useful to keep track of the ISCO and marginally bound radius for later
-    p_ref, e_ref, r_ref = get_sep_cosi(a, cosi, mult=4)
+
+    sep_stuff = get_sep_cosi(a, cosi, mult=4)
+    p_ref, e_ref = sep_stuff["p"], sep_stuff["e"]
     p_close1, e_close1 = p_ref.flat[np.nanargmin(np.abs(p_ref - p))], e_ref.flat[np.nanargmin(np.abs(e_ref - e))]
     dist1 = np.sqrt((p_close1 - p)**2 + (e_close1 - e)**2)
 
@@ -6105,13 +6638,13 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
                     print("Turning Point Complexity Exceeded Allowed Threshold") if verbose == True else None
                     break
             # r_a and r_p should both decrease
-            elif (e_0 > 1e-3 and min(np.array(vals[-1][-2:]) - turns[-2:]) < 0) or (e <= 1e-3 and vals[-1][4] - p_0 < 0):
+            elif (e_0 > 1e-3 and min(np.array(vals[-1][8:10]) - turns[-2:]) < -1e-5) or (e <= 1e-3 and vals[-1][4] - p_0 < 0):
                 dt *= 0.999
                 if dt < p_0**1.5 + a:
                     print("Turning Point Monotonic Descent Violated") if verbose == True else None
                     break
             # don't let r_a or r_p change too much
-            elif max(abs(np.array(vals[-1][-2:]) - turns[-2:])/np.array(vals[-1][-2:])) > eps:
+            elif max(abs(np.array(vals[-1][8:10]) - turns[-2:])/np.array(vals[-1][8:10])) > eps:
                 dt *= 0.5
                 if dt < p_0**1.5 + a:
                     print("Turning Point Descent Perturbation Model Violated") if verbose == True else None
@@ -6120,21 +6653,24 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
             else:
                 # Accept new values of parameters
                 p, e, cosi = p_1, e_1, cosi_1
-                delta = max(abs(np.array(vals[-1][-2:]) - turns[-2:])/np.array(vals[-1][-2:])) 
+                delta = max(abs(np.array(vals[-1][8:10]) - turns[-2:])/np.array(vals[-1][8:10])) 
                 
                 if delta < eps / 10:
+                    tweak = 1
                     dt *= 1.05
                 elif delta > eps / 5:
+                    tweak = 2
                     dt *= 0.5
                 else:
-                    dt *= -5.5*(delta) + 1.6
+                    tweak = 3
+                    dt *= (0.5 - 1.05)*(delta - eps/5)/(eps/5 - eps/10) + 0.5
 
                 #dt = max(dt, np.real(((M*p)**4)/(4*b))/1e37)
                 dt = max(dt, 10*(2 * np.pi * (6.67e-11 * M / ((3e8)**3)) * (p**(1.5) - a*np.sign(L))))
 
                 # Tell the user where we're at right now
                 if verbose == True:
-                    pbar.set_postfix_str(f"Semilat: {np.real(p):.4f}, Ecc {np.real(e):.4f}, Peri: {np.real(p*(1 - e)):.4f}, dt={dt:.4e}")
+                    pbar.set_postfix_str(f"Semilat: {np.real(p):.4f}, Ecc {np.real(e):.4f}, Peri: {np.real(p*(1 - e)):.4f}, dt={dt * (q/true_q)**2:.4e}")
                     #pbar.update(int(np.real(10000*(oldp - r0*(1 - e**2))/(oldp - (r_isco + e*(2*r_mb - r_isco))))) - prog)
                     #prog = int(np.real(10000*(oldp - r0*(1 - e**2))/(oldp - (r_isco + e*(2*r_mb - r_isco)))))
                     p_close, e_close = p_ref.flat[np.nanargmin(np.abs(p_ref - p))], e_ref.flat[np.nanargmin(np.abs(e_ref - e))]
@@ -6143,7 +6679,7 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
                     prog = int(np.real(10000*((dist1 - dist)/dist1)))
 
                 r0 = p/(1 - e**2)
-                vals.append([vals[-1][0] + dt, E, L, C, p, e, inc, cosi, *turns[-2:]])
+                vals.append([vals[-1][0] + dt, E, L, C, p, e, inc, cosi, *turns[-2:], tweak])
 
         except Exception as e:
             print(e)
@@ -6152,7 +6688,7 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
     vals = np.real(np.array(vals))
     # Return stuff in the same format as EMRIGenerator for convenience
     dct = {"name": "gg2006",
-           "tracktime": vals[:, 0],
+           "tracktime": vals[:, 0]*(q/true_q)**2,
            "energy": vals[:, 1],
            "phi_momentum": vals[:, 2]*((-1)**flip),
            "carter": vals[:, 3],
@@ -6162,5 +6698,6 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
            "cosi": vals[:, 7]*((-1)**flip),
            "it": vals[:, 8],
            "ot": vals[:, 9],
-           "spin": a*((-1)**flip)}
+           "spin": a*((-1)**flip),
+           "tweak": vals[:, 10]}
     return dct
