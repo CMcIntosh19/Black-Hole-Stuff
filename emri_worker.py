@@ -180,6 +180,7 @@ def make_inspiral_str(cfg):
                 "veltrue": False, 
                 "units": "grav",
                 "verbose": 0,
+                "weird": False,
                 "force_stop": "should_stop"
                 } 
     

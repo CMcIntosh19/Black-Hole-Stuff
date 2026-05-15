@@ -208,7 +208,7 @@ def kerr(state, a):
 def kerr_2(state, a):
     r, theta = state[1], state[2]
     sine, cosi = np.sin(theta), np.cos(theta)
-    cota = cosi/sine if sine != 0.0 else 1e100  # optionally replace with np.inf
+    cota = cosi/sine if abs(sine) >= 1e-15 else cosi/(np.sign(sine)*1e-15)
     rho2, tri = r**2 + (a*cosi)**2, r**2 - 2*r + a**2
     al2 = (rho2*tri)/(rho2*tri + 2*r*(a**2 + r**2))
     w = (2*r*a)/(rho2*tri + 2*r*(a**2 + r**2))
@@ -430,7 +430,25 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         if cons == False:
             print("Non-viable parameters")
         if np.shape(pos) != (4,):
-            pos = [0.0, params[0]*(1 - params[1]**2), np.pi/2, 0.0]
+            E, L, C = cons
+            R = np.array([ E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+            flats = np.roots(np.polyder(R))
+            tick = 0
+            turns = np.sort(np.roots(R))
+            pos = np.array([0.0, 2*turns[-1]*turns[-2]/(turns[-1] + turns[-2]), np.pi/2, 0.0])
+            while np.polyval(R, max(flats)) <= 1e-15:
+                tick += 1
+                if L != 0:
+                    dL = - L * 1e-15
+                    C = max(0.0, C + 2 * C * dL/L)
+                    L += dL
+                else:
+                    C = max(0.0, C - C * 1e-15)
+                R = np.array([ E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
+                flats = np.roots(np.polyder(R))
+                pos = np.array([0.0, max(flats), np.pi/2, 0.0])
+                cons = E, L, C
+
         new = recalc_state3(cons, pos, a)
     else:
         print("Insufficent information provided, have a plunge")
@@ -1199,11 +1217,16 @@ def interpolate(data, time, supress=True):
         r_poly = spi.CubicSpline(time, data[:,0])
         return False
 
+def hav_angle(theta1, phi1, theta2, phi2):
+    dtheta, dphi = theta2 - theta1, phi2 - phi1
+    dist = 0.5*(1 - np.cos(dtheta)) + 0.5*np.sin(theta1)*np.sin(theta2)*(1 - np.cos(dphi))
+    return np.arccos(1 - 2*dist)
+
 def interpolate3(data, time):
     '''
     interpolates coordinate data to be evenly spaced in coordinate time
     Fail state plots time against index twice?
-    automatically sets it to number of phi degrees traversed or length of original data, whichever is shorter
+    automatically sets it to traversed angular distance in degrees (integerized) or length of original data, whichever is shorter
 
     Parameters
     ----------
@@ -1222,7 +1245,7 @@ def interpolate3(data, time):
         M is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
     data = np.array(data)
-    num = int(abs(data[-1, 2] - data[0, 2]) * 180 / np.pi)
+    num = int(np.rad2deg(np.sum(hav_angle(data[:-1,1], data[:-1,2], data[1:,1], data[1:,2]))))
     new_time = np.linspace(time[0], time[-1], min(len(data), num))
     try:
         r_poly = spi.CubicSpline(time, data[:,0])
@@ -1232,7 +1255,7 @@ def interpolate3(data, time):
         return new_data, new_time
     except ValueError:
         fig, ax = plt.subplots(4, 1)
-        ax[0].plot(time)
+        ax[0].plot(np.diff(time))
         ax[1].plot(data[:,0])
         ax[2].plot(data[:,1])
         ax[3].plot(data[:,2])
@@ -2386,34 +2409,50 @@ def peters_integrate6_6_4_6(states, a, mu, ind1, ind2):
         coolquad = traceless_quad(quad)
         dt = np.mean(np.diff(int_time))
         dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
-        ref_r = int_sphere[-5, 0]
+        # Get reference point values - radius and velocity from index 5
+        ref_r = int_sphere[5, 0]
         drdt = np.zeros_like(int_time)
         drdt[1:-1] = (int_sphere[2:, 0] - int_sphere[:-2, 0]) / (int_time[2:] - int_time[:-2])
-        ref_drdt = drdt[-5]
-        r_candidates = int_sphere[:len(int_time)//2, 0]
-        drdt_candidates = drdt[:len(drdt)//2]
-        r_scale = np.std(r_candidates)
-        v_scale = np.std(drdt_candidates)
+        ref_drdt = drdt[5]
+        # Create a phase space mapping of points on the BACK HALF of the orbit
+        #  (exclude the last 5 points, since we want a buffer for the derivative stuff)
+        r_scale = np.std(int_sphere[:,0])
+        v_scale = np.std(drdt[1:-1])
+        r_candidates = int_sphere[len(int_time)//2:-5, 0]
+        drdt_candidates = drdt[len(int_time)//2:-5]
         phase_space_diffs = ((r_candidates - ref_r)/r_scale)**2 + ((drdt_candidates - ref_drdt)/v_scale)**2
-        phase_space_diffs = ((int_sphere[:, 0] - ref_r)/r_scale)**2 + ((drdt - ref_drdt)/v_scale)**2
-
+        # Estimate the radial period
         rad = np.mean(int_sphere[:,0])
         Omega_phi = 1.0 / (rad**1.5 + a)
         Omega_r = Omega_phi * np.sqrt(
             1 - 6/rad + 8*a/(rad**1.5) - 3*a*a/(rad**2)
         )
         T_r = 2*np.pi / Omega_r
-        N = max(1, int(np.ceil(int_time[-1]/T_r)))
-        sorted_ix = np.argsort(phase_space_diffs)   # Sort the indices of the smallest diff values (smallest values first)
-        candidates = sorted_ix[:N]                  # Grab the first N (best N matches)
-        ref_ix = np.min(candidates)                 # Grab the first of the best
+        # Calculate a number of anchor points based on how many radial periods have passed (rounding down)
+        N = max(1, int(np.floor(int_time[-1]/T_r)))
+        #print("N?", N)
+        # Get the indexes of the candidates, sorted by proximity in phase space (and adjust the indexes to match the original data)
+        sorted_ix = np.argsort(phase_space_diffs) + len(int_time)//2
+        # Grab the first N indexes, since these correspond to the best matches
+        candidates = sorted_ix[:N]
+        # Grab the BIGGEST index, since that corresponds to the one FURTHEST from the start and will give us as many full orbits as possible
+        # (with the assumption that it will usually just be one, but could be more)
+        ref_ix = np.max(candidates)                       
+        #plt.plot(int_time + states[0, 0], int_sphere[:,0])
+        #plt.axhline(ref_r, c="k")
+        #plt.scatter(int_time[candidates] + states[0,0], int_sphere[candidates, 0])
+        #plt.show()
 
         #ref_ix = np.argmin(phase_space_diffs)
-        if np.sign(drdt[-5]) != np.sign(drdt[ref_ix]):
-            ref_ix = 5
-        dt2 = dt2[ref_ix:-5]
-        dt3 = dt3[ref_ix:-5]
-        int_time = int_time[ref_ix:-5]        
+        # If the sign of the radial velocity doesn't match (fully in the wrong phase of the orbit)
+        # Just grab index -5 and take basically the whole thing
+        if np.sign(drdt[5]) != np.sign(drdt[ref_ix]):
+            ref_ix = -5
+        dt2 = dt2[5:ref_ix]
+        dt3 = dt3[5:ref_ix]
+        #print("pre_cut int_times", int_time[0], int_time[-1], len(int_time)) 
+        int_time = int_time[5:ref_ix]       
+        #print("int_times", int_time[0], int_time[-1], len(int_time)) 
 
         dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
         dldt = compute_dldt(dt2, dt3)
@@ -2422,10 +2461,118 @@ def peters_integrate6_6_4_6(states, a, mu, ind1, ind2):
         dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)
         #print(dE, dLx, dLy, dLz)
         #print(states[-1,0] - states[0,0])
+        #print(np.array([dE, dLx, dLy, dLz]))
+        #plt.plot(int_time + states[0, 0], dedt)
+        #plt.show()
         return np.array([dE, dLx, dLy, dLz])
     else:
         #print("----------- kaput!")
         return np.array([0.0, 0.0, 0.0, 0.0])
+
+def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, tol):
+    '''
+    Calculates change in characteristic orbital values from path of test particle through space 
+
+    Parameters
+    ----------
+    states : N x 8 numpy array of floats
+        list of state vectors - [4-position, 4-velocity] in geometric units
+    a : int/float
+        dimensionless spin constant of black hole, between 0 and 1 inclusive
+    mu : float
+        mass ratio of test particle to central body
+    ind1 : int
+        index value of the first entry in states relative to the master state list in clean_inspiral
+    ind2 : int
+        index value of the last entry in states relative to the master state list in clean_inspiral
+
+    Returns
+    -------
+     4-element numpy array of floats
+        change in orbital characteristics (energy, cartesian components of L) per unit mass 
+    '''
+    if (ind2 - ind1 - 10) > 2:
+        states = np.array(states)
+        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
+        int_sphere, int_time = interpolate3(sphere, time)
+        div = np.mean(np.diff(int_time))
+        quad = trace_ortholize_njit(int_sphere, a)
+        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+        coolquad = traceless_quad(quad)
+        dt = np.mean(np.diff(int_time))
+        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
+        # Get reference point values - radius and velocity from index 5
+        ref_r = int_sphere[5, 0]
+        drdt = np.zeros_like(int_time)
+        drdt[1:-1] = (int_sphere[2:, 0] - int_sphere[:-2, 0]) / (int_time[2:] - int_time[:-2])
+        ref_drdt = drdt[5]
+        # Create a phase space mapping of points on the BACK HALF of the orbit
+        #  (exclude the last 5 points, since we want a buffer for the derivative stuff)
+        r_scale = np.std(int_sphere[:,0])
+        v_scale = np.std(drdt[1:-1])
+        r_candidates = int_sphere[len(int_time)//2:-5, 0]
+        drdt_candidates = drdt[len(int_time)//2:-5]
+        phase_space_diffs = ((r_candidates - ref_r)/r_scale)**2 + ((drdt_candidates - ref_drdt)/v_scale)**2
+        # Estimate the radial period
+        rad = np.mean(int_sphere[:,0])
+        Omega_phi = 1.0 / (rad**1.5 + a)
+        Omega_r = Omega_phi * np.sqrt(
+            1 - 6/rad + 8*a/(rad**1.5) - 3*a*a/(rad**2)
+        )
+        T_r = 2*np.pi / Omega_r
+        # Calculate a number of anchor points based on how many radial periods have passed (rounding down)
+        N = max(1, int(np.floor(int_time[-1]/T_r)))
+        #print("N?", N)
+        # Get the indexes of the candidates, sorted by proximity in phase space (and adjust the indexes to match the original data)
+        sorted_ix = np.argsort(phase_space_diffs) + len(int_time)//2
+        # Grab the first N indexes, since these correspond to the best matches
+        candidates = sorted_ix[:N]
+        # Grab the BIGGEST index, since that corresponds to the one FURTHEST from the start and will give us as many full orbits as possible
+        # (with the assumption that it will usually just be one, but could be more)
+        ref_ix = np.max(candidates)                       
+        #plt.plot(int_time + states[0, 0], int_sphere[:,0])
+        #plt.axhline(ref_r, c="k")
+        #plt.scatter(int_time[candidates] + states[0,0], int_sphere[candidates, 0])
+        #plt.show()
+
+        #ref_ix = np.argmin(phase_space_diffs)
+        # If the sign of the radial velocity doesn't match (fully in the wrong phase of the orbit)
+        # Just grab index -5 and take basically the whole thing
+        if np.sign(drdt[5]) != np.sign(drdt[ref_ix]):
+            ref_ix = -5
+        dt2 = dt2[5:ref_ix]
+        dt3 = dt3[5:ref_ix]
+        #print("pre_cut int_times", int_time[0], int_time[-1], len(int_time)) 
+        int_time = int_time[5:ref_ix]   
+        int_sphere = int_sphere[5:ref_ix]    
+        #print("int_times", int_time[0], int_time[-1], len(int_time)) 
+
+        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
+        dldt = compute_dldt(dt2, dt3)
+        #print((states[-1,0] - states[0,0]), (int_time[-1] - int_time[0]), "wa")
+        dE = mu*mu*np.sum(dedt*div)
+        dLx, dLy, dLz = mu*mu*np.sum(dldt*div, axis=0)
+
+        E0, L0, C0 = constants
+        if a == 0:
+            z2 = C0/(L0**2 + C0)
+        else:
+            A = (a**2)*(1 - E0**2)
+            sig = A + L0**2 + C0
+            z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
+
+        P = E0*(int_sphere[:, 0]**2 + a*a) - a*L0
+        D = int_sphere[:, 0]*(int_sphere[:, 0] - 2) + a*a
+        if "radial" in label:
+            dC = np.sum(((2*P*(int_sphere[:, 0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:, 2])*div*mu*mu)
+        else:
+            dC = np.sum((-2*a*a*z2*E0*dedt + 2*z2*L0*dldt[:, 2]/(1 - z2))*div*mu*mu)
+        E, L, C = E0 + dE, L0 + dLz, C0 + dC
+        new_state = recalc_state3([E, L, C], state, a, tol=tol)
+        return new_state, np.array([E, L, C])
+    else:
+        #print("----------- kaput!")
+        return state, constants
 
 def peters_integrate6_6_5(states, a, mu, ind1, ind2):
     '''
@@ -6331,7 +6478,7 @@ def peters_sim_re(a, q, cons=False, params=False, endflag="False"):
 
     # A way to track our progress so we don't get bored out of our minds
     sep_stuff = get_sep_inc(a, inc)
-    line = np.polyfit(sep_stuff["p"], sep_stuff["e"], 1)
+    line = np.polyfit(sep_stuff["p"][:len(sep_stuff["p"])//2], sep_stuff["e"][:len(sep_stuff["p"])//2], 1)
     pbar = tqdm(total = 10000, position=0)
     pbar.set_postfix_str(f"Semilat: {r0*(1 - e**2):.4f}, Ecc {e:.4f}, Peri: {r0*(1 - e):.4f}")
     prog = 0
@@ -6378,7 +6525,7 @@ def peters_sim_re(a, q, cons=False, params=False, endflag="False"):
             vals.append([vals[-1][0] + dt, E, L, C, r0, e, Ep, Lp])
             # Make the step size a little bigger, just as a treat
             dt *= 1.001
-        except KeyboardInterrupt:
+        except:
             break
     pbar.close()
     vals = np.real(np.array(vals))

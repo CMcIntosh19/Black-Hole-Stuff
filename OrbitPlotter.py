@@ -312,7 +312,7 @@ def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xs
     else:
         plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
 
-def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, end=False, xscale='linear', yscale='linear', filename=False, derv=0, grid=False):
+def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=None, polyfit=False, start=False, end=False, xscale='linear', yscale='linear', filename=False, derv=0, grid=False):
     '''
     Parameters
     ----------
@@ -322,8 +322,10 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
         variable to plot along the x-axis. Defaults to time
     yvalue : string, optional
         variable to plot along the y-axis. Defaults to semimajor axis
-    linefit : bool, optional
-        toggle linear fitting. Defaults to True
+    legend : bool, optional
+        toggle legend, defaults to True
+    polyfit : int/bool
+        toggle fitting to a n-th degree polynomial, defaults to False/0
     start : bool/int, optional
         desired starting value of xvalue. The default is False, which corresponds to the initial value
     end : bool/int, optional
@@ -346,8 +348,15 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
     # Hadn't even considered it until now
     # Actually it's all based on the central body so?? Shut up??
     
+    polyfit = int(polyfit)
     if type(datalist) != list:
         datalist = [datalist]
+
+    if not select_legend:
+        select_legend = np.arange(len(datalist))
+    select_legend = np.array(select_legend)
+    select_legend = np.where(select_legend < 0, select_legend + len(datalist), select_legend)
+
     fig, ax = plt.subplots()
     colors = list(mcolors.TABLEAU_COLORS)
     for thing in range(len(datalist)):
@@ -426,21 +435,23 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
                 except:
                     print("Could not calculate derivative! Maybe use a different x value?")
                     title_add = ""
-            try:
-                if len(xvals > 1):
-                    ax.plot(xvals, yvals, color=colors[thing%len(colors)])
+            try: 
+                lab_add = ""
+                if polyfit:
+                    try:
+                        stuff = np.polyfit(xvals, yvals, polyfit)
+                        ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", color=colors[thing%len(colors)])
+                        lab_add = ": {res:.3e}".format(res=stuff[0])
+                    except:
+                        print(f"Could not plot linear fit for {datalist[thing]['name']}")
+                if len(xvals) > 1:
+                    ax.plot(xvals, yvals, color=colors[thing%len(colors)], label = (data["name"] + lab_add if thing in select_legend else None))
                 else:
-                    ax.scatter(xvals, yvals, color=colors[thing%len(colors)])
+                    ax.scatter(xvals, yvals, color=colors[thing%len(colors)], label = (data["name"] + lab_add if thing in select_legend else None))
             except Exception as e:
                 print(e)
                 ax.plot(np.real(xvals), np.real(yvals), color=colors[thing%len(colors)])
-            if linefit == True:
-                try:
-                    stuff = np.polyfit(xvals, yvals, 1)
-                    ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[thing%len(colors)])
-                    ax.legend(title="Linear Fit")
-                except:
-                    print(f"Could not plot linear fit for {datalist[thing]["name"]}")
+            
         
         else:
             print("Not a valid plottable. Chose one of the following:")
@@ -453,6 +464,12 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", linefit=True, start=False, 
     ax.set_title(title+title_add)
     if grid:
         plt.grid()
+
+    if legend:
+        leg_add = ""
+        if polyfit:
+            leg_add = f" (with Leading {polyfit}-degree fit)"
+        ax.legend(title="Datasets")
     
     if not filename:
         plt.show()

@@ -25,6 +25,7 @@ from dataclasses import dataclass
 import operator
 import traceback
 import matplotlib.pyplot as plt
+import warnings
 
 def getEnergy(state, a):
     '''
@@ -115,7 +116,7 @@ def getCons_3(state, a):
         for j in range(4):
             temp += kill[i, j] * u[i] * u[j]
 
-    cart = temp - (a * ene - Lz)**2
+    cart = max(0.0, temp - (a * ene - Lz)**2)
 
     # interval = g_{ij} u^i u^j
     interval = 0.0
@@ -216,6 +217,36 @@ def new_rot(vec, angle):
     new_th_t = -(-th_t*st*ca + (th_t*ct*sp + ph_t*st*cp)*sa)*((1 - (ct*ca+st*sp*sa)**2)**(-1/2))
     new_ph_p = (ph_t*(ca/(cp**2)) + (th_t/st - ph_t*ct*sp/cp)*(sa/(st*cp)))/(gam**2 + 1)
     return np.array([t, r, new_th, new_ph, t_t, r_t, new_th_t, new_ph_p])
+
+def hav_ang(state1, state2):
+    # Returns angular distance between two points projected onto a unit sphere
+    theta1, phi1 = state1[2:4]
+    theta2, phi2 = state2[2:4]
+    dist = 0.5*(1 - np.cos(theta2 - theta1)) + np.sin(theta1)*np.sin(theta2)*0.5*(1 - np.cos(phi2 - phi1))
+    return np.arccos(1 - 2*dist)
+
+def hav_ang_vel(state1, state2, a):
+    # Returns rate of change of angular distance between two points projected onto a unit sphere (should be d(ang)/d(Tau))
+    cart1, cart2 = new_sph2cart(state1, a), new_sph2cart(state2, a)
+    cart1 /= np.linalg.norm(cart1[1:4])
+    cart2 /= np.linalg.norm(cart2[1:4])
+    return np.dot(cart2[1:4] - cart1[1:4], cart2[5:] - cart1[5:])/np.linalg.norm(cart2 - cart1)
+    theta1, phi1 = state1[2:4]
+    theta2, phi2 = state2[2:4]
+    theta_dot1, phi_dot1 = state1[6:]
+    theta_dot2, phi_dot2 = state2[6:]
+    print(f"points! ({np.rad2deg(theta1):.4e}, {np.rad2deg(phi1):.4e}), ({np.rad2deg(theta2):.4e}, {np.rad2deg(phi2):.4e})")
+    print(f"dists! dth = {np.rad2deg(theta2 - theta1):.4e}, dph = {np.rad2deg(phi2 - phi1):.4e}")
+    print(f"vels! ({np.rad2deg(theta_dot1):.4e}, {np.rad2deg(phi_dot1):.4e}), ({np.rad2deg(theta_dot2):.4e}, {np.rad2deg(phi_dot2):.4e})")
+    print(f"diffs! dth = {np.rad2deg(theta_dot2 - theta_dot1):.4e}, dph = {np.rad2deg(phi_dot2 - phi_dot1):.4e}")
+    ang = hav_ang(state1, state2)
+    if ang < 1e-12:
+        return 
+    H_vel = 0.5*(theta_dot2 - theta_dot1)*np.sin(theta2 - theta1)
+    H_vel += theta_dot1*np.cos(theta1)*np.sin(theta2)*0.5*(1 - np.cos(phi2 - phi1))
+    H_vel += theta_dot2*np.sin(theta1)*np.cos(theta2)*0.5*(1 - np.cos(phi2 - phi1))
+    H_vel += -np.sin(theta1)*np.sin(theta2)*0.5*(phi_dot2 - phi_dot1)*np.sin(phi2 - phi1)
+    return 2 * H_vel /np.sin(hav_ang(state1, state2))
 
 @njit
 def fast_err_with_constants(state1, state2, a):
@@ -482,7 +513,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     if (np.shape(veltrue) == (4,)) and (np.shape(pos) == (4,)):
         all_states[0] = np.array([*pos, *veltrue])
     else:
-        if verbose == True:
+        if verbose:
             print("Normalizing initial state")
         all_states[0], cons = mm.set_u_kerr(a, cons, velorient, vel4, params, pos)      #normalize initial state so it's actually physical
     
@@ -739,8 +770,9 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     ctx = EndContext(i, all_states, true_anom, tracker, j)
     ctx.last_chunk = np.asarray(all_states)
     start_val, ctx_val = getval(ctx), getval(ctx)
-    
-    while not(ctx_val and op(ctx_val, threshold)) and (i < 10**7 or override):
+    trigger = False
+    wonky_test = 0
+    while not(ctx_val and op(ctx_val, threshold)) and (i < 1e7 or override):
         try:
             update = False
             condate = False
@@ -768,10 +800,11 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
 
             #Runge-Kutta update using geodesic
             old_dTau = dTau
-            skip = False
             rkcount = time.perf_counter()
             counter = 0
-            while ((err_calc >= err_target) or (first == True)) and (skip == False):
+
+            while (err_calc >= err_target) or (first == True):
+                #print("yoooo?????")
                 counter += 1
                 if counter%20 == 0:
                     print(f"A lot! {counter} {err_calc}")
@@ -787,25 +820,187 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                 else:
                     new_step = mm.gen_RK2(*mm.ck4_2, mm.kerr_2, state, dTau, a)
                     step_check = mm.gen_RK2(*mm.ck5_2, mm.kerr_2, state, dTau, a) 
+
                 if "ridic" in label:
                     new_step = mm.recalc_state(constants[j], new_step, a)
                     step_check = mm.recalc_state(constants[j], step_check, a)
                 # Calculate the error
                 if weird == False:
-                    #delt = new_step[1:3] - step_check[1:3]
-                    #delt = np.concatenate((delt, new_step[4:] - step_check[4:]))
-                    #mod_r = np.array([*new_step[1:3], *new_step[4:]])
-                    #err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
+                    delt = new_step - step_check
+                    delt = np.concatenate((delt[1:3], delt[4:]))
+                    mod_r = np.concatenate([new_step[1:3], new_step[4:]])
+                    err_calc = np.sqrt(np.dot(delt, delt)/np.dot(mod_r, mod_r))
                     ###
-                    err_calc = new_step[1:3] - step_check[1:3]
-                    err_calc = np.concatenate((err_calc, new_step[4:] - step_check[4:]))
-                    mod_r = np.array([*new_step[1:3], *new_step[4:]])
-                    err_calc = np.sqrt(np.dot(err_calc, err_calc)/np.dot(mod_r, mod_r))
-
+                    #err_calc = (new_step - step_check)[1:]
+                    #err_calc = np.sqrt(np.dot(err_calc, err_calc)/np.dot(new_step[1:], new_step[1:]))
                 else:
                     new_cons = getCons_3(new_step, a)
                     check_cons = getCons_3(step_check, a)
-                    if weird == 10:
+                    if weird == 19:
+                        err_calc = new_step - step_check
+                        #print(i, counter, [f"{thing:.5e}" for thing in err_calc], np.argmax(np.abs(err_calc)) if np.linalg.norm(err_calc) > 0 else "nan", "t", f"{dTau:.4e}")
+                        err_calc = np.linalg.norm(err_calc)
+                    if weird == 20:
+                        delt = new_step - step_check
+                        err_calc = np.concatenate((delt[1:3], delt[4:]))
+                        #print(i, counter, [f"{thing:.5e}" for thing in err_calc], np.argmax(np.abs(err_calc)) if np.linalg.norm(err_calc) > 0 else "nan", "t", f"{dTau:.4e}")
+                        err_calc = np.linalg.norm(err_calc)
+                    if weird == 21:
+                        err_calc = new_step - step_check
+                        #print(i, counter, [f"{thing:.5e}" for thing in err_calc], np.argmax(np.abs(err_calc)) if np.linalg.norm(err_calc) > 0 else "nan", "t", f"{dTau:.4e}")
+                        err_calc = np.linalg.norm(err_calc[np.array([1,2,3,5,6,7])])
+                    if weird == 22:
+                        err_calc = new_step - step_check
+                        #print(i, counter, [f"{thing:.5e}" for thing in err_calc], np.argmax(np.abs(err_calc)) if np.linalg.norm(err_calc) > 0 else "nan", "t", f"{dTau:.4e}")
+                        err_calc[2] *= state[1]
+                        err_calc[3] *= state[1]*np.sin(state[2])
+                        err_calc[6] *= state[1]
+                        err_calc[7] *= state[1]*np.sin(state[2])
+                        err_calc = np.linalg.norm(err_calc[1:])
+                    if weird == 23:
+                        err_calc = new_step - step_check
+                        #print(i, counter, [f"{thing:.5e}" for thing in err_calc], np.argmax(np.abs(err_calc)) if np.linalg.norm(err_calc) > 0 else "nan", "t", f"{dTau:.4e}")
+                        err_calc[2] *= state[1]
+                        err_calc[3] *= state[1]*np.sin(state[2])
+                        err_calc[6] *= state[1]
+                        err_calc[7] *= state[1]*np.sin(state[2])
+                        err_calc = np.linalg.norm(err_calc[np.array([1,2,3,5,6,7])])
+                    if weird == 24:
+                        delt = new_step - step_check
+                        err_calc = np.concatenate((delt[1:3], delt[4:]))
+                        err_calc = np.linalg.norm(err_calc/6)
+
+                    elif weird == 14:
+                        new_cart, check_cart = new_sph2cart(new_step, a), new_sph2cart(step_check, a)
+                        err_calc = check_cart - new_cart
+                        denom = np.maximum(np.abs(new_cart), np.abs(check_cart))
+                        sig = state[1]**2 + (a*np.cos(state[2]))**2
+                        denom[0] = (1 - 2*state[1]/sig)
+                        err_calc /= denom
+                        print(i, [f"{thing:.2e}" for thing in err_calc], np.argmax(np.abs(err_calc)) if np.linalg.norm(err_calc) > 0 else "nan")
+                        err_calc = np.sqrt(np.sum(err_calc**2)/8)
+                    elif weird == 15:
+                        #new_cart, check_cart = new_sph2cart(new_step, a), new_sph2cart(step_check, a)
+                        diff = step_check - new_step
+                        err_calc = np.copy(diff)[:6]
+                        err_calc[:2] = diff[:2]
+                        err_calc[3:5] = diff[4:6]
+                        #print(new_step, step_check, state[1])
+                        #print(hav_ang(new_step, step_check))
+                        err_calc[2] = hav_ang(new_step, step_check)*state[1]
+                        err_calc[5] = hav_ang_vel(new_step, step_check, a)*state[1]
+                        denom = np.copy(err_calc)
+                        denom_stuff = np.maximum(np.abs(new_step), np.abs(step_check))
+                        sig = state[1]**2 + (a*np.cos(state[2]))**2
+                        # Things to divide by
+                        denom[0] = (1 - 2*state[1]/sig)      # (difference in t)/time thingy in the metric
+                        denom[1] = denom_stuff[1]            # (difference in r)/The biggest r
+                        denom[2] = denom_stuff[1]            # r(haversine distance)/the biggest r
+                        denom[3:5] = denom_stuff[4:6]        # (difference in [t_dot, r_dot])/the biggest [t_dot/r_dot]
+                        denom[5] = denom_stuff[5]            # r(haversine velocity)/the biggest r_dot
+                        #print(err_calc)
+                        err_calc /= denom
+                        #print(err_calc)
+                        err_calc = np.sqrt(np.sum(err_calc**2)/6)
+                        #print(err_calc)
+                        #print("---")
+                    elif weird == 16:
+                        # --- differences (s5 - s4) ---
+                        diff = step_check - new_step
+
+                        # --- build scaling (atol + rtol * |value|) ---
+                        rtol = 1e-6
+                        atol = np.array([
+                            0.0,        # time (ignore absolute scale)
+                            1e-9,       # r
+                            1e-9,       # theta
+                            0.0,        # phi (pure relative)
+                            1e-12,      # t_dot
+                            1e-12,      # r_dot
+                            1e-12,      # theta_dot
+                            1e-12       # phi_dot
+                        ])
+
+                        scale = atol + rtol * np.maximum(np.abs(new_step), np.abs(step_check))
+
+                        # --- avoid divide-by-zero ---
+                        scale[scale == 0] = 1.0
+
+                        # --- downweight problematic / less physical components ---
+                        weights = np.array([
+                            0.0,  # time
+                            1.0,  # r
+                            1.0,  # theta
+                            0.2,  # phi
+                            0.1,  # t_dot
+                            0.5,  # r_dot
+                            0.5,  # theta_dot
+                            0.2   # phi_dot
+                        ])
+
+                        # --- scaled error ---
+                        err_vec = weights * (diff / scale)
+
+                        # --- RMS norm ---
+                        err_calc = np.sqrt(np.sum(err_vec**2) / np.sum(weights > 0))
+                        #print(err_calc, f"{dTau:.4e}", err_vec)
+                    elif weird == 17:
+                        # These both give [Energy (E), Axial Angular momentum (L), Carter constant (C), mass shell (should be -1)]
+                        step_cons = getCons_3(new_step, a).astype(complex)
+                        check_cons = getCons_3(step_check, a).astype(complex)
+                        # L and C can both equal 0, which makes the error look real bad
+                        # replace them with total magnitude and cosine of a complex angle, neither of which should ever be 0?
+                        #print("----", step_cons)
+                        #print(step_cons[1] + np.sqrt(step_cons[2])*(1j), step_cons[1], step_cons[2])
+                        step_cons[1] = np.sqrt(step_cons[1]**2 + step_cons[2])
+                        step_cons[2] = (step_cons[1] + np.sqrt(step_cons[2])*(1.0j))/np.sqrt(step_cons[1]**2 + step_cons[2])
+                        check_cons[1] = np.sqrt(check_cons[1]**2 + check_cons[2])
+                        check_cons[2] = (check_cons[1] + np.sqrt(check_cons[2])*(1.0j))/np.sqrt(check_cons[1]**2 + check_cons[2])
+
+                        err_calc = np.linalg.norm((step_cons - check_cons)/step_cons)
+                    elif weird == 18:
+                        # These both give [Energy (E), Axial Angular momentum (L), Carter constant (C), mass shell (should be -1)]
+                        step_cons = getCons_3(new_step, a).astype(complex)
+                        if i == tracker[-1][-1] + 1:
+                            check_cons = getCons_3(step_check, a).astype(complex)
+                        else:
+                            check_cons = getCons_3(state, a).astype(complex)
+                        # L and C can both equal 0, which makes the error look real bad
+                        # replace them with total magnitude and cosine of a complex angle, neither of which should ever be 0?
+                        step_cons[1] = np.sqrt(step_cons[1]**2 + step_cons[2])
+                        step_cons[2] = (step_cons[1] + np.sqrt(step_cons[2])*(1.0j))/np.sqrt(step_cons[1]**2 + step_cons[2])
+                        check_cons[1] = np.sqrt(check_cons[1]**2 + check_cons[2])
+                        check_cons[2] = (check_cons[1] + np.sqrt(check_cons[2])*(1.0j))/np.sqrt(check_cons[1]**2 + check_cons[2])
+
+                        err_calc = np.linalg.norm((step_cons - check_cons)/step_cons)
+                        
+                    elif weird == 11:
+                        # Change from state
+                        new_delt, check_delt = new_step - state, step_check - state
+                        err_calc = 1 - np.sqrt((np.dot(new_delt, check_delt))/np.dot(new_delt, new_delt))
+                        #print(i, dTau, np.dot(new_delt/dTau, new_delt/dTau), err_calc, err_calc >= err_target)
+                        #print(np.sum(new_step - state), np.sum(step_check - state))
+                    elif weird == 12:
+                        # Change from state + combine angles
+                        new_delt_hold, check_delt_hold = new_step - state, step_check - state
+                        new_delt, check_delt = np.arange(6), np.arange(6)
+                        new_delt[:2], check_delt[:2] = new_delt_hold[:2], check_delt_hold[:2]
+                        new_delt[3:5], check_delt[3:5] = new_delt_hold[4:6], check_delt_hold[4:6]
+                        state_cart, new_cart, check_cart = new_sph2cart(state, a)/dTau, new_sph2cart(new_step, a)/dTau, new_sph2cart(step_check, a)/dTau
+                        new_delt[2] = np.arccos(np.dot(state_cart[1:4], new_cart[1:4])/(np.linalg.norm(state_cart[1:4])*np.linalg.norm(new_cart[1:4])))
+                        check_delt[2] = np.arccos(np.dot(state_cart[1:4], check_cart[1:4])/(np.linalg.norm(state_cart[1:4])*np.linalg.norm(check_cart[1:4])))
+                        new_delt[5] =  np.arccos(np.dot(state_cart[5:8], new_cart[1:4])/(np.linalg.norm(state_cart[5:8])*np.linalg.norm(new_cart[1:4])))
+                        new_delt[5] += np.arccos(np.dot(state_cart[1:4], new_cart[5:8])/(np.linalg.norm(state_cart[1:4])*np.linalg.norm(new_cart[4:8])))
+                        new_delt[5] *= -(1/np.sqrt(1 - new_delt[2]**2))
+                        check_delt[5] =  np.arccos(np.dot(state_cart[5:8], check_cart[1:4])/(np.linalg.norm(state_cart[5:8])*np.linalg.norm(check_cart[1:4])))
+                        check_delt[5] += np.arccos(np.dot(state_cart[1:4], check_cart[5:8])/(np.linalg.norm(state_cart[1:4])*np.linalg.norm(check_cart[4:8])))
+                        check_delt[5] *= -(1/np.sqrt(1 - check_delt[2]**2))
+                        err_calc = 1 - np.sqrt((np.dot(new_delt, check_delt))/np.dot(new_delt, new_delt))
+                    elif weird == 13:
+                        # change from state (cartesian)
+                        new_delt, check_delt = new_sph2cart(new_step, a) - new_sph2cart(state, a), new_sph2cart(step_check, a) - new_sph2cart(state, a)
+                        err_calc = 1 - np.sqrt((np.dot(new_delt, check_delt))/np.dot(new_delt, new_delt))
+                    elif weird == 10:
                         new_step = np.array(new_step)
                         step_check = np.array(step_check)
                         state = np.array(state)
@@ -841,7 +1036,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                         # For example: 50% coords, 50% velocities
                         weights = np.array([1,1,1,1,2,2,2,2])  # simple weighting, adjust as desired
                         err_calc = np.sqrt(np.sum(weights * frac_err**2) / np.sum(weights))
-                    if weird == 1:
+                    elif weird == 1:
                         new_cons = np.array([new_cons[0], np.sqrt(new_cons[1]**2 + abs(new_cons[2])), np.pi + np.arccos(new_cons[1]/np.sqrt(new_cons[1]**2 + abs(new_cons[2])))])
                         check_cons = np.array([check_cons[0], np.sqrt(check_cons[1]**2 + abs(check_cons[2])), np.pi + np.arccos(check_cons[1]/np.sqrt(check_cons[1]**2 + abs(check_cons[2])))])
                         err_calc = np.linalg.norm((new_cons - check_cons)/new_cons)
@@ -916,14 +1111,16 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     dTau = dTau*abs((new_step[0] - state[0])/(old_step - state[0]))
                 '''
                 # if ((within ~0.5 degrees of pole) and (moving closer to pole)) and (average of last few dTau_change values is much smaller than the average):
-                if ((np.sin(new_step[2])**2 <= 8e-5) and np.sign(new_step[6]*np.cos(new_step[2])) < 0) and (np.mean(np.diff(dTau_change[-10:])) <= 0.001*np.mean(np.diff(dTau_change))):
+                if ((np.sin(new_step[2]) <= 0.009) and np.sign(new_step[6]*np.cos(new_step[2])) < 0) and (np.mean(np.diff(dTau_change[-10:])) <= 0.001*np.mean(np.diff(dTau_change))):
+                    #print(new_step)
+                    #print("here?", i, counter, new_step[2], new_step[6])
                     old_step = new_step
                     # inc is the minimum value of theta, pretend the particle is traveling on a straight line between
                     # current theta value and inc, then flash to the other side (same theta). Find phi!
-                    k = abs(inc)/new_step[2] if new_step[2] < np.pi/2 else abs(inc)/(np.pi - new_step[2])
+                    k = abs(inc)/min((np.pi - new_step[2]), new_step[2])
                     if k == 0.0:
                         # Orbit is polar!
-                        phi_dist = np.pi/2
+                        phi_dist = np.pi/2 if new_step[7] >= 0.0 else -np.pi/2
                     else:
                         cosp, sinp = np.cos(new_step[3]), np.sin(new_step[3])
                         m = (cosp*sinp + np.array([1, -1])*k*np.sqrt(1 - k*k))/(cosp**2 - k*k)
@@ -936,29 +1133,37 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                         phi_dist = 2*min(abs(phi_min - old_step[3]%(2*np.pi)))*np.sign(old_step[7])
                     new_step[3] += phi_dist
                     # Estimate the elapsed time as d(phi)/phi_dot
-                    t_change = phi_dist/new_step[7]
-                    if np.isnan(t_change):
-                        # Same polar issue
-                        t_change = 2*old_step[2]/old_step[6]
+                    t_change = 2 * min((np.pi - new_step[2]), new_step[2]) / abs(new_step[6])
                     new_step[0] += t_change
                     # Scale up dTau so we aren't liars
                     dTau = dTau*(new_step[0] - state[0])/(old_step[0] - state[0])
                     # Flip the sign on theta_dot so now it's moving away from the pole
                     new_step[6] *= -1
+                    #print(new_step)
                     #THIS IS STILL FUCKED TEST THIS
         
                 # Get new dTau value 
+                #if np.isnan(err_calc) or err_calc < 0:
+                #    print("FAWK")
+                #    err_calc = 1
                 old_dTau, dTau = dTau, np.sign(dTau)*min(abs(dTau) * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04)
+                #print("(err_calc >= err_target) or (first == True)")
+                #print(f"({err_calc >= err_target}) or ({first == True})")
+                #print("WHAT", abs(dTau) * abs(err_target / (err_calc + (err_target/100)))**(0.2), 2*np.pi*(state[1]**(1.5))*0.04
                 if "stupid" in label and (np.mean(dTau_change[-10:]) <= 0.001*np.mean(dTau_change)):
                     dTau *= 10
                 if ((-1)**("dumb" in label))*dTau <= 0.0:
                     err_calc = 1
-                    print("a")
+                    print(dTau)
+                    print("a womp")
                     dTau = old_dTau
                 if ((-1)**("dumb" in label))*(new_step[0] - state[0]) < 0:
                     err_calc = 1
+                    print(state)
+                    print(new_step)
+                    print("--")
+                    print("b", dTau, new_step[0] - state[0], i, counter)
                     dTau = 10*abs(old_dTau)
-                    print("b")
                 if new_step[0] - state[0] > 100 and new_step[0] - state[0] < 100:
                     print("what the hell??")
                     print(dTau)
@@ -975,11 +1180,16 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     print("d", new_step, step_check, err_calc, dTau, state, old_dTau)
                     err_calc = 1
                     dTau = old_dTau*0.9
-                if np.isnan(dTau):
-                    dTau = 0.1*np.abs(np.real((inner_turn/200)**(2)))
-                    
+                if np.isnan(err_calc):
+                    #print("you??")
+                    dTau = old_dTau * (10**counter)
+                    err_calc = 1
+                    #dTau = 0.1*np.abs(np.real((inner_turn/200)**(2)))   
                 first = False
-            
+                #print(f"({err_calc >= err_target}) or ({first == True}) = ")
+            #print(f"({err_calc >= err_target}) or ({first == True}), ----")
+            #if weird:
+            #    print(i, f"---------{counter}---")
             metric = mm.kerr(new_step, a)[0]
             test = mm.check_interval_w_metric(metric, new_step, a)
             looper = 0
@@ -1022,197 +1232,183 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             #S1, S2 = get_true_anom(state, R0, ECC), get_true_anom(new_step, R0, ECC)
             # if (chosen trigger evals true) AND (it has been at least half a period since the last constant modification)
             #if ((S2-comph) > 0 and (comph-S1) > 0) and i - int(tracker[j][-1]) > 10:
-            if ((state[1] > POT_MIN and new_step[1] <= POT_MIN) and new_step[0] - tracker[j][-2] > PERIOD*0.75) or (new_step[0] - tracker[j][-2] > PERIOD and ((new_step[5] - state[5] >= 0 and all_states[i-1][5] - state[5] > 0) and new_step[1] < state[1])):
-                #print(f"(({state[1] > POT_MIN and new_step[1] <= POT_MIN}) and {new_step[0] - tracker[j][-2] > PERIOD*0.75}) or ({new_step[0] - tracker[j][-2] > PERIOD*5} and ({new_step[5] - state[5] >= 0 and all_states[i-1][5] - state[5] > 0} and {new_step[1] < state[1]} )), period = {PERIOD}")
-                #print(f"dong! index = {i}")
-                #print(i, state[1], POT_MIN, new_step[1])
+
+            if i%50 == 0:
                 if force_stop is not None:
                     if force_stop():
                         raise KeyboardInterrupt
-                energy, lmom, cart = constants[j]
-                cos_th = np.cos(new_step[2])
-                Theta = cart - cos_th**2 * (cart + a**2 * (1 - energy**2) + lmom**2) + a**2 * (1 - energy**2) * (cos_th)**4
-                if skip_count >= skip_tar and abs(Theta) >= err_target * cart / (cart + lmom*lmom + a*a*(1 - energy*energy)):  #Allows you to average over some integer number of orbit
-                    #print(f"ping! index = {i}, cons = {energy}, {lmom}, {cart}")
-                    skip_count = 0
-                    update = True
-                    concount = time.perf_counter()
-                    if ( np.sign(new_step[1] - pot_min) != orbitside):
-                        orbitside *= -1
-                    if mu == 0.0:
-                        mu = 1e-100
-                    condate = True
-                    if "differy" in label:
-                        new_step_hold, ch_cons = mm.peters_integrate_differential(all_states[int(tracker[j][-1]):i], a, mu,
-                                                                                constants[j], new_step, ctx.j, i)
-                    elif "differo" in label:
-                        new_step_hold, ch_cons = mm.peters_integrate_differential2(all_states[int(tracker[j][-1]):i], a, mu,
-                                                                                constants[j], new_step, ctx.j, i)
-                    elif "differa" in label:
-                        new_step_hold, ch_cons = mm.peters_integrate_differential3(all_states[int(tracker[j][-1]):i], a, mu,
-                                                                                constants[j], new_step, ctx.j, i)
-                    elif "differe" in label:
-                        new_step_hold, ch_cons = mm.peters_integrate_differential4(all_states[int(tracker[j][-1]):i], a, mu,
-                                                                                constants[j], new_step, ctx.j, i)
-                    elif "differu" in label:
-                        new_step_hold, ch_cons = mm.peters_integrate_differential5(all_states[int(tracker[j][-1]) - 20:i], a, mu,
-                                                                                constants[j], new_step, ctx.j - 20, i)
-                    else:
-                        if "mark1" in label:
-                            dcons = mm.peters_integrate6_6_4_2(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                        elif "mark2" in label:
-                            dcons = mm.peters_integrate6_6_4_3(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                        elif "mark3" in label:
-                            dcons = mm.peters_integrate6_6_4_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                        elif "mark4" in label:
-                            dcons = mm.peters_integrate6_6_4_5(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                        elif "mark5" in label:
-                            dcons = mm.peters_integrate6_6_4_6(all_states[max(int(tracker[j][-1]) - 20, 0):i], a, mu, ctx.j - 20, i)
-                        else:
-                            dcons = mm.peters_integrate6_6_4(all_states[int(tracker[j][-1]):i], a, mu, ctx.j, i)
-                        if "dumb" in label:
-                            dcons *= -1
-                        if "hoopa" in label:
-                            new_step_hold, ch_cons = mm.new_recalc_state8(constants[j], dcons, new_step, a)
-                        elif "chatty" in label:
-                            new_step_hold, ch_cons = mm.new_recalc_state9k(constants[j], dcons, new_step, a)
-                        elif "hooper" in label:
-                            new_step_hold, ch_cons = mm.new_recalc_state8b(constants[j], dcons, new_step, a)
-                        elif "hoopla" in label:
-                            new_step_hold, ch_cons = mm.new_recalc_state8c(constants[j], dcons, new_step, a)
-                        elif "power" in label:
-                            new_step_hold, ch_cons = mm.new_recalc_state9j(constants[j], dcons, new_step, a)
-                        elif "zampow" in label:
-                            new_step_hold, ch_cons = mm.new_recalc_state9m(constants[j], dcons, new_step, a, ECC)
-                        elif "sketchy" in label:
-                            new_step_hold, ch_cons = mm.new_recalc_state9n(constants[j], dcons, new_step, a)
-                        else:
-                            new_step_hold, ch_cons = mm.new_recalc_state9l(constants[j], dcons, new_step, a, err_target)
+            
+            if trigger == False and (((state[1] > POT_MIN and new_step[1] <= POT_MIN) and new_step[0] - tracker[j][-2] > PERIOD*0.75) or (new_step[0] - tracker[j][-2] > PERIOD*2 and ((new_step[5] - state[5] >= 0 and all_states[i-1][5] - state[5] > 0) and new_step[1] < state[1]))):
+                #register the spot where we cross pot_min
+                trigger = True
+                tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
 
-                    
-                    if radial_fail == 0 and new_step_hold is False:
-                        #Radial issue, actual problem
-                        E_hold, L_hold, C_hold = constants[j]
-                        sep_cosi = mm.get_sep_cosi(a, L_hold/np.sqrt(L_hold*L_hold + C_hold), 100)
-                        circ_ixs = np.where(sep_cosi["e"] == 0.0)
-                        circEs, circLs, circCs, circrs = sep_cosi["energy"][circ_ixs], sep_cosi["phi_momentum"][circ_ixs], sep_cosi["carter"][circ_ixs], sep_cosi["p"][circ_ixs]
-                        radial_fail = 1
+            if (trigger == True) and abs(new_step[0] - tracker[-1][-2]) > 0.03*PERIOD:
+                #register when we've gone 1% of a radial orbit past pot_min
+                trigger = False
+                concount = time.perf_counter()
+                update = True
+                if mu == 0.0:
+                    mu = 1e-100
+                condate = True
+                if np.sign(new_step[1] - pot_min) != orbitside:
+                    orbitside *= -1
+                if force_stop is not None:
+                    if force_stop():
+                        raise KeyboardInterrupt
+                #print("thingy!", all_states[tracker[j][-1]], all_states[-1], a, mu, ctx.j, j, i)
+                if "mark5" in label:
+                    dcons = mm.peters_integrate6_6_4_6(all_states[tracker[j][-1]:], a, mu, ctx.j, i)
+                    new_step_hold, ch_cons = mm.new_recalc_state9l(constants[j], dcons, all_states[tracker[-1][-1]], a, err_target)
+                else:
+                    new_step_hold, ch_cons = mm.peters_integrate6_6_4_7(all_states[tracker[j][-1]:], a, mu, ctx.j, i, all_states[tracker[-1][-1]], constants[j], label, err_target)
 
-                    if radial_fail == 1 and new_step_hold is False:
-                        #print("------")
-                        #ixs = np.sort(np.argsort(np.abs(circEs - ch_cons[0]))[:4])
-                        #ch_cons[1] = np.polyval(np.polyfit(circEs[ixs], circLs[ixs], 3), ch_cons[0])
-                        #ch_cons[2] = np.polyval(np.polyfit(circEs[ixs], circCs[ixs], 3), ch_cons[0])
-                        ix1, ix2 = np.sort(np.argsort(np.abs(circEs - ch_cons[0]))[:2])
-                        con_frac = (ch_cons[0] - circEs[ix2])/(circEs[ix1] - circEs[ix2])
-                        ch_cons[1] = (1 - con_frac)*circLs[ix2] + con_frac*circLs[ix1]
-                        ch_cons[2] = (1 - con_frac)*circCs[ix2] + con_frac*circCs[ix1]
-                        gorp = np.array([ ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
-                        tick = 0
-                        rooty = np.sort(np.roots(gorp))
-                        while True in np.iscomplex(rooty[-2:]):
-                            tick += 1
-                            dL = - ch_cons[1] * 1e-10
-                            ch_cons[2] += 2 * ch_cons[2] * dL/ch_cons[1]
-                            ch_cons[1] += dL
-                            gorp = np.array([ ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
-                            rooty = np.sort(np.roots(gorp))
-                        #print("waaa??", np.roots(gorp))
-                        #print(new_step[1], rooty[-2] <= new_step[1] <= rooty[-1])
-                        #print("tick", tick)
-                        #print("what, you ecc?", (rooty[-1] - rooty[-2])/(rooty[-1] + rooty[-2]))
-                        tick0 = tick
-                        while not (rooty[-1] >= new_step[1] >= rooty[-2]):
-                            tick += 1
-                            dL = - ch_cons[1] * 1e-11
-                            ch_cons[2] += 2 * ch_cons[2] * dL/ch_cons[1]
-                            ch_cons[1] += dL
-                            gorp = np.array([ ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
-                            rooty = np.sort(np.roots(gorp))
+                if radial_fail == 0 and new_step_hold is False:
+                    #print("radial fail!", i)
+                    #Radial issue, actual problem
+                    E_hold, L_hold, C_hold = constants[j]
+                    sep_cosi = mm.get_sep_cosi(a, L_hold/np.sqrt(L_hold*L_hold + C_hold), 100)
+                    circ_ixs = np.where(sep_cosi["e"] == 0.0)
+                    circEs, circLs, circCs, circrs = sep_cosi["energy"][circ_ixs], sep_cosi["phi_momentum"][circ_ixs], sep_cosi["carter"][circ_ixs], sep_cosi["p"][circ_ixs]
+                    radial_fail = 1
 
-                        #print("chill")
-                        #print("wonk")
-                        new_step_hold = mm.recalc_state3(ch_cons, new_step, a, metric, err_target)
-                        #print("wonk")
-                        #print("tick2", tick)
-                        #if tick0 != tick:
-                            #print("what, you ecc? ECCC???", (rooty[-1] - rooty[-2])/(rooty[-1] + rooty[-2]))
-                        '''else:
-                            print("nNOT CHILL")
-                            #good_r = max(np.roots(np.polyder(gorp)))
-                            print(rooty[-1])
-                            print(new_step[1])
-                            print(rooty[-2])
-                            good_r_ix = np.argmin(np.abs(rooty - new_step[1]))
-                            if good_r_ix == 3:
-                                good_r = rooty[3]*0.9 + rooty[2]*0.1
-                            else:
-                                good_r = rooty[2]*0.9 + rooty[3]*0.1
-                            rs = np.linspace(rooty[2], rooty[3], 10001)
-                            plt.plot(rs, np.polyval(gorp, rs))
-                            plt.scatter(good_r, np.polyval(gorp, good_r))
-                            plt.axhline(0, c="k", linewidth=0.5)
+                wonky_test = max(0, wonky_test - 1)
+                if wonky_test >= 9:
+                    print("Too many wonkies!")
+                    raise KeyboardInterrupt
+                
+                if radial_fail == 1 and new_step_hold is False:
+                    #print("still failing!", i, len(tracker))
+                    ixs = np.sort(np.argsort(np.abs(circEs - ch_cons[0]))[:5])
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings('error')
+                        fit_err, fit_num = True, 3
+                        while fit_err and fit_num:
+                            try:
+                                ch_cons[1] = np.polyval(np.polyfit(circEs[ixs], circLs[ixs], fit_num), ch_cons[0])
+                                fit_err = False
+                            except np.exceptions.RankWarning:
+                                #print(f"L_z fit RankWarning {fit_num} {label}, {wonky_test}")
+                                fit_num -= 1
+                        if fit_err:
+                            wonky_test += 1
+                            #plt.plot(circEs, circLs)
+                            #plt.scatter(circEs[ixs], circLs[ixs])
+                            #plt.title("E v L failed fit")
                             #plt.show()
-                            #good_r = np.polyval(np.polyfit(circEs[ixs], circrs[ixs], 2), ch_cons[0])
-                            #p = np.polyfit([thing[1] for thing in all_states[-3:]], dTau_change[-3:], 3)
-                            frac = (good_r - state[1])/(new_step[1] - state[1])
-                            #falseTau = np.polyval(p, good_r)
-                            new_step_hold = np.copy(new_step)
-                            new_step_hold[:4] = (1 - frac)*state[:4] + frac*new_step[:4]
-                            plt.show()
-                            for m in range(4):
-                                plt.plot([all_states[n][0] for n in range(-100, 0)], [all_states[n][m] for n in range(-100, 0)])
-                                plt.scatter(new_step_hold[0], new_step_hold[m])
-                                plt.show()
-                            print("---")
-                            print(good_r)
-                            print(new_step_hold[1])
-                            new_step_hold = mm.recalc_state3(ch_cons, new_step_hold, a, metric, err_target)
-                            print("gorf")
-                            print(new_step)
-                            print(new_step_hold)
-                            #for m in range(4):
-                                #new_step_hold[m] = np.polyval(np.polyfit(dTau_change[-3:], [thing[m] for thing in all_states[-3:]], 2), falseTau)
-                                #new_step_hold[m] = (1 - frac)*state
-                            print(f"\nBad here? frac = {frac}, cons = {ch_cons[0], ch_cons[1], ch_cons[2]}, spin = {a}, good_r = {good_r}, state_r={state[1]}, new_r = {new_step[1]}, potmin = {POT_MIN}, i = {i}")'''
-                        
-                        
-                        
-                        #print(f"still match? (good_r - poly_r)/good_r = {(good_r - new_step_hold[1])/good_r}")
-                        
-                        #print("here?")
+
+                        fit_err, fit_num = True, 3
+                        while fit_err and fit_num:
+                            try:
+                                ch_cons[2] = np.polyval(np.polyfit(circEs[ixs], circCs[ixs], fit_num), ch_cons[0])
+                                fit_err = False
+                            except np.exceptions.RankWarning:
+                                #print(f"C fit RankWarning {fit_num} {label}, {wonky_test}")
+                                fit_num -= 1
+                                #wonky_test += 1
+                        if fit_err:
+                            wonky_test += 1
+                            #plt.plot(circEs, circCs)
+                            #plt.scatter(circEs[ixs], circCs[ixs])
+                            #plt.title("E v C failed fit")
+                            #plt.show()
+
+                        fit_err, fit_num = True, 3
+                        while fit_err and fit_num:
+                            try:
+                                good_r = np.polyval(np.polyfit(circEs[ixs], circrs[ixs], fit_num), ch_cons[0])
+                                fit_err = False
+                            except np.exceptions.RankWarning:
+                                #print(f"good_r fit RankWarning {fit_num} {label}, {wonky_test}")
+                                fit_num -= 1
+                                #wonky_test += 1
+                        if fit_err:
+                            wonky_test += 1
+                            #plt.plot(circEs, circrs)
+                            #plt.scatter(circEs[ixs], circrs[ixs])
+                            #plt.title("E v r failed fit")
+                            #plt.show()
+
+                    poly = np.array([ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
+                    tick = 0
+                    flats = np.roots(np.polyder(poly))
+                    #print(f"good_r = {good_r}, max flat = {max(flats)}, polyval goodr = {np.polyval(poly, good_r)}, polyval maxflat = {np.polyval(poly, max(flats))}")
+                    turns = np.roots(poly)[:2]
+                    #print(f"turn points = {turns}, ecc={np.diff(turns[::-1])/np.sum(turns)}")
+                    while np.polyval(poly, max(flats)) < 0.0:
+                        tick += 1
+                        if ch_cons[1] != 0:
+                            dL = - ch_cons[1] * err_target
+                            ch_cons[2] = max(0.0, ch_cons[2] + 2 * ch_cons[2] * dL/ch_cons[1])
+                            ch_cons[1] += dL
+                        else:
+                            ch_cons[2] = max(0.0, ch_cons[2] - ch_cons[2] * err_target)
+
+                        poly = np.array([ ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
+                        flats = np.roots(np.polyder(poly))
+                    #print(f"NEW: good_r = {good_r}, max flat = {max(flats)}, polyval goodr = {np.polyval(poly, good_r)}, polyval maxflat = {np.polyval(poly, max(flats))}")
+                    turns = np.roots(poly)[:2]
+                    #print(f"NEW: turn points = {turns}, ecc={np.diff(turns[::-1])/np.sum(turns)}, tick = {tick}")
+                    #print("waaa??", np.roots(gorp))
+                    #print(new_step[1], rooty[-2] <= new_step[1] <= rooty[-1])
+                    #print("tick", tick)
+                    #print("what, you ecc?", (rooty[-1] - rooty[-2])/(rooty[-1] + rooty[-2]))
+                    tick0 = tick
+                    #while not (rooty[-1] >= new_step[1] >= rooty[-2]):
+                    #    tick += 1
+                    #    dL = - ch_cons[1] * 1e-11
+                    #    ch_cons[2] += 2 * ch_cons[2] * dL/ch_cons[1]
+                    #    ch_cons[1] += dL
+                    ##    gorp = np.array([ ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
+                    #    rooty = np.sort(np.roots(gorp))
+
+                    #print("chill")
+                    #print("wonk")'''
+                    new_step_hold = np.copy(all_states[tracker[-1][-1]])
+                    new_step_hold[1] = good_r
+                    new_step_hold = mm.recalc_state3(ch_cons, new_step_hold, a, tol=err_target)
+
+                    #print(f"still match? (good_r - poly_r)/good_r = {(good_r - new_step_hold[1])/good_r}")
+                    
+                    #print("here?")
                     #print("*************************************")
-                    if new_step_hold is None:
-                        #Theta issue, just try running longer
-                        new_step_hold = new_step
+
+                if new_step_hold is None or new_step_hold is False:
+                    print(f"skip! radial fail? {radial_fail == 1}")
+                    #Theta issue, just try running longer
+                    new_step_hold = new_step
+                    update = False
+                    condate = False
+                    tracker.pop()
+                else:
+                    new_step = np.copy(new_step_hold)
+
+                confull.append(time.perf_counter() - concount)
+                        
+                '''subcount = 0 
+                pot_min = viable_cons(ch_cons, constants[j], new_step_hold, a)                      
+                if pot_min < -err_target:
+                    #print("HURM", new_step_hold)
+                    ch_cons = getCons_2(new_step_hold, a)
+                    #print("GARF")
+                    pot_min = viable_cons(ch_cons, constants[j], new_step_hold, a)
+                    #print("URG")
+                if pot_min < -err_target:
+                    if "woosh" in label:
                         update = False
                         condate = False
-                        #print("Passing!-------------------------------------")
-                        
-                    subcount = 0 
-                    pot_min = viable_cons(ch_cons, constants[j], new_step_hold, a)                      
-                    if pot_min < -err_target:
-                        #print("HURM", new_step_hold)
-                        ch_cons = getCons_2(new_step_hold, a)
-                        #print("GARF")
-                        pot_min = viable_cons(ch_cons, constants[j], new_step_hold, a)
-                        #print("URG")
-                    if pot_min < -err_target:
-                        if "woosh" in label:
-                            update = False
-                            condate = False
-                            #print("try just going for another loop?", i)
-                        else:
-                            viable_cons(ch_cons, constants[j], new_step, a, True)
-                            print("BADVALS", *ch_cons)
-                            raise KeyError
+                        #print("try just going for another loop?", i)
                     else:
-                        new_step = new_step_hold
-                    if subcount > 0:
-                        print(subcount, "oof", pot_min)
-                    confull.append(time.perf_counter() - concount)
+                        viable_cons(ch_cons, constants[j], new_step, a, True)
+                        print("BADVALS", *ch_cons)
+                        raise KeyError
                 else:
-                    skip_count += 1
+                    new_step = new_step_hold
+                if subcount > 0:
+                    print(subcount, "oof", pot_min)
+                confull.append(time.perf_counter() - concount)
+            else:
+                skip_count += 1'''
 
             #Initializing for the next step
             #Updates the constants based on the calculated derivatives, then updates the state velocities based on the new constants.
@@ -1221,85 +1417,67 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             upcount = time.perf_counter()
             #Update stuff!
             if (update == True):
-                #print(f"pong! index = {i}, cons = {energy}, {lmom}, {cart}")
-                #print(f"buda! index = {i}, cons = {ch_cons}")
                 if condate == False:
-                    #metric = mm.kerr(new_step, a)[0]
                     newE, newLz, newC = getCons_2(state, a)
-                    newQ = newC + (a*newE - newLz)**2  
-                    turns, flats, zs = mm.root_getter(newE, newLz, newC, a)
-                    pot_min = flats[-1]
-                    inner_turn, outer_turn = turns[-2:]
-                    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
-                    inc = np.sign(newLz)*np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
-                    j += 1
-                    constants.append([newE, newLz, newC])
-                    tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
-                    qarter.append(newQ)
-                    #freqs.append(mm.freqs_finder(newE, newLz, newC, a))
-                    P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
-                    POT_MIN = max(flats)
-                    PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
                 else:
-                    turns, flats, zs = mm.root_getter(*ch_cons, a)
-                    pot_min = flats[-1]
-                    inner_turn, outer_turn = turns[-2:]
-                    e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
-                    inc = np.sign(ch_cons[1])*np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
-                    #freqs.append(mm.freqs_finder(*ch_cons, a))
-                    j += 1
-                    constants.append(ch_cons)
-                    tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
-                    qarter.append(ch_cons[2] + (a*ch_cons[0] - ch_cons[1])**2)
-                    P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
-                    POT_MIN = max(flats)
-                    PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
-                    if verbose > 0 and verbose < 3:
-                        pbar.set_postfix_str("Semilat: %s, Ecc %s, Peri: %s, Theta_min: %s*pi" %(np.round( 0.5*(tracker[j][3] + tracker[j][4])*(1 - tracker[j][1]**2), 3), np.round(tracker[j][1], 3), np.round(tracker[j][3], 3), np.round(tracker[j][2]/np.pi, 3)))
+                    newE, newLz, newC = ch_cons
+
+                newQ = newC + (a*newE - newLz)**2  
+                turns, flats, zs = mm.root_getter(newE, newLz, newC, a)
+                pot_min = flats[-1]
+                inner_turn, outer_turn = turns[-2:]
+                e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
+                inc = np.sign(newLz)*np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
+                P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
+                POT_MIN = pot_min
+                PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
+                constants.append([newE, newLz, newC])
+                #tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
+                i = tracker[-1][-1] 
+                tracker[-1] = [pot_min, e, inc, inner_turn, outer_turn, new_step[0], i]
+                qarter.append(newQ)
+                del all_states[i:]
+                del dTau_change[i:]
+                #del constants[i:]
+                #del qarter[i:]
+                #print(f"anom len {len(true_anom)}")
+                del true_anom[i+1:]
+                #print(f"anom len new {len(true_anom)}")
+                if verbose > 0 and verbose < 3:
+                    pbar.set_postfix_str("Semilat: %s, Ecc %s, Peri: %s, Theta_min: %s*pi" %(np.round( 0.5*(tracker[j][3] + tracker[j][4])*(1 - tracker[j][1]**2), 3), np.round(tracker[j][1], 3), np.round(tracker[j][3], 3), np.round(tracker[j][2]/np.pi, 3)))
+                j += 1
+                i -= 1
                 ctx.j = j
+                #ctx.i = i
                 ctx.tracker = tracker
                 ctx.last_chunk = np.asarray(all_states[tracker[j-1][-1]:])
                 if True in np.iscomplex(tracker[j]):
                     compErr += 1
                     issues.append((i, new_step[0]))  
-            #print("not stuck!")
-            #interval.append(mm.check_interval_w_metric(metric, new_step, a))
-            #false_constants.append([getEnergy(new_step, a), *getLs(new_step, mu)])
+            i += 1
             dTau_change.append(dTau_change[-1] + old_dTau)
-            all_states.append(new_step )    #update position and velocity
+            all_states.append(new_step)    #update position and velocity
             anomval = get_true_anom(new_step, 0.5*(outer_turn + inner_turn), e) + orbCount*2*np.pi
             if anomval - true_anom[-1] < -np.pi:
                 anomval += 2*np.pi
                 orbCount += 1
             true_anom.append(anomval)
-            i += 1
-            #last_chunk = np.array(all_states[tracker[j-1][-1]:])
-            #r, r_dot = last_chunk[:,1], last_chunk[:,5]
-            #anomval = get_true_anom(new_step, 0.5*(outer_turn + inner_turn), e, orbCount)
-            #true_anom.extend(anomvals)
             ctx.i = i
             ctx.all_states = all_states
             ctx.true_anom = true_anom
+            #print((i, len(true_anom)), (ctx.i, len(ctx.true_anom)))
             ctx_val = getval(ctx)
             if verbose == 3:
-                #if terms[0] != "custom":
-                #progress = max( abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i/(10**7)) * 100
                 progress = max(abs((ctx_val - start_val) / (threshold - start_val)), i/1e7)
                 if (progress >= milestone):
                     print(f"Program has completed {ctx_val}, {progress*100}% of maximum run: Index = {i}")
                     milestone = int(progress) + 1
             elif verbose > 0 and verbose < 3:
                 #if terms[0] != "custom":
-                if update:
-                    #print(abs((ctx_val - start_val) / (threshold - start_val)), progress)
-                    #print((np.exp(-abs(ctx_val - threshold)) - np.exp(-abs(start_val - threshold))), "new?")
+                if update or trigger:
                     val = max(abs((ctx_val - start_val) / (threshold - start_val)) - progress, i/1e7 - progress, 0)
-                    #print(ctx_val, start_val, threshold, start_val, progress, "stuff")
-                    #print(val)
                     pbar.update(val*1e7)
-                    #progress = max( (10**7)*abs((eval(termdict[terms[0]]) - initflagval)/(eval(terms[2]) - initflagval)), i)
                     progress = max(abs((ctx_val - start_val) / (threshold - start_val)), i/1e7)
-            #print("maybe even finished?")
             upfull.append(time.perf_counter() - upcount)
             
 
@@ -1310,8 +1488,6 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             cap = len(all_states) - 1
             del all_states[cap:]
             del dTau_change[cap:]
-            del constants[cap:]
-            del qarter[cap:]
             del true_anom[cap:]
             break
 
@@ -1321,8 +1497,6 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             cap = len(all_states) - 1
             del all_states[cap:]
             del dTau_change[cap:]
-            del constants[cap:]
-            del qarter[cap:]
             del true_anom[cap:]
             break
         
@@ -1334,8 +1508,6 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             cap = len(all_states) - 1
             del all_states[cap:]
             del dTau_change[cap:]
-            del constants[cap:]
-            del qarter[cap:]
             del true_anom[cap:]
             break
     if verbose > 0 and verbose < 3:
@@ -1353,7 +1525,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         #so it gives actual numbers for pure geodesics
         mu = 1.0
     
-    if j != -1:
+    if j < len(tracker) - 1:
         del constants[j+1:]
         del tracker[j+1:]
         del qarter[j+1:]
@@ -1610,7 +1782,7 @@ def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reco
             stuff = mm.root_getter_vec(final["energy"], final["phi_momentum"], final["carter"], final["spin"])
             final["pot_min"] = stuff[1][:, -1]
             incstuff = np.mean(np.abs(stuff[2][:, 1:3]), axis=1)
-            final["inc"] = np.arccos(np.where(incstuff <= 1.0, incstuff, 1.0))
+            final["inc"] = np.arccos(np.where(incstuff <= 1.0, incstuff, 1.0))*np.sign(final['phi_momentum'])
             final["it"] = stuff[0][:, -2]
             final["ot"] = stuff[0][:, -1]
             it, ot = final["it"], final["ot"]
@@ -1719,6 +1891,11 @@ def clean_logs(log_folder="D:/EMRIDATA/", json_path="D:/EMRIDATA/saved_sims/inde
     # Scan logs
     pattern = os.path.join(log_folder, "inspiral_*.log")
     files = glob.glob(pattern)
+    
+    if delete:
+        print("Deleting files.")
+    else:
+        print("Evaluating files.")
 
     for path in files:
         filename = os.path.basename(path)
@@ -1736,6 +1913,8 @@ def clean_logs(log_folder="D:/EMRIDATA/", json_path="D:/EMRIDATA/saved_sims/inde
                 print(f"Deleted: {filename}")
             else:
                 print(f"Would delete: {filename}")
+    print("Done.")
+
 
 def EMRIGenMin(a, mu, endflag="radius < 2", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, override=False, bonk2=True):
     '''
