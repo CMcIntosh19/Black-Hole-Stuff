@@ -1,0 +1,81 @@
+inspirals:
+
+  - label: "radialy zoom-whirl, 0.554 5.40892 0.876 78.000"
+    a: 0.554
+    mu: 1e-3
+    params: [5.40892/(1 - (0.876)**2), 0.876, 1.361356816555577]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.341 9.16922 0.902 -44.000"
+    a: 0.341
+    mu: 1e-3
+    params: [9.16922/(1 - (0.902)**2), 0.902, -0.767944870877505]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.636 7.80549 0.305 -38.000"
+    a: 0.636
+    mu: 1e-3
+    params: [7.80549/(1 - (0.305)**2), 0.305, -0.6632251157578453]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.543 9.51488 0.823 -70.000"
+    a: 0.543
+    mu: 1e-3
+    params: [9.51488/(1 - (0.823)**2), 0.823, -1.2217304763960306]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.036 8.14327 0.503 62.000"
+    a: 0.036
+    mu: 1e-3
+    params: [8.14327/(1 - (0.503)**2), 0.503, 1.0821041362364843]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.652 10.13095 0.870 -84.000"
+    a: 0.652
+    mu: 1e-3
+    params: [10.13095/(1 - (0.87)**2), 0.87, -1.4660765716752369]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.470 7.01334 0.726 33.000"
+    a: 0.47
+    mu: 1e-3
+    params: [7.01334/(1 - (0.726)**2), 0.726, 0.5759586531581288]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.570 8.31175 0.947 -18.000"
+    a: 0.57
+    mu: 1e-3
+    params: [8.31175/(1 - (0.947)**2), 0.947, -0.3141592653589793]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.095 8.74357 0.553 -31.000"
+    a: 0.095
+    mu: 1e-3
+    params: [8.74357/(1 - (0.553)**2), 0.553, -0.5410520681182421]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"
+
+  - label: "radialy zoom-whirl, 0.713 5.24827 0.274 20.000"
+    a: 0.713
+    mu: 1e-3
+    params: [5.24827/(1 - (0.274)**2), 0.274, 0.3490658503988659]
+    err_target: 1e-12
+    weird: 24
+    endflag: "rad_orbit > 100"

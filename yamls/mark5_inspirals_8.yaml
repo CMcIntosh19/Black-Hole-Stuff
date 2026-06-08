@@ -1,0 +1,449 @@
+inspirals:
+
+  - label: "Trackdown err mark5_8, 0.000 7.000 0.000 -0.500"
+    a: 0.0
+    mu: 1e-3
+    params: [7.0/(1 - (1e-05)**2), 1e-05, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 7.605 0.300 -0.500"
+    a: 0.0
+    mu: 1e-3
+    params: [7.605263157894736/(1 - (0.3000066666666667)**2), 0.3000066666666667, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 8.194 0.600 -0.500"
+    a: 0.0
+    mu: 1e-3
+    params: [8.193548387096776/(1 - (0.6000033333333333)**2), 0.6000033333333333, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 8.808 0.900 -0.500"
+    a: 0.0
+    mu: 1e-3
+    params: [8.807692307692307/(1 - (0.9)**2), 0.9, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 7.000 0.000 -0.167"
+    a: 0.0
+    mu: 1e-3
+    params: [7.0/(1 - (1e-05)**2), 1e-05, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 7.605 0.300 -0.167"
+    a: 0.0
+    mu: 1e-3
+    params: [7.605263157894736/(1 - (0.3000066666666667)**2), 0.3000066666666667, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 8.194 0.600 -0.167"
+    a: 0.0
+    mu: 1e-3
+    params: [8.193548387096776/(1 - (0.6000033333333333)**2), 0.6000033333333333, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 8.808 0.900 -0.167"
+    a: 0.0
+    mu: 1e-3
+    params: [8.807692307692307/(1 - (0.9)**2), 0.9, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 7.000 0.000 0.167"
+    a: 0.0
+    mu: 1e-3
+    params: [7.0/(1 - (1e-05)**2), 1e-05, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 7.605 0.300 0.167"
+    a: 0.0
+    mu: 1e-3
+    params: [7.605263157894736/(1 - (0.3000066666666667)**2), 0.3000066666666667, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 8.194 0.600 0.167"
+    a: 0.0
+    mu: 1e-3
+    params: [8.193548387096776/(1 - (0.6000033333333333)**2), 0.6000033333333333, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 8.808 0.900 0.167"
+    a: 0.0
+    mu: 1e-3
+    params: [8.807692307692307/(1 - (0.9)**2), 0.9, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 7.000 0.000 0.500"
+    a: 0.0
+    mu: 1e-3
+    params: [7.0/(1 - (1e-05)**2), 1e-05, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 7.605 0.300 0.500"
+    a: 0.0
+    mu: 1e-3
+    params: [7.605263157894736/(1 - (0.3000066666666667)**2), 0.3000066666666667, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 8.194 0.600 0.500"
+    a: 0.0
+    mu: 1e-3
+    params: [8.193548387096776/(1 - (0.6000033333333333)**2), 0.6000033333333333, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.000 8.808 0.900 0.500"
+    a: 0.0
+    mu: 1e-3
+    params: [8.807692307692307/(1 - (0.9)**2), 0.9, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 7.953 0.000 -0.500"
+    a: 0.3
+    mu: 1e-3
+    params: [7.953035521746416/(1 - (1e-05)**2), 1e-05, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 8.629 0.300 -0.500"
+    a: 0.3
+    mu: 1e-3
+    params: [8.629104592973665/(1 - (0.3000066666666667)**2), 0.3000066666666667, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 9.284 0.600 -0.500"
+    a: 0.3
+    mu: 1e-3
+    params: [9.283932743083351/(1 - (0.6000033333333333)**2), 0.6000033333333333, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 9.944 0.900 -0.500"
+    a: 0.3
+    mu: 1e-3
+    params: [9.944395515731518/(1 - (0.9)**2), 0.9, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 7.443 0.000 -0.167"
+    a: 0.3
+    mu: 1e-3
+    params: [7.443389612298288/(1 - (1e-05)**2), 1e-05, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 8.078 0.300 -0.167"
+    a: 0.3
+    mu: 1e-3
+    params: [8.078098064624314/(1 - (0.3000066666666667)**2), 0.3000066666666667, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 8.715 0.600 -0.167"
+    a: 0.3
+    mu: 1e-3
+    params: [8.714914980060062/(1 - (0.6000033333333333)**2), 0.6000033333333333, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 9.310 0.900 -0.167"
+    a: 0.3
+    mu: 1e-3
+    params: [9.309708498532547/(1 - (0.9)**2), 0.9, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 6.456 0.000 0.167"
+    a: 0.3
+    mu: 1e-3
+    params: [6.45612835788823/(1 - (1e-05)**2), 1e-05, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 7.000 0.300 0.167"
+    a: 0.3
+    mu: 1e-3
+    params: [6.99963110182809/(1 - (0.3000066666666667)**2), 0.3000066666666667, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 7.550 0.600 0.167"
+    a: 0.3
+    mu: 1e-3
+    params: [7.549631859864087/(1 - (0.6000033333333333)**2), 0.6000033333333333, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 8.137 0.900 0.167"
+    a: 0.3
+    mu: 1e-3
+    params: [8.13667203552868/(1 - (0.9)**2), 0.9, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 5.977 0.000 0.500"
+    a: 0.3
+    mu: 1e-3
+    params: [5.976999856924417/(1 - (1e-05)**2), 1e-05, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 6.485 0.300 0.500"
+    a: 0.3
+    mu: 1e-3
+    params: [6.4849573076882265/(1 - (0.3000066666666667)**2), 0.3000066666666667, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 7.011 0.600 0.500"
+    a: 0.3
+    mu: 1e-3
+    params: [7.010788200888096/(1 - (0.6000033333333333)**2), 0.6000033333333333, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.300 7.557 0.900 0.500"
+    a: 0.3
+    mu: 1e-3
+    params: [7.556655810955006/(1 - (0.9)**2), 0.9, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 8.855 0.000 -0.500"
+    a: 0.6
+    mu: 1e-3
+    params: [8.85508974414605/(1 - (1e-05)**2), 1e-05, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 9.617 0.300 -0.500"
+    a: 0.6
+    mu: 1e-3
+    params: [9.616503845759526/(1 - (0.3000066666666667)**2), 0.3000066666666667, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 10.330 0.600 -0.500"
+    a: 0.6
+    mu: 1e-3
+    params: [10.329996761406255/(1 - (0.6000033333333333)**2), 0.6000033333333333, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 11.028 0.900 -0.500"
+    a: 0.6
+    mu: 1e-3
+    params: [11.02763416357777/(1 - (0.9)**2), 0.9, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 7.806 0.000 -0.167"
+    a: 0.6
+    mu: 1e-3
+    params: [7.806413135598276/(1 - (1e-05)**2), 1e-05, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 8.480 0.300 -0.167"
+    a: 0.6
+    mu: 1e-3
+    params: [8.479785118877999/(1 - (0.3000066666666667)**2), 0.3000066666666667, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 9.106 0.600 -0.167"
+    a: 0.6
+    mu: 1e-3
+    params: [9.106457922943848/(1 - (0.6000033333333333)**2), 0.6000033333333333, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 9.726 0.900 -0.167"
+    a: 0.6
+    mu: 1e-3
+    params: [9.726286666850967/(1 - (0.9)**2), 0.9, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 5.754 0.000 0.167"
+    a: 0.6
+    mu: 1e-3
+    params: [5.754195560972537/(1 - (1e-05)**2), 1e-05, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 6.239 0.300 0.167"
+    a: 0.6
+    mu: 1e-3
+    params: [6.238601752118546/(1 - (0.3000066666666667)**2), 0.3000066666666667, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 6.724 0.600 0.167"
+    a: 0.6
+    mu: 1e-3
+    params: [6.724287135316606/(1 - (0.6000033333333333)**2), 0.6000033333333333, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 7.216 0.900 0.167"
+    a: 0.6
+    mu: 1e-3
+    params: [7.216276593190289/(1 - (0.9)**2), 0.9, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 4.829 0.000 0.500"
+    a: 0.6
+    mu: 1e-3
+    params: [4.829054943475297/(1 - (1e-05)**2), 1e-05, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 5.237 0.300 0.500"
+    a: 0.6
+    mu: 1e-3
+    params: [5.237316736958904/(1 - (0.3000066666666667)**2), 0.3000066666666667, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 5.686 0.600 0.500"
+    a: 0.6
+    mu: 1e-3
+    params: [5.686177260655033/(1 - (0.6000033333333333)**2), 0.6000033333333333, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.600 6.157 0.900 0.500"
+    a: 0.6
+    mu: 1e-3
+    params: [6.156848629726931/(1 - (0.9)**2), 0.9, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 9.712 0.000 -0.500"
+    a: 0.9
+    mu: 1e-3
+    params: [9.712111561065363/(1 - (1e-05)**2), 1e-05, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 10.544 0.300 -0.500"
+    a: 0.9
+    mu: 1e-3
+    params: [10.544413801142356/(1 - (0.3000066666666667)**2), 0.3000066666666667, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 11.332 0.600 -0.500"
+    a: 0.9
+    mu: 1e-3
+    params: [11.332436929279284/(1 - (0.6000033333333333)**2), 0.6000033333333333, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 12.060 0.900 -0.500"
+    a: 0.9
+    mu: 1e-3
+    params: [12.059954927590729/(1 - (0.9)**2), 0.9, -1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 8.102 0.000 -0.167"
+    a: 0.9
+    mu: 1e-3
+    params: [8.10232509830989/(1 - (1e-05)**2), 1e-05, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 8.779 0.300 -0.167"
+    a: 0.9
+    mu: 1e-3
+    params: [8.779468181430726/(1 - (0.3000066666666667)**2), 0.3000066666666667, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 9.416 0.600 -0.167"
+    a: 0.9
+    mu: 1e-3
+    params: [9.416131155541917/(1 - (0.6000033333333333)**2), 0.6000033333333333, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 10.001 0.900 -0.167"
+    a: 0.9
+    mu: 1e-3
+    params: [10.00098647128066/(1 - (0.9)**2), 0.9, -0.5235987755982989]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 4.735 0.000 0.167"
+    a: 0.9
+    mu: 1e-3
+    params: [4.734796542310736/(1 - (1e-05)**2), 1e-05, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 5.097 0.300 0.167"
+    a: 0.9
+    mu: 1e-3
+    params: [5.096723422240182/(1 - (0.3000066666666667)**2), 0.3000066666666667, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 5.468 0.600 0.167"
+    a: 0.9
+    mu: 1e-3
+    params: [5.467698336017522/(1 - (0.6000033333333333)**2), 0.6000033333333333, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 5.821 0.900 0.167"
+    a: 0.9
+    mu: 1e-3
+    params: [5.820525165921903/(1 - (0.9)**2), 0.9, 0.5235987755982987]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 3.320 0.000 0.500"
+    a: 0.9
+    mu: 1e-3
+    params: [3.32040438311879/(1 - (1e-05)**2), 1e-05, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 3.604 0.300 0.500"
+    a: 0.9
+    mu: 1e-3
+    params: [3.6037222539410925/(1 - (0.3000066666666667)**2), 0.3000066666666667, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 3.962 0.600 0.500"
+    a: 0.9
+    mu: 1e-3
+    params: [3.9622901035755302/(1 - (0.6000033333333333)**2), 0.6000033333333333, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+
+  - label: "Trackdown err mark5_8, 0.900 4.338 0.900 0.500"
+    a: 0.9
+    mu: 1e-3
+    params: [4.3380516250180445/(1 - (0.9)**2), 0.9, 1.5707963267948966]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"

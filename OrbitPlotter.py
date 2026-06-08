@@ -379,6 +379,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
             "ecc": ['data["e"]', "Eccentricity", 'data["tracktime"]'],
             "semilat": ['data["p"]', "Semilatus-Rectum", 'data["tracktime"]'],
             "inc": ['data["inc"]', "Inclination", 'data["tracktime"]'],
+            "inc_deg": ['np.rad2deg(data["inc"])', "Inclination (degrees)", 'data["tracktime"]'],
             "periapse": ['data["it"]', "Periapse", 'data["tracktime"]'],
             "apoapse": ['data["ot"]', "Apoapse", 'data["tracktime"]'],
             "omega": ['data["omega"]', "Phi Position of Periapse", 'otime'],
@@ -398,7 +399,9 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
             "carter": ['data["carter"]', "Carter Constant", 'data["tracktime"]'],
             "qarter": ['data["qarter"]', "Carter Constant (Unnormalized)", 'data["tracktime"]'],
             "approx_L": ['np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Full Angular Momentum sqrt(C + L\u2080\u00B2)", 'data["tracktime"]'],
-            "interval": ['data["interval"]', "Spacetime Interval", 'data["raw"][:, 0]']
+            "interval": ['data["interval"]', "Spacetime Interval", 'data["raw"][:, 0]'],
+            "cosi": ['data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Inclination (cosi)", 'data["tracktime"]'],
+            "cosi_deg": ['np.rad2deg(np.arccos(data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)))', "Inclination (cosi, degrees)", 'data["tracktime"]']
             }
         
         if ((type(xvalue) == str) and (xvalue in termdict)) and ((type(yvalue) == str) and (yvalue in termdict)):
@@ -450,7 +453,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
                     ax.scatter(xvals, yvals, color=colors[thing%len(colors)], label = (data["name"] + lab_add if thing in select_legend else None))
             except Exception as e:
                 print(e)
-                ax.plot(np.real(xvals), np.real(yvals), color=colors[thing%len(colors)])
+                ax.plot(np.real(xvals), np.real(yvals), color=colors[thing%len(colors)], linestyle="dashed", label = (data["name"] + lab_add if thing in select_legend else None))
             
         
         else:
@@ -1575,9 +1578,9 @@ def ani_thing5(data, name=False, ortho=False, start=0.0, end=-1.0, zoom=1.0, ele
             
             if scroll == True:
                 try:
-                    rbound = max(max((xdata[beg:full*num]**2 + ydata[beg:full*num]**2 + zdata[beg:full*num]**2)**0.5)*1.05, 3)
+                    rbound = max(max((xdata[beg:full*num]**2 + ydata[beg:full*num]**2 + zdata[beg:full*num]**2)**0.5)*1.05/zoom, 3)
                 except:
-                    rbound = max(max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05, 3)
+                    rbound = max(max((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05/zoom, 3)
                 
                 try:
                     ax.set(xlim3d=(-rbound, rbound), xlabel='X')
@@ -1619,9 +1622,9 @@ def ani_thing5(data, name=False, ortho=False, start=0.0, end=-1.0, zoom=1.0, ele
             
             if scroll == True:
                 try:
-                    rbound = np.nanmax(np.nanmax((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05, 3) 
+                    rbound = np.nanmax(np.nanmax((xdata[beg:end]**2 + ydata[beg:end]**2 + zdata[beg:end]**2)**0.5)*1.05/zoom, 3)
                 except:
-                    rbound = np.nanmax(np.nanmax((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05, 3)
+                    rbound = np.nanmax(np.nanmax((xdata**2 + ydata**2 + zdata**2)**0.5)*1.05/zoom, 3)
     
                 ax2.set_xlim(-rbound, rbound)
                 ax2.set_ylim(-rbound, rbound)
@@ -1640,7 +1643,7 @@ def ani_thing5(data, name=False, ortho=False, start=0.0, end=-1.0, zoom=1.0, ele
     cwd = os.getcwd()
     f = os.path.join(cwd, name + ".gif")
     writergif = animation.PillowWriter(fps=10)
-    ani.save(f, writer=writergif, bbox_inches='tight')
+    ani.save(f, writer=writergif)#, bbox_inches='tight')
     
     plt.show()
     print("\n")

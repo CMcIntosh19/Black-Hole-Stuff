@@ -12,6 +12,7 @@ from multiprocessing import Process, Lock
 import argparse
 import yaml
 import re
+import psutil
 
 def last_index_write_time():
     try:
@@ -245,9 +246,8 @@ def main():
     polls = np.random.uniform(0.5, 6, len(inspiral_cfgs))
     polls = np.cumsum(polls)
 
-    print("Preparing workers.", flush=True)
-
-    max_workers = min(len(inspiral_cfgs), max(1, int(os.cpu_count()//2)))
+    max_workers = min(len(inspiral_cfgs), max(1, int(os.cpu_count()//3)))
+    print(f"Preparing {max_workers} workers.", flush=True)
 
     processes = []
     active = []

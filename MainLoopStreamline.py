@@ -1120,7 +1120,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     k = abs(inc)/min((np.pi - new_step[2]), new_step[2])
                     if k == 0.0:
                         # Orbit is polar!
-                        phi_dist = np.pi/2 if new_step[7] >= 0.0 else -np.pi/2
+                        phi_dist = np.pi if new_step[7] >= 0.0 else -np.pi
                     else:
                         cosp, sinp = np.cos(new_step[3]), np.sin(new_step[3])
                         m = (cosp*sinp + np.array([1, -1])*k*np.sqrt(1 - k*k))/(cosp**2 - k*k)
@@ -1430,7 +1430,10 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                 inc = np.sign(newLz)*np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
                 P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
                 POT_MIN = pot_min
-                PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
+                try:
+                    PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
+                except:
+                    PERIOD = tracker[-1][-2] - tracker[-2][-2]
                 constants.append([newE, newLz, newC])
                 #tracker.append([pot_min, e, inc, inner_turn, outer_turn, new_step[0], i])
                 i = tracker[-1][-1] 
@@ -1676,7 +1679,7 @@ def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto
                     while os.path.exists(f"{folder}{filename}"):
                         filename = f"{base}_{num}{ext}"
                         num += 1
-                    print(f"File now saved as {filename}")
+                    print(f"File now saving as {filename}")
     else:
         if not os.path.exists(full):
             pass
@@ -1694,7 +1697,7 @@ def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto
                 while os.path.exists(f"{folder}{filename}"):
                     filename = f"{base}_{num}{ext}"
                     num += 1
-                print(f"File now saved as {filename}")
+                print(f"File now saving as {filename}")
 
     with h5py.File(folder + filename, 'w') as f:
         # String attributes
@@ -1706,12 +1709,12 @@ def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto
         f.attrs['unbind'] = final['unbind']
 
         # Raw numerical data
-        f.create_dataset('raw', data=final['raw'], compression='lzf')
-        f.create_dataset('dTau_change', data=final['dTau_change'], compression='lzf')
-        f.create_dataset('energy', data=final['energy'], compression='lzf')
-        f.create_dataset('phi_momentum', data=final['phi_momentum'], compression='lzf')
-        f.create_dataset('carter', data=final['carter'], compression='lzf')
-        f.create_dataset('trackix', data=final['trackix'], compression='lzf')
+        f.create_dataset('raw', data=final['raw'], compression='gzip', compression_opts=9, shuffle=True)
+        f.create_dataset('dTau_change', data=final['dTau_change'], compression='gzip', compression_opts=9, shuffle=True)
+        f.create_dataset('energy', data=final['energy'], compression='gzip', compression_opts=9, shuffle=True)
+        f.create_dataset('phi_momentum', data=final['phi_momentum'], compression='gzip', compression_opts=9, shuffle=True)
+        f.create_dataset('carter', data=final['carter'], compression='gzip', compression_opts=9, shuffle=True)
+        f.create_dataset('trackix', data=final['trackix'], compression='gzip', compression_opts=9, shuffle=True)
 
         # Store inputs and issues as JSON strings
         inputs_json = json.dumps(final['inputs'])

@@ -1,0 +1,71 @@
+inspirals:
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect1"
+    a: 0.9
+    mu: 1e-3
+    params: [10/(1 - 0.3**2), 0.3, 15*np.pi/180]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect2"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9574411786610344, 0.9431587012437871, 12.560690082982543]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect3"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9544031625942064, 0.9125775292728514, 12.074695907485506]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect4"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9511918835896044, 0.881632687085633, 11.604046171401594]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect5"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9478603987769241, 0.8510149124985893, 11.160965842455008]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect6"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9443852405870118, 0.8206468929918009, 10.745665528018387]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect7"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9408413350538715, 0.7912630790374854, 10.369039807901911]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect8"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9373158281722573, 0.7635424551132444, 10.03923305585211]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect9"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9339772982120337, 0.7386189131619716, 9.767260394667222]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  
+  - label: "Glamp Incline mark5_2 MGV (Paper) sect10"
+    a: 0.9
+    mu: 1e-3
+    cons: [0.9311098001854454, 0.7182362002958874, 9.56650028734337]
+    err_target: 1e-12
+    endflag: "time > 193036"
+  

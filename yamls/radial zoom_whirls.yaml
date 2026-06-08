@@ -1,0 +1,16 @@
+inspirals:
+
+  - label: "radial zoom-whirl, bird nest"
+    a: 0.9
+    mu: 1e-3
+    params: [4.970796099869043/(1 - (2/3)**2), 2/3, 0.5235987755982988]
+    err_target: 1e-12
+    weird: 24
+
+  - label: "radial zoom-whirl, flat"
+    a: 0.9
+    mu: 1e-4
+    params: [3.4025493692923/(1 - 0.95**2), 0.95, 1.5707963267948966]
+    err_target: 1e-12
+    weird: 24
+

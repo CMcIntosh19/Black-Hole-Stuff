@@ -1,0 +1,71 @@
+inspirals:
+  - label: "Generic Inspiral mark5 MGV (Paper) sect1"
+    a: -0.8
+    mu: 1e-3
+    params: [30/(1 - 0.4**2), 0.4, 30*np.pi/180]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect2"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9852016886553583, 2.8444318518313487, 24.314815521871026]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect3"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9828339984705557, 2.710325026661404, 22.13217398332372]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect4"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9801138107848651, 2.5730029312257647, 20.00712061889467]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect5"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9769683344751579, 2.4353027003996557, 17.98765152172588]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect6"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9733274258578493, 2.300969677105923, 16.124885418624817]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect7"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9691305188934005, 2.17397293244974, 14.46130532670574]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect8"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9643936113326446, 2.059206985397884, 13.03982080107518]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect9"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9593199778427539, 1.9626345075276312, 11.904997150650733]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  
+  - label: "Generic Inspiral mark5 MGV (Paper) sect10"
+    a: -0.8
+    mu: 1e-3
+    cons: [0.9544938846565462, 1.8914107923408596, 11.10596964984157]
+    err_target: 1e-12
+    endflag: "time > 35076796"
+  

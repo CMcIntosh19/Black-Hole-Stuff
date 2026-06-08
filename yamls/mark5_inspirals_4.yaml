@@ -1,0 +1,420 @@
+inspirals:
+  - label: "Glamp Incline mark5_3 differe inc_15 sect1"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.957049688394065, 0.9798200180428618, 13.371733455997402]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect2"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570385266736989, 0.9797183669676575, 13.369416034718137]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect3"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9553915266770088, 0.9651089845046692, 13.03960300181034]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect4"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9535646854521551, 0.9497904858125956, 12.700930484516695]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect5"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9517454795729166, 0.9354281896560275, 12.390386796308748]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect6"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9499255035697944, 0.9219215740463952, 12.104931193126752]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect7"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9481775752533799, 0.9097434403325823, 11.853509649113262]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect8"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9465080213858753, 0.898836606385916, 11.633712986634038]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect9"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9450080246780432, 0.8896654096333402, 11.45352675398154]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_15 sect10"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9438118334158637, 0.8828346817847635, 11.322882907562864]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect1"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570496883940649, 1.8928669210852427, 10.748835542816186]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect2"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570393074108942, 1.8926900523100183, 10.747157718571348]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect3"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9554044845650713, 1.8655837596085787, 10.492472948850194]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect4"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.953580119478589, 1.8370470108570143, 10.229788114340899]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect5"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9517556419793789, 1.8102455262975579, 9.98843187342431]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect6"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9499381116292458, 1.785215293267327, 9.768042368025785]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect7"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9481804803298798, 1.7625602483026588, 9.573131479391897]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect8"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9465135089446752, 1.7424825698846202, 9.404482720885358]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect9"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9450139848477266, 1.725644047672653, 9.266556400846286]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_30 sect10"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9438436549241792, 1.7134205676843772, 9.169054363566614]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect1"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570496883940649, 2.676918071566153, 7.165890361877456]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect2"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570407353413319, 2.6767112698410864, 7.164965563258184]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect3"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9554165577497127, 2.6402446105178576, 7.00340538425808]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect4"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9536028636656415, 2.601927309783658, 6.837006859583047]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect5"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9517854595897077, 2.565973856276073, 6.684184540734252]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect6"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9499835397856606, 2.5326564545355525, 6.545642639643777]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect7"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9482150199359346, 2.5021626010548523, 6.42168965993144]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect8"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.946566132584323, 2.475702168933717, 6.316632560436404]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect9"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9450669139744036, 2.4533688346057216, 6.2301219558454815]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_45 sect10"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9439129814627175, 2.437460528023735, 6.170085112392242]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect1"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570496883940645, 3.2785416792860986, 3.5829451809387063]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect2"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570411553892513, 3.278309873337344, 3.5825219831852664]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect3"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9554317561469753, 3.23585537837552, 3.50571593241981]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect4"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9536236077757053, 3.191082631916579, 3.4262826870566108]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect5"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9518075917347026, 3.149098585400442, 3.353346807908626]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect6"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.950005720829749, 3.110289815637086, 3.287366888461702]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect7"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9482503663547821, 3.0751491666143083, 3.228939945853821]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect8"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9465919414704401, 3.044369181718623, 3.1789358790461493]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect9"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9450902550851726, 3.018622178502291, 3.138121282850945]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_60 sect10"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9439679829913507, 3.000894739078506, 3.1107318492967084]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect1"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570496883940646, 3.6567380896090063, 0.9600472677575095]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect2"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570421184901131, 3.6565152041723503, 0.9599495120068635]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect3"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9554496806298561, 3.611011255476703, 0.9401682709744106]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect4"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9536483974855694, 3.5627668910329504, 0.9195938324049021]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect5"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.951835113502386, 3.5175110898301023, 0.9006897252986602]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect6"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9500295623819968, 3.475624889640561, 0.8835626595405274]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect7"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9482785771556932, 3.437960906295261, 0.8684978469685665]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect8"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9466280084179552, 3.4051240837694623, 0.855660864929343]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect9"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9451246213358585, 3.377573571143617, 0.8451488046955493]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_75 sect10"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9440201661897835, 3.358979046600305, 0.838231669678071]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect1"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570496883940647, 3.7857338421704774, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect2"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9570420094466086, 3.7855021674722646, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect3"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9554446758644449, 3.7387512938627645, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect4"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9536389694227126, 3.6892586264893246, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect5"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9518180718464084, 3.6427981884409304, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect6"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.950022178328411, 3.6002400226826863, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect7"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9482663323484221, 3.5616907229485912, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect8"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9466203067835534, 3.52830232785641, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect9"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9451242656236157, 3.5003744267249974, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
+
+  - label: "Glamp Incline mark5_3 differe inc_90 sect10"
+    a: 0.0
+    mu: 1e-3
+    cons: [0.9440288024092515, 3.481604016218352, 0.0]
+    err_target: 1e-12
+    endflag: "time > 193036"
