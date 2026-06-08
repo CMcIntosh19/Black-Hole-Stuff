@@ -3024,7 +3024,6 @@ def lagrange_derivative_numba(data, t, stencil=5):
                 deriv[k-half, i, j] = d
     return deriv
 
-
 @njit(parallel=True)
 def compute_dldt_numba_woo(dt2, dt3):
     N = dt2.shape[0]
@@ -3043,7 +3042,6 @@ def compute_dldt_numba_woo(dt2, dt3):
                         acc += levciv[i,j,k] * dt2[l,j,m] * dt3[l,k,m]
             dldt[l,i] = -2.0/5.0 * acc
     return dldt
-
 
 def peters_integrate_numba(states, a, mu, stencil=5):
     """
