@@ -675,7 +675,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     e = (outer_turn - inner_turn)/(outer_turn + inner_turn)
     A = (a**2)*(1 - initE**2)
     z2 = np.round(((A + initLz**2 + initC) - ((A + initLz**2 + initC)**2 - 4*A*initC)**(1/2))/(2*A), 13) if A != 0 else np.round(initC/(initLz**2 + initC), 13)
-    inc = np.sign(initLz)*np.arccos(np.sqrt(z2))
+    inc = np.sign(initLz)*np.arccos(min(1.0, np.sqrt(z2)))
     tracker = [[pot_min, e, inc, inner_turn, outer_turn, all_states[0][0], 0]]
     if True in np.iscomplex(tracker[0]):
         initE = (4*a*initLz*pot_min + ((4*a*initLz*pot_min)**2 - 4*(pot_min**4 + 2*pot_min*(a**2))*((a*initLz)**2 - (pot_min**2 - 2*pot_min + a**2)*(pot_min**2 + initLz**2 + initC)))**(0.5))/(2*(pot_min**4 + 2*pot_min*(a**2)))
@@ -1133,7 +1133,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                         phi_dist = 2*min(abs(phi_min - old_step[3]%(2*np.pi)))*np.sign(old_step[7])
                     new_step[3] += phi_dist
                     # Estimate the elapsed time as d(phi)/phi_dot
-                    t_change = 2 * min((np.pi - new_step[2]), new_step[2]) / abs(new_step[6])
+                    t_change = 2 * min((np.pi - np.abs(new_step[2]%(2*np.pi) - np.pi)), np.abs(new_step[2]%(2*np.pi) - np.pi)) / abs(new_step[6])
                     new_step[0] += t_change
                     # Scale up dTau so we aren't liars
                     dTau = dTau*(new_step[0] - state[0])/(old_step[0] - state[0])
