@@ -1941,15 +1941,15 @@ def top_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         ax[i, 1].set_xlim(xmin, xmax)
     plt.show()
 
-def full_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
+def full_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01, pretty=False, mass=False):
     from matplotlib.colors import TABLEAU_COLORS
     tab_cols = list(TABLEAU_COLORS.values())
     if type(datalist) != list:
         datalist = [datalist]
     num = len(datalist)
-    if num < 2:
-        print("For comparisons only")
-        return False
+    #if num < 2:
+    #    print("For comparisons only")
+    #    return False
     if width == 0:
         width = (10/3)*num
     if height == 0:
@@ -1957,7 +1957,8 @@ def full_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
     fig = plt.figure(figsize=(width, height))
     
     #start, end = 0, 20000
-    xmin, xmax = 10**10, 10**(-10)
+    xmin, xmax = 10**10, -10**(10)
+    ymin, ymax = 10**10, -10**(10)
     size_vals = []
     for i in range(num):
         ax = fig.add_subplot(num, 2, i*2 + 1, projection="3d")
@@ -1971,7 +1972,7 @@ def full_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         #Actual path data
         elev = ax.elev
         azim = ax.azim
-        carts = np.array([sph2cart(pos, datalist[i]["spin"]) for pos in datalist[i]["pos"]])
+        carts = np.array([sph2cart(pos, datalist[i]["spin"]) for pos in datalist[i]["pos"][to:tf]])
         T = np.pi/180
         view_norm = np.array([np.cos(elev*T)*np.cos(azim*T), np.cos(elev*T)*np.sin(azim*T), np.sin(elev*T)])
         mask = np.sign(np.matmul(carts, view_norm))
@@ -1998,17 +1999,44 @@ def full_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         ax.set_xlabel('')
         ax.set_ylabel('')
         ax.set_zlabel('')
-        for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
-            labels = axis.get_ticklabels()
-            for lbl in labels[0::2]:
-                lbl.set_visible(False)
+        if pretty:
+            ax.set_axis_off()
+            max_r = 10*(rbound//10 + 0.5)
+            dr = 10
+            radii = np.arange(max_r, 0, -dr)
+            while True:
+                num_circ = len(radii)
+                if num_circ > 5:
+                    radii = radii[::2]
+                elif num_circ < 2:
+                    dr = dr//2
+                    radii = np.arange(max_r, 0, -dr)
+                else:
+                    break
+            radii = radii[::-1]
+            radii = radii[radii > rb]
+            print(radii)
+            radial_reference_circles(ax, radii, angle=azim+90)
+            radial_axes_with_ticks(ax, rbound*1.1, ticks=())
+            ax.set(xlim3d=(-rbound*0.8, rbound*0.8), xlabel='X')
+            ax.set(ylim3d=(-rbound*0.8, rbound*0.8), ylabel='Y')
+            ax.set(zlim3d=(-rbound*0.8, rbound*0.8), zlabel='Z')
+            ax.set_box_aspect((rbound, rbound, rbound))
+        else:
+            for axis in (ax.xaxis, ax.yaxis, ax.zaxis):
+                labels = axis.get_ticklabels()
+                for lbl in labels[0::2]:
+                    lbl.set_visible(False)
 
 
         ax = fig.add_subplot(num, 2, i*2 + 2)
-        wave, time = mm.full_transform(datalist[i], cap*1000)
-        x = np.copy(time)
-        y1 = np.copy(wave[:,0,0])
-        y2 = np.copy(wave[:,0,1])
+        wave_plus, wave_cross, time = mm.full_transform(datalist[i], cap*1000)
+        if mass:
+            x = np.copy(time)*(6.67e-11 * mass)/((3e8)**3)
+        else:
+            x = np.copy(time)
+        y1 = wave_plus #np.copy(wave[:,0,0])
+        y2 = wave_cross #np.copy(wave[:,0,1])
         N = time.size
         T = (x[-1] - x[0])/N
         yf1 = fft(y1)
@@ -2022,11 +2050,19 @@ def full_and_fourier(datalist, start=0, end=-1, width=12, height=0, space=0.01):
         ax.grid()
         ax.legend(title=datalist[i]["name"])
         thismin, thismax = ax.set_xlim()
+        thiymin, thiymax = ax.set_ylim()
         xmin, xmax = min(xmin, thismin), max(xmax, thismax)
+        ymin, ymax = min(ymin, thiymin), max(ymax, thiymax)
+        if i == num - 1:
+            ax.set_xlabel("Frequency" + (" (Hz)" if mass else ""), fontsize=12)
+        else:
+            ax.set_xticklabels([])
     size_ix = np.where(np.array(size_vals)[:,-1] == max(np.array(size_vals)[:,-1]))[0][0]
     fig.subplots_adjust(wspace=0*space)
+    fig.subplots_adjust(hspace=0*space)
     for ax in fig.axes[1::2]:
         ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
     plt.show()
 
 def orth_and_fourier(datalist, start=0, end=-1, filename=False, leg_title=False):
@@ -2080,15 +2116,16 @@ def orth_and_fourier(datalist, start=0, end=-1, filename=False, leg_title=False)
         ax3.set_aspect('equal')
         ax4.set_aspect('equal')
         
-        wave, time = mm.full_transform(data, cap*1000)
+        wave_plus, wave_cross, time = mm.full_transform(data, cap*1000)
         to = get_index(time, start)
+        print(end)
         if end > 0.0:
             tf = get_index(time, end)
         else:
             tf = get_index(time, data["time"][-1])
         x = np.copy(time[to:tf])
-        y1 = np.copy(wave[to:tf,0,0])
-        y2 = np.copy(wave[to:tf,0,1])
+        y1 = wave_plus #np.copy(wave[to:tf,0,0])
+        y2 = wave_cross #np.copy(wave[to:tf,0,1])
         y0 = np.sqrt(y1**2 + y2**2)
         N = x.size
         T = (x[-1] - x[0])/N
@@ -2472,7 +2509,7 @@ def radial_axes_with_ticks(ax, r, ticks=(-0.5, -1, 0.5, 1),
     axes = {
         "x": ([ -r,  r], [0, 0], [0, 0]),
         "y": ([0, 0], [ -r,  r], [0, 0]),
-        "z": ([0, 0], [0, 0], [ -r,  r]),
+        "z": ([0, 0], [0, 0], [ -r*1.5,  r*1.5]),
     }
 
     for x, y, z in axes.values():

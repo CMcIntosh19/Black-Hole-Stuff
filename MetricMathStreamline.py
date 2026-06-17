@@ -2555,6 +2555,21 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
             P = E0*(int_sphere[:, 0]**2 + a*a) - a*L0
             D = int_sphere[:, 0]*(int_sphere[:, 0] - 2) + a*a
             dC = np.sum(((2*P*(int_sphere[:, 0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:, 2])*div*mu*mu)
+
+        elif "redial" in label:
+            poly1 = np.array([E0**2 - 1, 2.0, (a**2)*(E0**2 - 1) - L0**2 - C0, 2*((a*E0 - L0)**2) + 2*C0, -C0*(a**2)])
+            if "redialp" in label:
+                ix = -2
+            else:
+                ix = -1
+            r1 = np.sort(np.roots(poly1))[ix]
+            P = E0*(r1**2 + a*a) - a*L0
+            D = r1*(r1 - 2) + a*a
+            dC0 = (2*P*(r1**2 + a*a)/D - 2*a*(a*E0 - L0))*dE + (-2*P*a/D + 2*(a*E0 - L0))*dLz
+            E1, L1, C1 = E0 + dE, L0 + dLz, C0 + dC0
+            poly2 = np.array([E1**2 - 1, 2.0, (a**2)*(E1**2 - 1) - L1**2 - C1, 2*((a*E1 - L1)**2) + 2*C1, -C1*(a**2)])
+            r2 = np.sort(np.roots(poly2))[ix]
+            dC = dC0 + ((2*P/(D**2))*(2*E0*r1*D + (1-r1)*P) - 2*r1)*(r2 - r1)
         
         elif "lastsq" in label:
             # ============================================================
@@ -2722,7 +2737,7 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
                     break
                 else:
                     targ_scale *= 2
-            print("cond = ", singular_vals[0]/singular_vals[-1], L0/np.sqrt(L0**2 + C0))
+            #print("cond = ", singular_vals[0]/singular_vals[-1], L0/np.sqrt(L0**2 + C0))
             #print("scale testing:")
             for scale in [1, 10, 100, 1000]:
 
