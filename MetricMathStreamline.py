@@ -3044,10 +3044,9 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
                 cart_state = sph2cart(state, a)
                 L_dir = np.cross(cart_state[1:4], cart_state[5:])
                 L_vec = L*L_dir/np.linalg.norm(L_dir)
-                dQ = 2*(L_vec[0]*dLx + L_vec[1]*dLy 
+                dC = 2*(L_vec[0]*dLx + L_vec[1]*dLy 
                         - (a*a)*((1 - E0**2)*np.sin(theta)*np.cos(theta)*(int_sphere[-1,1] - int_sphere[0,1])
                                  + E0*dE*(np.cos(theta)**2)))
-                dC = dQ - 2*(a*E0 - L0)*(a*dE - dLz)
 
         E, L, C = E0 + dE, L0 + dLz, C0 + dC
 
