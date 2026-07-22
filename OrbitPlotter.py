@@ -397,7 +397,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
             "energy": ['data["energy"]', "Specific Energy", 'data["tracktime"]'],
             "L_z": ['data["phi_momentum"]', "Specific Axial Angular Momentum", 'data["tracktime"]'],
             "carter": ['data["carter"]', "Carter Constant", 'data["tracktime"]'],
-            "qarter": ['data["qarter"]', "Carter Constant (Unnormalized)", 'data["tracktime"]'],
+            #"qarter": ['data["qarter"]', "Carter Constant (Unnormalized)", 'data["tracktime"]'],
             "approx_L": ['np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Full Angular Momentum sqrt(C + L\u2080\u00B2)", 'data["tracktime"]'],
             "interval": ['data["interval"]', "Spacetime Interval", 'data["raw"][:, 0]'],
             "cosi": ['data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Inclination (cosi)", 'data["tracktime"]'],

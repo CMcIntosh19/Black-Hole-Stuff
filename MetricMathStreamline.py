@@ -2657,7 +2657,7 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
 
                 if v2 >= 1:
                     raise ValueError(
-                        f"Superluminal tetrad velocity encountered: v²={v2}"
+                        f"Superluminal tetrad velocity encountered: v²={v2, v, dv}"
                     )
 
                 gamma = 1/np.sqrt(1 - v2)
@@ -2739,7 +2739,7 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
                     targ_scale *= 2
             #print("cond = ", singular_vals[0]/singular_vals[-1], L0/np.sqrt(L0**2 + C0))
             #print("scale testing:")
-            for scale in [1, 10, 100, 1000]:
+            '''for scale in [1, 10, 100, 1000]:
 
                 test_state = perturb_state(
                     state,
@@ -2749,7 +2749,7 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
 
                 obs,_ = get_observables(test_state,a)
 
-                #print(scale, obs-obs0)
+                #print(scale, obs-obs0)'''
 
             # ============================================================
             # Linear prediction
@@ -7722,3 +7722,11 @@ def gair_glamp_2006_2(a, q, cons=False, params=False, endflag="False", eps=1e-3,
            "spin": a*((-1)**flip)/dist_scale,
            "tweak": vals[:, 10]}
     return dct
+
+def compy(a, q, cons=False, params=False):
+    peters = peters_sim_re(a, q, cons=cons, params=params)
+    peters2 = peters_sim_re2(a, q, cons=cons, params=params)
+    glamp = glamp_2002(a, q, cons=cons, params=params)
+    gg = gair_glamp_2006(a, q, cons=cons, params=params)
+    gg2 = gair_glamp_2006_2(a, q, cons=cons, params=params)
+    return [peters, peters2, glamp, gg, gg2]

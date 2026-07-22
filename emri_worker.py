@@ -13,6 +13,7 @@ import argparse
 import yaml
 import re
 import psutil
+import random
 
 def last_index_write_time():
     try:
@@ -241,6 +242,7 @@ def main():
         config = yaml.safe_load(f)
 
     inspiral_cfgs = config["inspirals"]
+    random.shuffle(inspiral_cfgs)       # Shake up the entries a little bit so that Multiple Run files are more even maybe?
 
     # stagger write poll intervals to avoid simultaneous writes
     polls = np.random.uniform(0.5, 6, len(inspiral_cfgs))

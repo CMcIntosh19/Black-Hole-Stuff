@@ -1,0 +1,120 @@
+inspirals:
+  - label: 'Control 616 radial'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, 60*np.pi/180]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Control 616 lastsq'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, 60*np.pi/180]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+  
+  - label: 'Control 616 inc0'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, 60*np.pi/180]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Equatorial 616 radial'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, np.pi/2]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Equatorial 616 lastsq'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, np.pi/2]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Equatorial 616 inc0'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, np.pi/2]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Near-Polar 616 radial'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, 5*np.pi/180]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Near-Polar 616 lastsq'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, 5*np.pi/180]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Near-Polar 616 inc0'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.3**2), 0.3, 5*np.pi/180]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Near-Circ 616 radial'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.01**2), 0.01, np.pi/4]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Near-Circ 616 lastsq'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.01**2), 0.01, np.pi/4]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'Near-Circ 616 inc0'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.01**2), 0.01, np.pi/4]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'High-e 616 inc0'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.9**2), 0.9, np.pi/4]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'High-e 616 radial'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.9**2), 0.9, np.pi/4]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
+
+  - label: 'High-e 616 lastsq'
+    a: 0.5
+    mu: 1e-3
+    params: [12/(1 - 0.9**2), 0.9, np.pi/4]
+    err_target: 1e-12
+    endflag: "rad_orbit > 1000"
+    weird: 24
