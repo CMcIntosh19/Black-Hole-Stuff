@@ -18,6 +18,8 @@ from IPython.display import HTML
 from tqdm import tqdm
 from matplotlib.colors import TABLEAU_COLORS
 from matplotlib.gridspec import GridSpec
+from scipy.signal import find_peaks
+from itertools import product
 
 def get_index(array, time):
     '''
@@ -357,57 +359,61 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
     select_legend = np.array(select_legend)
     select_legend = np.where(select_legend < 0, select_legend + len(datalist), select_legend)
 
+    # ["value": [location in data dict, Value name, extra bit if timing is weird]]
+    termdict = {
+        "index": ['np.arange(len(data["raw"]))', "Index", 'np.arange(len(data["raw"]))'],
+        "time": ['data["raw"][:, 0]', "Coordinate Time", 'data["raw"][:, 0]'],
+        "tracktime": ['data["tracktime"]', "Coordinate Time", 'data["tracktime"]'],
+        "radius": ['data["raw"][:,1]', "Radius", 'data["raw"][:, 0]'],
+        "theta": ['data["raw"][:,2]', "Theta", 'data["raw"][:, 0]'],
+        "phi": ['data["raw"][:,3]%(2*np.pi)', "Phi", 'data["raw"][:, 0]'],
+        "phase": ['data["raw"][:,3]/(2*np.pi)', "Phase", 'data["raw"][:, 0]'],
+        "x": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.cos(data["raw"][:,3])', "X", 'data["raw"][:, 0]'],
+        "y": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.sin(data["raw"][:,3])', "Y", 'data["raw"][:, 0]'],
+        "z": ['data["raw"][:,1]*np.cos(data["raw"][:,3])', "Z", 'data["raw"][:, 0]'],
+        "true_anom": ['data["true_anom"]/(2*np.pi)', "True Anomaly", 'data["tracktime"]'],
+        "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
+        "pot_min": ['data["pot_min"]', "Effective Potential Minimum", 'data["tracktime"]'],
+        "ecc": ['data["e"]', "Eccentricity", 'data["tracktime"]'],
+        "semilat": ['data["p"]', "Semilatus-Rectum", 'data["tracktime"]'],
+        "inc": ['data["inc"]', "Inclination", 'data["tracktime"]'],
+        "inc_deg": ['np.rad2deg(data["inc"])', "Inclination (degrees)", 'data["tracktime"]'],
+        "periapse": ['data["it"]', "Periapse", 'data["tracktime"]'],
+        "apoapse": ['data["ot"]', "Apoapse", 'data["tracktime"]'],
+        "omega": ['data["omega"]', "Phi Position of Periapse", 'otime'],
+        "otime": ['data["otime"]', "Time of Periapse", 'otime'],
+        "omegadot": ['np.diff(data["omega"])/np.diff(data["otime"])', "Advance of Periapse", 'odottime'],
+        "odottime": ['0.5*data["otime"][:-1] + 0.5*data["otime"][1:]', "Periadvance time", 'odottime'],
+        "asc_node": ['data["asc_node"]', "Phi Position of Ascending Node", 'asc_node_time'],
+        "asc_node_time": ['data["asc_node_time"]', "Time of Ascending Node", 'asc_node_time'],
+        "semi_maj": ['0.5*(data["it"] + data["ot"])', "Semimajor Axis", 'data["tracktime"]'],
+        "semi_lat": ['data["p"]', "Semilatus Rectum", 'data["tracktime"]'],
+        "radial_v": ['data["all_vel"][:,1]', "Radial Velocity", 'data["raw"][:, 0]'],
+        "theta_v": ['data["all_vel"][:,2]', "Theta Velocity", 'data["raw"][:, 0]'],
+        "phi_v": ['data["all_vel"][:,3]', "Phi Velocity", 'data["raw"][:, 0]'],
+        "total_v": ['data["vel"]', "Velocity", 'data["raw"][:, 0]'],
+        "energy": ['data["energy"]', "Specific Energy", 'data["tracktime"]'],
+        "L_z": ['data["phi_momentum"]', "Specific Axial Angular Momentum", 'data["tracktime"]'],
+        "carter": ['data["carter"]', "Carter Constant", 'data["tracktime"]'],
+        "qarter": ['data["carter"] + (data["spin"]*data["energy"] - data["phi_momentum"])**2', "Carter Constant (Unnormalized)", 'data["tracktime"]'],
+        "approx_L": ['np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Full Angular Momentum sqrt(C + L\u2080\u00B2)", 'data["tracktime"]'],
+        "interval": ['data["interval"]', "Spacetime Interval", 'data["raw"][:, 0]'],
+        "cosi": ['data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Inclination (cosi)", 'data["tracktime"]'],
+        "cosi_deg": ['np.rad2deg(np.arccos(data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)))', "Inclination (cosi, degrees)", 'data["tracktime"]']
+        }
+
     fig, ax = plt.subplots()
     colors = list(mcolors.TABLEAU_COLORS)
     for thing in range(len(datalist)):
         data = datalist[thing]
-        # ["value": [location in data dict, Value name, extra bit if timing is weird]]
-        termdict = {
-            "index": ['np.arange(len(data["raw"]))', "Index", 'np.arange(len(data["raw"]))'],
-            "time": ['data["raw"][:, 0]', "Coordinate Time", 'data["raw"][:, 0]'],
-            "tracktime": ['data["tracktime"]', "Coordinate Time", 'data["tracktime"]'],
-            "radius": ['data["raw"][:,1]', "Radius", 'data["raw"][:, 0]'],
-            "theta": ['data["raw"][:,2]', "Theta", 'data["raw"][:, 0]'],
-            "phi": ['data["raw"][:,3]%(2*np.pi)', "Phi", 'data["raw"][:, 0]'],
-            "phase": ['data["raw"][:,3]/(2*np.pi)', "Phase", 'data["raw"][:, 0]'],
-            "x": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.cos(data["raw"][:,3])', "X", 'data["raw"][:, 0]'],
-            "y": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.sin(data["raw"][:,3])', "Y", 'data["raw"][:, 0]'],
-            "z": ['data["raw"][:,1]*np.cos(data["raw"][:,3])', "Z", 'data["raw"][:, 0]'],
-            "true_anom": ['data["true_anom"]/(2*np.pi)', "True Anomaly", 'data["tracktime"]'],
-            "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
-            "pot_min": ['data["pot_min"]', "Effective Potential Minimum", 'data["tracktime"]'],
-            "ecc": ['data["e"]', "Eccentricity", 'data["tracktime"]'],
-            "semilat": ['data["p"]', "Semilatus-Rectum", 'data["tracktime"]'],
-            "inc": ['data["inc"]', "Inclination", 'data["tracktime"]'],
-            "inc_deg": ['np.rad2deg(data["inc"])', "Inclination (degrees)", 'data["tracktime"]'],
-            "periapse": ['data["it"]', "Periapse", 'data["tracktime"]'],
-            "apoapse": ['data["ot"]', "Apoapse", 'data["tracktime"]'],
-            "omega": ['data["omega"]', "Phi Position of Periapse", 'otime'],
-            "otime": ['data["otime"]', "Time of Periapse", 'otime'],
-            "omegadot": ['np.diff(data["omega"])/np.diff(data["otime"])', "Advance of Periapse", 'odottime'],
-            "odottime": ['0.5*data["otime"][:-1] + 0.5*data["otime"][1:]', "Periadvance time", 'odottime'],
-            "asc_node": ['data["asc_node"]', "Phi Position of Ascending Node", 'asc_node_time'],
-            "asc_node_time": ['data["asc_node_time"]', "Time of Ascending Node", 'asc_node_time'],
-            "semi_maj": ['0.5*(data["it"] + data["ot"])', "Semimajor Axis", 'data["tracktime"]'],
-            "semi_lat": ['data["p"]', "Semilatus Rectum", 'data["tracktime"]'],
-            "radial_v": ['data["all_vel"][:,1]', "Radial Velocity", 'data["raw"][:, 0]'],
-            "theta_v": ['data["all_vel"][:,2]', "Theta Velocity", 'data["raw"][:, 0]'],
-            "phi_v": ['data["all_vel"][:,3]', "Phi Velocity", 'data["raw"][:, 0]'],
-            "total_v": ['data["vel"]', "Velocity", 'data["raw"][:, 0]'],
-            "energy": ['data["energy"]', "Specific Energy", 'data["tracktime"]'],
-            "L_z": ['data["phi_momentum"]', "Specific Axial Angular Momentum", 'data["tracktime"]'],
-            "carter": ['data["carter"]', "Carter Constant", 'data["tracktime"]'],
-            #"qarter": ['data["qarter"]', "Carter Constant (Unnormalized)", 'data["tracktime"]'],
-            "approx_L": ['np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Full Angular Momentum sqrt(C + L\u2080\u00B2)", 'data["tracktime"]'],
-            "interval": ['data["interval"]', "Spacetime Interval", 'data["raw"][:, 0]'],
-            "cosi": ['data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Inclination (cosi)", 'data["tracktime"]'],
-            "cosi_deg": ['np.rad2deg(np.arccos(data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)))', "Inclination (cosi, degrees)", 'data["tracktime"]']
-            }
-        
         if ((type(xvalue) == str) and (xvalue in termdict)) and ((type(yvalue) == str) and (yvalue in termdict)):
             xstuff = [eval(termdict[xvalue][0]), termdict[xvalue][1], termdict[xvalue][2]]
             ystuff = [eval(termdict[yvalue][0]), termdict[yvalue][1], termdict[yvalue][2]]
+            if (start and xstuff[0][-1] < start) or (end and xstuff[0][0] > end):
+                print(f"{data["name"]} lies outside selected domain, skipping.")
+                continue
             title = "%s vs %s"%(termdict[yvalue][1], termdict[xvalue][1])
+            title = ""
             title_add = ""
             if len(xstuff[0]) == len(ystuff[0]):
                 #if the values have the same length, just grab the data
@@ -426,7 +432,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
                 xvals, yvals = xvals[xo:xf], yvals[xo:xf]
             if derv > 0:
                 try:
-                    title_add = " (%s%s derivative)"%(derv, ["st", "nd", "rd"][derv-1] if derv%10 < 4 else "th")
+                    title_add = "(%s%s derivative)"%(derv, ["st", "nd", "rd"][derv-1] if derv%10 < 4 else "th")
                     xvals_sub = np.copy(xvals)
                     yvals_sub = np.copy(yvals)
                     for i in range(derv):
@@ -465,6 +471,9 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
     ax.set_xscale(xscale)
     ax.set_yscale(yscale)
     ax.set_title(title+title_add)
+    ax.set_ylabel(termdict[yvalue][1])
+    ax.set_xlabel(termdict[xvalue][1])
+
     if grid:
         plt.grid()
 
@@ -530,7 +539,7 @@ def comparevalues(data, values, start=0, end=-1, leg=True):
     
     return True
 
-def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, ele=30, azi=-60, cb=False, stitch=False, filename=False, colors_list=None):
+def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, ele=30, azi=-60, cb=False, stitch=False, filename=False, colors_list=None, pretty=False):
     '''
     Plots one or more test particles' path through space
     
@@ -668,12 +677,12 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
             frontyz = np.array([carts[i] if carts[i][0] >= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
             backyz = np.array([carts[i] if carts[i][0] <= 0 else [np.nan, np.nan, np.nan] for i in range(len(carts))])
 
-            ax_list[0].plot(frontxy[:,0], frontxy[:,1], label=data["name"], c = tab_cols[i])
-            ax_list[0].plot(backxy[:,0], backxy[:,1], label="_nolabel_", c = tab_cols[i])
-            ax_list[1].plot(frontxz[:,0], frontxz[:,2], label="_nolabel_", c = tab_cols[i])
-            ax_list[1].plot(backxz[:,0], backxz[:,2], label="_nolabel_", c = tab_cols[i])
-            ax_list[2].plot(frontyz[:,1], frontyz[:,2], label="_nolabel_", c = tab_cols[i])
-            ax_list[2].plot(backyz[:,1], backyz[:,2], label="_nolabel_", c = tab_cols[i])
+            ax_list[0].plot(frontxy[:,0], frontxy[:,1], label=data["name"], c = tab_cols[i%len(tab_cols)])
+            ax_list[0].plot(backxy[:,0], backxy[:,1], label="_nolabel_", c = tab_cols[i%len(tab_cols)])
+            ax_list[1].plot(frontxz[:,0], frontxz[:,2], label="_nolabel_", c = tab_cols[i%len(tab_cols)])
+            ax_list[1].plot(backxz[:,0], backxz[:,2], label="_nolabel_", c = tab_cols[i%len(tab_cols)])
+            ax_list[2].plot(frontyz[:,1], frontyz[:,2], label="_nolabel_", c = tab_cols[i%len(tab_cols)])
+            ax_list[2].plot(backyz[:,1], backyz[:,2], label="_nolabel_", c = tab_cols[i%len(tab_cols)])
 
             if cb == True:
                 ax_list[0].add_patch(top_erg)
@@ -721,6 +730,15 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
     else:
         fig = plt.figure(figsize=(10,10))
         ax = fig.add_subplot(projection="3d")
+        if pretty:
+            carts = mm.sph2cart_vec(np.concatenate([thing["raw"] for thing in datalist]), datalist[0]["spin"])
+            mean_L = np.mean(np.cross(carts[:, 1:4], carts[:, 5:8]), axis=0)
+            mean_L /= np.linalg.norm(mean_L)
+            mean_L *= np.sign(mean_L[2])
+            ele = (np.rad2deg(np.pi/2 - np.arccos(mean_L[2]))/2 - 15)*mean_L[2] + 15
+            azi = np.rad2deg(np.arctan2(mean_L[1], mean_L[0])) + 25 * (1 - mean_L[2]) + 20
+            print(ele, azi)
+            #mean_L = thing["raw"][:, 2:4]
         ax.view_init(elev=ele, azim=azi)
         
         rbound = 0
@@ -736,7 +754,7 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
             else:
                 tf = get_index(data["time"], data["time"][-1])
                 fliptf = get_index(data["tracktime"], data["tracktime"][-1])
-                
+
             rbound = max(max(data["pos"][to:tf,0])*1.05, rbound)
             carts = np.array([sph2cart(pos, a) for pos in data["pos"][to:tf]])
             flippoints = np.array([sph2cart(pos, a) for pos in data["pos"][data["trackix"][flipto:fliptf].astype(int)]])
@@ -779,11 +797,11 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
             front = np.array([carts[i] if -(A/C)*carts[i][0] - (B/C)*carts[i][1] - C*5 <= carts[i][2] else [np.nan, np.nan, np.nan] for i in range(len(cond))])
             back = np.array([carts[i] if -(A/C)*carts[i][0] - (B/C)*carts[i][1] - C*5 >= carts[i][2] else [np.nan, np.nan, np.nan] for i in range(len(cond))])
 
-            ax.plot3D(back[:, 0], back[:, 1], back[:, 2], label=data["name"], c = tab_cols[i])
+            ax.plot3D(back[:, 0], back[:, 1], back[:, 2], label=data["name"], c = tab_cols[i%len(tab_cols)])
             if cb == True:
                 ax.plot_surface(xS, yS, zS, color="black", shade=False)
                 ax.plot_surface(xE, yE, zE, color="darksalmon", alpha = 0.3)
-            ax.plot3D(front[:, 0], front[:, 1], front[:, 2], zorder=10, c = tab_cols[i])
+            ax.plot3D(front[:, 0], front[:, 1], front[:, 2], zorder=10, c = tab_cols[i%len(tab_cols)])
             if stitch == True:
                 ax.scatter(flippoints[:, 0], flippoints[:, 1], flippoints[:, 2], label=data["name"], zorder=9, marker="*", s=300)
             
@@ -792,6 +810,25 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
         ax.set(ylim3d=(-rbound/zoom, rbound/zoom), ylabel='Y')
         ax.set(zlim3d=(-rbound/zoom, rbound/zoom), zlabel='Z')
         ax.set_box_aspect((rbound, rbound, rbound))
+        if pretty and i == len(datalist) - 1:
+            ax.set_axis_off()
+            dr = max(1, 10 // zoom)
+            max_r = dr * max(1, min(int(rbound // dr), int(rbound / zoom)))
+            radii = np.arange(dr, max_r + dr, dr)
+            while len(radii) < 3:
+                dr = dr/2
+                max_r = int(max_r * 1.5)
+                print(dr, max_r)
+                radii = np.arange(dr, max_r + dr, dr)
+                #print(dr, radii)
+            while len(radii) > 5:
+                radii = radii[1::2]
+    
+            radial_reference_circles(ax, radii, angle=azi+90)
+            radial_axes_with_ticks(ax, rbound, ticks=())
+            ax.set(xlim3d=(-0.7*rbound/zoom, 0.7*rbound/zoom), xlabel='X')
+            ax.set(ylim3d=(-0.7*rbound/zoom, 0.7*rbound/zoom), ylabel='Y')
+            ax.set(zlim3d=(-0.7*rbound/zoom, 0.7*rbound/zoom), zlabel='Z')
         if leg == True:
             ax.legend()
     if filename == False:
@@ -799,7 +836,7 @@ def orthoplots(datalist, ortho=False, zoom=1.0, start=0.0, end=-1.0, leg=True, e
     else:
         plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
 
-def multi3D(datalist, grid=None, zoom=1.0, start=0, end=-1, ele=30, azi=30, cb=True, filename=False, colors_list=None):
+def multi3D(datalist, grid=None, zoom=1.0, start=0, end=-1, ele=30, azi=30, cb=True, filename=False, colors_list=None, reorient=False, legend=True):
     if colors_list == None:
         from matplotlib.colors import TABLEAU_COLORS
         tab_cols = list(TABLEAU_COLORS.values())
@@ -816,7 +853,7 @@ def multi3D(datalist, grid=None, zoom=1.0, start=0, end=-1, ele=30, azi=30, cb=T
         grid = (int(r), int(c))
 
     scale = np.ceil(2*np.sqrt(len(datalist)))/2
-    fig = plt.figure(figsize=(grid[1]*8/scale, grid[0]*8/scale))
+    fig = plt.figure(figsize=(grid[1]*6/scale, grid[0]*6/scale))
     gs = GridSpec(
         grid[0], grid[1],
         figure=fig,
@@ -824,18 +861,34 @@ def multi3D(datalist, grid=None, zoom=1.0, start=0, end=-1, ele=30, azi=30, cb=T
         bottom=0, top=1,
         wspace=0, hspace=0
     )
+    units = {'mks': [6.67e-11, 299792458],
+             'cgs': [6.67e-8, 29979245800],
+             'parsec': [4.4985e-15, 0.3065951],
+             'AU': [39.4765,  63239.7785],
+             'grav': [1.0, 1.0]}
 
     for i in range(len(datalist)):
         ax = fig.add_subplot(gs[i//grid[1], i % grid[1]], projection="3d")
         ax.set_axis_off()
-        print(i//grid[1], i % grid[1], grid)
-        ax.view_init(elev=ele, azim=azi)
+        #print(i//grid[1], i % grid[1], grid)
 
         data = datalist[i]
+        G, c = units[data["inputs"][-1]]
+        M = data["inputs"][0]
         to = get_index(data["time"], start)
         tf = get_index(data["time"], end) if end > 0 else len(data["time"])
 
-        carts = np.array([sph2cart(pos, data["spin"]) for pos in data["pos"][to:tf]])
+        #carts = np.array([sph2cart(pos, data["spin"]) for pos in data["pos"][to:tf]])
+        carts = mm.sph2cart_vec(data["raw"][to:tf], data["spin"])
+        if reorient:
+            mean_L = np.mean(np.cross(carts[:, 1:4], carts[:, 5:8]), axis=0)
+            mean_L /= np.linalg.norm(mean_L)
+            mean_L *= np.sign(mean_L[2])
+            ele = (np.rad2deg(np.pi/2 - np.arccos(mean_L[2]))/2 - 15)*mean_L[2] + 15
+            #azi = np.rad2deg(np.arctan2(mean_L[1], mean_L[0])) + 25 * (1 - mean_L[2]) + 20
+            azi = min((np.rad2deg(np.arctan2(np.mean(carts[:, 2]), np.mean(carts[:, 1]))) + 180 + np.array([45, -45]))%360)
+            #print(ele, azi)
+        ax.view_init(elev=ele, azim=azi)
 
         # View mask
         T = np.pi / 180
@@ -844,10 +897,10 @@ def multi3D(datalist, grid=None, zoom=1.0, start=0, end=-1, ele=30, azi=30, cb=T
             np.cos(ele*T)*np.sin(azi*T),
             np.sin(ele*T)
             ])
-        mask = np.sign(carts @ view_norm)
+        mask = np.sign(carts[:, 1:4] @ view_norm)
 
         # Horizons
-        rb = 1 + np.sqrt(1 - data["spin"]**2)
+        rb = (1 + np.sqrt(1 - data["spin"]**2)) * (G * M / (c * c))
         theta, phi = np.linspace(0, 2*np.pi), np.linspace(0, np.pi)
         phi, theta = np.meshgrid(phi, theta)
 
@@ -855,37 +908,45 @@ def multi3D(datalist, grid=None, zoom=1.0, start=0, end=-1, ele=30, azi=30, cb=T
         yS = rb*np.sin(theta)*np.cos(phi)
         zS = rb*np.cos(theta)
 
-        re = 1 + np.sqrt(1 - (data["spin"]*np.cos(theta))**2)
+        re = (1 + np.sqrt(1 - (data["spin"]*np.cos(theta))**2)) * (G * M / (c * c))
         xE = re*np.sin(theta)*np.sin(phi)
         yE = re*np.sin(theta)*np.cos(phi)
         zE = re*np.cos(theta)
 
-        rbound = np.max(np.abs(carts)) * 0.9
+        dr = 5.0 * (G * M / (c * c))
+        max_r = max(10 * (G * M / (c * c)), (11 * max(data["raw"][:, 1])) // 10)
+        #print("---")
+        #print(dr, max_r, "firg")
+        radii = np.arange(dr, max_r + dr, dr)
+        while len(radii) < 3:
+            #print(radii, dr/2)
+            dr = float("%.1g" % (dr/2))
+            #max_r = int(max_r * 1.5)
+            #print(dr, max_r, "more")
+            radii = np.arange(dr, max_r + dr, dr)
+            #print(dr, radii)
+        while len(radii) > 4:
+            #print(radii)
+            radii = radii[1::2]
+        if np.sum(radii) == np.sum(radii//1):
+            #print("bork")
+            radii = radii.astype(int)
+        #print("circs", radii, float("%.2g" % rb))
+        radial_reference_circles(ax, radii, angle=azi+120)
+        radial_axes_with_ticks(ax, radii[-1] + np.diff(radii)[-1]/2, ticks=())
+
+        rbound = np.max(radii)*0.9
         ax.set_xlim(-rbound, rbound)
         ax.set_ylim(-rbound, rbound)
         ax.set_zlim(-rbound, rbound)
         ax.set_box_aspect((1, 1, 1))
 
-        dr = 10
-        max_r = dr * max(1, int(rbound // dr))
-        radii = np.arange(dr, max_r + dr, dr)
-        while len(radii) < 3:
-            dr = dr//2
-            max_r = int(max_r * 1.5)
-            radii = np.arange(dr, max_r + dr, dr)
-            #print(dr, radii)
-        while len(radii) > 5:
-            radii = radii[1::2]
-
-        radial_reference_circles(ax, radii, angle=azi+90)
-        radial_axes_with_ticks(ax, rbound, ticks=())
-
         # Back half
         ax.plot3D(
-            np.where(mask <= 0, carts[:,0], np.nan),
             np.where(mask <= 0, carts[:,1], np.nan),
             np.where(mask <= 0, carts[:,2], np.nan),
-            c=tab_cols[i%len(tab_cols)], lw=1.2, alpha=0.85
+            np.where(mask <= 0, carts[:,3], np.nan),
+            c=tab_cols[i%len(tab_cols)], lw=1.2, alpha=0.85, label=data["name"]
         )
 
         ax.plot_surface(xS, yS, zS, color="black", alpha=0.85)
@@ -893,15 +954,16 @@ def multi3D(datalist, grid=None, zoom=1.0, start=0, end=-1, ele=30, azi=30, cb=T
 
         # Front half
         ax.plot3D(
-            np.where(mask > 0, carts[:,0], np.nan),
-            np.where(mask > 0, carts[:,1], np.nan),
-            np.where(mask > 0, carts[:,2], np.nan),
+            np.where(mask >= 0, carts[:,1], np.nan),
+            np.where(mask >= 0, carts[:,2], np.nan),
+            np.where(mask >= 0, carts[:,3], np.nan),
             c=tab_cols[i%len(tab_cols)], lw=1.3
         )
 
         ax.margins(0)
         ax.set_box_aspect((1, 1, 1))
         ax.set_anchor('C')
+        ax.legend(loc="lower center") if legend else None
     
     draw_panel_dividers(fig, gridvals=(grid[1], grid[0]))
     plt.show()
@@ -1108,7 +1170,7 @@ def ani_thing3(data, name=None, display=True, ortho=False, zoom=1.0, ele=30, azi
     num_steps = int(100*fid)
     
     #print(np.where(data["pos"][:,2] > 2*np.pi))
-    turn_ind = np.where(data["pos"][:,2] > 2*np.pi)[0][0]
+    turn_ind = np.where(np.abs(data["pos"][:,2]) > 2*np.pi)[0][0]
     first_turn = get_index(int_time, data["time"][turn_ind])
     #print(first_turn)
     
@@ -2149,23 +2211,32 @@ def orth_and_fourier(datalist, start=0, end=-1, filename=False, leg_title=False)
         else:
             plt.savefig("%s.png"%(filename), bbox_inches="tight")
 
-def justfourier(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False):
+def justfourier(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
     if type(datalist) != list:
         datalist = [datalist]
     num = len(datalist)
-    for data in datalist:
+    if not width:
+        width = max(8, 2*num)
+    if not height:
+        height = max(3, 1.5*num)
+    fig, ax = plt.subplots(num, figsize=(width, height), sharex=True, sharey=True)
+    if num == 1:
+        ax = [ax]
+
+    for i in range(num):
+        data = datalist[i]
+        print(data["name"])
         if not distance:
             distance = max(data["raw"][:,1])*100000  # distance is in GU
-        h_plus, h_cross, time = mm.full_transform(data, distance, supress=supress, m_bh=m_bh)
+        h_plus, h_cross, time = mm.full_transform(data, distance, supress=supress, m_bh=m_bh, n_hat=n_hat, samp_freq=samp_freq)
         to = get_index(time, start)
         if end > 0.0:
             tf = get_index(time, end)
         else:
             tf = None
-        print(start, end, to, tf)
         x = np.copy(time[to:tf])
-        y1 = np.copy(h_plus)
-        y2 = np.copy(h_cross)
+        y1 = np.copy(h_plus[to:tf])
+        y2 = np.copy(h_cross[to:tf])
         N = x.size
         T = x[1] - x[0]
         yf1 = np.fft.rfft(y1)
@@ -2173,62 +2244,590 @@ def justfourier(datalist, start=0, end=-1, filename=False, supress=True, m_bh=Fa
         xf = np.fft.rfftfreq(N, d=T)
         h_plus_fft = 2.0/N * np.abs(yf1)
         h_cross_fft = 2.0/N * np.abs(yf2)
+        '''power = np.abs(yf1)**2
+        power[1:-1] *= 2
+        # Don't include DC
+        power[0] = 0
+
+        num_peaks = 10
+        peaks, properties = find_peaks(h_plus_fft,
+                                    prominence=np.max(h_plus_fft) * 0.01,
+                                    distance=10)
+        highest = peaks[np.argsort(h_plus_fft[peaks])[::-1]]
+        counted = len(highest[:num_peaks])
+
+        peak_freqs = xf[highest[:num_peaks]]
+        peak_amps = h_plus_fft[highest[:num_peaks]]
+        peak_pows = power[highest[:num_peaks]]
+
+        #print("Peak frequencies:", peak_freqs)
+        #print("Peak amplitudes:", peak_amps)
+        fr, fth, fph = np.abs(mm.freqs_finder(data["energy"][0], data["phi_momentum"][0], data["carter"][0], data["spin"])/(2 * np.pi))
+        peri_ix = np.argmin(data["raw"][:data["trackix"][1], 1])
+        #f_pph = (np.abs(data["raw"][peri_ix + 2, 3] - data["raw"][peri_ix - 2, 3])/(data["time"][peri_ix + 2] - data["time"][peri_ix - 2]))/(2*np.pi)
+        f_pph = np.abs(np.mean(data["raw"][peri_ix - 2: peri_ix + 2, 7]))/(2*np.pi)
+
+        last_ix, fr_f = -1, np.nan
+        while np.isnan(fr_f):
+            fr_f, fth_f, fph_f = np.abs(mm.freqs_finder(data["energy"][last_ix], data["phi_momentum"][last_ix], data["carter"][last_ix], data["spin"])/(2 * np.pi))
+            peri_ix_f = np.argmin(data["raw"][data["trackix"][last_ix-1]:data["trackix"][last_ix], 1])
+            #f_pph_f = (np.abs(data["raw"][peri_ix_f + 2, 3] - data["raw"][peri_ix_f - 2, 3])/(data["time"][peri_ix_f + 2] - data["time"][peri_ix_f - 2]))/(2*np.pi)
+            f_pph_f = np.abs(np.mean(data["raw"][peri_ix_f - 2: peri_ix_f + 2, 7]))/(2*np.pi)
+            last_ix -= 1
+        print(f"fr span: init={fr:.5e}, final={fr_f:.5e}, diff={fr_f - fr:.5e}")
+        print(f"fth span: init={fth:.5e}, final={fth_f:.5e}, diff={fth_f - fth:.5e}")
+        print(f"fph span: init={fph:.5e}, final={fph_f:.5e}, diff={fph_f - fph:.5e}")
+        print(f"f_pph span: init={f_pph:.5e}, final={f_pph_f:.5e}, diff={f_pph_f - f_pph:.5e}")
+
+        f_nyq = 1/(2*T)
+        f_safe = 0.1*f_nyq
         
-        fig, ax = plt.subplots()
-        ax.plot(xf[1:], h_plus_fft[1:], label = "h+", alpha=0.8)
-        ax.plot(xf[1:], h_cross_fft[1:], label = "hx", alpha=0.8)
+    
+        order = np.argsort(power)[::-1]
+        
+        cumulative = np.cumsum(power[order])
+        fraction = cumulative / np.sum(power)
+        print("bin size", xf[1] - xf[0])
+
+        l = np.searchsorted(fraction, 0.50) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 50% of the total power out of {len(xf)-1}")
+
+        l = np.searchsorted(fraction, 0.99) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 99% of the total power out of {len(xf)-1}")
+
+        l = np.searchsorted(fraction, 0.90) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 90% of the total power out of {len(xf)-1}")
+
+        vals = np.arange(-10, 11)
+        closest = {}
+        print("HEYTEV", peak_freqs)
+        for j in range(len(peak_freqs)):
+            print(f"Frequency {j+1}: {peak_freqs[j]:.5e} (power = {peak_pows[j]:.5e} ; {100*peak_pows[j]/np.sum(power):.2f}% of total)")
+            hold_vals = 100, -1000, -1000, -1000
+            for l in range(len(vals)**3):
+                m, k, n = int(vals[(l//len(vals))//len(vals)]), int(vals[(l//len(vals))%len(vals)]), int(vals[l%len(vals)])
+                mode_freq = m*fph + k*fth + n*fr
+                val = np.abs((peak_freqs[j] - mode_freq)/peak_freqs[j])
+                if val < hold_vals[0]:
+                    hold_vals = val, m, k, n
+            closest[hold_vals[1:]] = hold_vals[0]
+            print(f"    Closest Mode: {hold_vals[1:]} - {100*(1 - hold_vals[0]):.2f}% match to ({ hold_vals[1]*fph + hold_vals[2]*fth + hold_vals[3]*fr:.5e})")
+            #print(f"guh = {2*fph}")
+            hold_vals = [hold_vals[0], -1000, -1000, -1000, -1000]
+            if 100*(1 - hold_vals[0]) < 80:
+                for m, k, n, o in product(range(len(vals)), range(len(vals)), range(len(vals)), range(len(vals))):
+                    mode_freq = vals[m]*f_pph + vals[k]*fph + vals[n]*fth + vals[o]*fr 
+                    val = np.abs((peak_freqs[j] - mode_freq)/peak_freqs[j])
+                    if val <= hold_vals[0]:
+                        hold_vals = [val, int(vals[m]), int(vals[k]), int(vals[n]), int(vals[o])]
+                print(f"    Closest Mode (periapse freq): {hold_vals[1:]} - {100*(1 - hold_vals[0]):.2f}% match to ({ hold_vals[1]*f_pph + hold_vals[2]*fph + hold_vals[3]*fth + hold_vals[4]*fr:.5e})")
+            # Uhhhh what group is that in
+            small, big, lilpow = 100000, -100000, np.nan
+        print("---")                                              #'''
+        #ax[i].axvline(f_safe, c="red")
+        #ax[i].axvline(f_nyq, c="blue")'''
+
+        #ax[i].axvline(2*np.abs(fph), c="red", label=r"$2f_{\phi} = $" + f"{2*np.abs(fph):.3e}", linestyle="--")  
+        #[ax[i].axvline(burp * 6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black", linewidth=1) for burp in [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]]
+        #ax[i].axvline(6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black")  
+        ax[i].plot(xf[1:], h_plus_fft[1:], label = "h+" if i==0 else None, alpha=0.8)
+        ax[i].plot(xf[1:], h_cross_fft[1:], label = "hx" if i==0 else None, alpha=0.8)
+        #ax[i].scatter(peak_freqs, peak_amps, marker="x", color="red")
         #plt.setp(ax3.get_yticklabels(), visible=False)
         #plt.setp(ax4.get_yticklabels(), visible=False)
-        ax.set_title("Waveform Fourier Transform")
         #ax.set_title('Waveform Frequency ' + freq_unit)
-        ax.set_yscale('log')
-        ax.set_xscale('log')
+        ax[i].set_yscale('log')
+        if xlog:
+            ax[i].set_xscale('log')
+
+        else:
+            #ax[i].set_xlim(-0.001, 0.1)
+            pass
         if data["inputs"][-1] == "grav" and not m_bh:
-            freq_unit = "(Geometric Units)"#'(G\u209C\u207B\u00B9)'
+            freq_unit = "(1/M)"#'(G\u209C\u207B\u00B9)'
         else:
             freq_unit = '(Hz)'
-        ax.set_xlabel("Frequency " + freq_unit)
-        ax.set_ylabel("Strain Intensity")
-        ax.grid()
-        ax.legend()
-        if filename:
-            plt.savefig("%s.png"%(filename), bbox_inches="tight")
-    if not filename:
-        plt.show(block=False)
+        if i == 0:
+            ax[i].set_title("Gravitational Waveform Fourier Transform")
+        if i == num-1:
+            ax[i].set_xlabel("Frequency " + freq_unit)
+        #ax[i].set_ylabel("Strain Intensity")
+        ax[i].grid()
+        ax[i].legend(title=data["name"])#, loc="upper right")
+    fig.subplots_adjust(wspace=0, hspace=0)
+    if filename:
+        plt.savefig("%s.png"%(filename), bbox_inches="tight")
+    else:
+        plt.show()
+
+def justfouriernew(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
+    if type(datalist) != list:
+        datalist = [datalist]
+    num = len(datalist)
+    if not width:
+        width = max(8, 2*num)
+    if not height:
+        height = max(3, 1.5*num)
+    fig, ax = plt.subplots(num, figsize=(width, height), sharex=True, sharey=True)
+    if num == 1:
+        ax = [ax]
+
+    for i in range(num):
+        data = datalist[i]
+        print(data["name"])
+        if not distance:
+            distance = max(data["raw"][:,1])*100000  # distance is in GU
+        h_plus, h_cross, time = mm.full_transform2(data, distance, supress=supress, m_bh=m_bh, n_hat=n_hat, samp_freq=samp_freq)
+        to = get_index(time, start)
+        if end > 0.0:
+            tf = get_index(time, end)
+        else:
+            tf = None
+        x = np.copy(time[to:tf])
+        y1 = np.copy(h_plus[to:tf])
+        y2 = np.copy(h_cross[to:tf])
+        N = x.size
+        T = x[1] - x[0]
+        yf1 = np.fft.rfft(y1)
+        yf2 = np.fft.rfft(y2)
+        xf = np.fft.rfftfreq(N, d=T)
+        h_plus_fft = 2.0/N * np.abs(yf1)
+        h_cross_fft = 2.0/N * np.abs(yf2)
+        power = np.abs(yf1)**2
+        power[1:-1] *= 2
+        # Don't include DC
+        power[0] = 0
+
+        num_peaks = 3
+        peaks, properties = find_peaks(h_plus_fft,
+                                    prominence=np.max(h_plus_fft) * 0.01,
+                                    distance=10)
+        highest = peaks[np.argsort(h_plus_fft[peaks])[::-1]]
+        counted = len(highest[:num_peaks])
+
+        peak_freqs = xf[highest[:num_peaks]]
+        peak_amps = h_plus_fft[highest[:num_peaks]]
+        peak_pows = power[highest[:num_peaks]]
+
+        #print("Peak frequencies:", peak_freqs)
+        #print("Peak amplitudes:", peak_amps)
+        fr, fth, fph = np.abs(mm.freqs_finder(data["energy"][0], data["phi_momentum"][0], data["carter"][0], data["spin"])/(2 * np.pi))
+        peri_ix = np.argmin(data["raw"][:data["trackix"][1], 1])
+        #f_pph = (np.abs(data["raw"][peri_ix + 2, 3] - data["raw"][peri_ix - 2, 3])/(data["time"][peri_ix + 2] - data["time"][peri_ix - 2]))/(2*np.pi)
+        #f_pph = np.abs(np.mean(data["raw"][peri_ix - 2: peri_ix + 2, 7]))/(2*np.pi)
+        f_pph = np.abs(((data["raw"][peri_ix+3, 3] - data["raw"][peri_ix-2, 3])/(data["time"][peri_ix+3] - data["time"][peri_ix-2]))/(2*np.pi))
+
+        last_ix, fr_f = -1, np.nan
+        if data["plunge"] == True:
+            last_ix = -2
+        else:
+            last_ix = -1
+        fr_f, fth_f, fph_f = np.abs(mm.freqs_finder(data["energy"][last_ix], data["phi_momentum"][last_ix], data["carter"][last_ix], data["spin"])/(2 * np.pi))
+        peri_ix_f = np.argmin(data["raw"][data["trackix"][last_ix-1]:data["trackix"][last_ix], 1])
+        #f_pph_f = (np.abs(data["raw"][peri_ix_f + 2, 3] - data["raw"][peri_ix_f - 2, 3])/(data["time"][peri_ix_f + 2] - data["time"][peri_ix_f - 2]))/(2*np.pi)
+        #f_pph_f = np.abs(np.mean(data["raw"][peri_ix_f - 2: peri_ix_f + 2, 7]))/(2*np.pi)
+        f_pph_f = np.abs(((data["raw"][peri_ix_f+3, 3] - data["raw"][peri_ix_f-2, 3])/(data["time"][peri_ix_f+3] - data["time"][peri_ix_f-2]))/(2*np.pi))
+        print(f"fr span: init={fr:.5e}, final={fr_f:.5e}, diff={fr_f - fr:.5e}")
+        print(f"fth span: init={fth:.5e}, final={fth_f:.5e}, diff={fth_f - fth:.5e}")
+        print(f"fph span: init={fph:.5e}, final={fph_f:.5e}, diff={fph_f - fph:.5e}")
+        print(f"f_pph span: init={f_pph:.5e}, final={f_pph_f:.5e}, diff={f_pph_f - f_pph:.5e}")
+
+        f_nyq = 1/(2*T)
+        f_safe = 0.1*f_nyq
+        
     
-'''
-def wavelething(data):
-    #It hates you and it's not even what you want, leave it alone
-    rad = data["pos"][0,0]
-    waves, tim = mm.full_transform(data, rad*100)
-    samper = tim[1]-tim[0]
-    print(samper)
-    period = np.real(2*np.pi*np.sqrt(data["r0"][0]**3))
-    print(period)
-    freq = 2*np.pi/period
-    print(freq)
-    #0.06804175435239163
-    print(pywt.frequency2scale('morl',samper*freq*10), pywt.frequency2scale('morl',samper*freq/10))
-    scalelow, scalehigh = max(1, pywt.frequency2scale('morl',samper*0.06804175435239163*10)), pywt.frequency2scale('morl',samper*freq/100)
-    coef, freqs = pywt.cwt(waves[:,0,0], np.linspace(scalelow, scalehigh, 200), 'morl',
-                       sampling_period=samper) 
+        order = np.argsort(power)[::-1]
+        
+        cumulative = np.cumsum(power[order])
+        fraction = cumulative / np.sum(power)
+        print("bin size", xf[1] - xf[0])
 
-    # Show w.r.t. time and frequency
-    plt.figure()
-    #plt.pcolor(tim, freqs, (coef+np.min(coef))**1/2)
-    plt.pcolor(tim, freqs, coef)
+        l = np.searchsorted(fraction, 0.50) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 50% of the total power out of {len(xf)-1}")
 
-    # Set yscale, ylim and labels
-    plt.title(data["name"])
-    plt.yscale('log')
-    #plt.hlines([2*np.pi/period, 1/period], 0, 50000)
-    #plt.ylim([1, 100])
-    #plt.hlines(pywt.scale2frequency('morl', np.linspace(scalelow, scalehigh, 200))/samper, 0, 50000)
-    plt.ylabel('Frequency (GU)')
-    plt.xlabel('Time (GU)')
-    plt.show()
-    return(coef)
-'''
+        l = np.searchsorted(fraction, 0.99) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 99% of the total power out of {len(xf)-1}")
+
+        l = np.searchsorted(fraction, 0.90) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 90% of the total power out of {len(xf)-1}")
+
+        print("HEYTEV", peak_freqs)
+        for j in range(len(peak_freqs)):
+            int_num = 0
+            flip_base = False
+            flip_pph = False
+            print(f"Frequency {j+1}: {peak_freqs[j]:.5e} (power = {peak_pows[j]:.5e} ; {100*peak_pows[j]/np.sum(power):.2f}% of total)")
+            hold_base = [100, 0.0, -1000, -1000, -1000]
+            hold_pph = [100, 0.0, -1000, -1000, -1000]
+            while (100*(1 - hold_base[0]) < 99.5 or 100*(1 - hold_pph[0]) < 99.5) and int_num < 30:
+                int_num += 1
+                vals = np.arange(-int_num, int_num + 1)
+                for m, k, n, m2 in product(vals[::-1], repeat=4):
+                    if np.max(np.abs([m, k, n, m2])) != int_num or m < 0:
+                        continue
+                    mode_freq_base = np.abs(m*fph + k*fth + n*fr)
+                    mode_freq_pph = np.abs(m2*f_pph + k*fth + n*fr)
+                    val_base = np.abs((peak_freqs[j] - mode_freq_base)/peak_freqs[j])
+                    val_pph = np.abs((peak_freqs[j] - mode_freq_pph)/peak_freqs[j])
+                    if m2 == 0:   # Doesn't include periapse freq
+                        if val_base < hold_base[0]:     # Is closer to the target frequency
+                            hold_base = [val_base, mode_freq_base, m, k, n]
+                            if 100*(1 - hold_base[0]) >= 99.5 and not flip_base:
+                                flip_base = True
+                                print(f"    First Base Mode: {hold_base[1]:.5e} - {100*(1 - hold_base[0]):.2f}% match to ({hold_base[2]}*fph + {hold_base[3]}*fth + {hold_base[4]}*fr)")
+                    else:
+                        if val_pph < hold_pph[0]:
+                            if m2 < 0:
+                                m2, k, n = -m2, -k, -n
+                            hold_pph = [val_pph, mode_freq_pph, m2, k, n]
+                            if 100*(1 - hold_pph[0]) >= 99.5 and not flip_pph:
+                                flip_pph = True
+                                print(f"    First pph Mode: {hold_pph[1]:.5e} - {100*(1 - hold_pph[0]):.2f}% match to ({hold_pph[2]}*f_pph + {hold_pph[3]}*fth + {hold_pph[4]}*fr)")
+            print(f"    Closest Base Mode: {hold_base[1]:.5e} - {100*(1 - hold_base[0]):.2f}% match to ({hold_base[2]}*fph + {hold_base[3]}*fth + {hold_base[4]}*fr)")
+            print(f"    Closest fpph Mode: {hold_pph[1]:.5e} - {100*(1 - hold_pph[0]):.2f}% match to ({hold_pph[2]}*f_pph + {hold_pph[3]}*fth + {hold_pph[4]}*fr)")
+        print("---")                                                   #'''
+        #ax[i].axvline(f_safe, c="red")
+        #ax[i].axvline(f_nyq, c="blue")'''
+
+        #ax[i].axvline(2*np.abs(fph), c="red", label=r"$2f_{\phi} = $" + f"{2*np.abs(fph):.3e}", linestyle="--")  
+        #[ax[i].axvline(burp * 6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black", linewidth=1) for burp in [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]]
+        #ax[i].axvline(6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black")  
+        ax[i].plot(xf[1:], h_plus_fft[1:], label = "h+" if i==0 else None, alpha=0.8)
+        ax[i].plot(xf[1:], h_cross_fft[1:], label = "hx" if i==0 else None, alpha=0.8)
+        #ax[i].scatter(peak_freqs, peak_amps, marker="x", color="red")
+        #plt.setp(ax3.get_yticklabels(), visible=False)
+        #plt.setp(ax4.get_yticklabels(), visible=False)
+        #ax.set_title('Waveform Frequency ' + freq_unit)
+        ax[i].set_yscale('log')
+        if xlog:
+            ax[i].set_xscale('log')
+        else:
+            #ax[i].set_xlim(-0.001, 0.15)
+            pass
+        if data["inputs"][-1] == "grav" and not m_bh:
+            freq_unit = r"$M^{-1}$"#'(G\u209C\u207B\u00B9)'
+        else:
+            freq_unit = '(Hz)'
+        if i == 0:
+            ax[i].set_title("Gravitational Waveform Fourier Transform")
+        if i == num-1:
+            ax[i].set_xlabel("Frequency " + freq_unit)
+        #ax[i].set_ylabel("Strain Intensity")
+        ax[i].grid()
+        ax[i].legend(title=data["name"])#, loc="upper right")
+    fig.subplots_adjust(wspace=0, hspace=0)
+    if filename:
+        plt.savefig("%s.png"%(filename), bbox_inches="tight")
+    else:
+        plt.show()
+
+def justfourier2(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
+    if type(datalist) != list:
+        datalist = [datalist]
+    num = len(datalist)
+    if not width:
+        width = max(8, 2*num)
+    if not height:
+        height = max(3, 1.5*num)
+    fig, ax = plt.subplots(num, figsize=(width, height), sharex=True, sharey=True)
+    if num == 1:
+        ax = [ax]
+
+    for i in range(num):
+        data = datalist[i]
+        print(data["name"])
+        if not distance:
+            distance = max(data["raw"][:,1])*100000  # distance is in GU
+        h_plus, h_cross, time = mm.full_transform(data, distance, supress=supress, m_bh=m_bh, n_hat=n_hat, samp_freq=samp_freq)
+        to = get_index(time, start)
+        if end > 0.0:
+            tf = get_index(time, end)
+        else:
+            tf = None
+        x = np.copy(time[to:tf])
+        y1 = np.copy(h_plus[to:tf])
+        y2 = np.copy(h_cross[to:tf])
+        N = x.size
+        T = x[1] - x[0]
+        yf1 = np.fft.rfft(y1)
+        yf2 = np.fft.rfft(y2)
+        xf = np.fft.rfftfreq(N, d=T)
+        h_plus_fft = 2.0/N * np.abs(yf1)
+        h_cross_fft = 2.0/N * np.abs(yf2)
+        power = np.abs(yf1)**2
+        power[1:-1] *= 2
+        # Don't include DC
+        power[0] = 0
+
+        '''num_peaks = 10
+        peaks, properties = find_peaks(h_plus_fft,
+                                    prominence=np.max(h_plus_fft) * 0.01,
+                                    distance=10)
+        highest = peaks[np.argsort(h_plus_fft[peaks])[::-1]]
+        counted = len(highest[:num_peaks])
+
+        peak_freqs = xf[highest[:num_peaks]]
+        peak_amps = h_plus_fft[highest[:num_peaks]]
+        peak_pows = power[highest[:num_peaks]]
+
+        #print("Peak frequencies:", peak_freqs)
+        #print("Peak amplitudes:", peak_amps)
+        fr, fth, fph = np.abs(mm.freqs_finder(data["energy"][0], data["phi_momentum"][0], data["carter"][0], data["spin"])/(2 * np.pi))
+        f_nyq = 1/(2*T)
+        f_safe = 0.1*f_nyq
+        peri_ix = np.argmin(data["raw"][:len(data["raw"])//2, 1])
+        f_pph = ((data["raw"][peri_ix + 5, 3] - data["raw"][peri_ix - 5, 3])/(data["time"][peri_ix + 5] - data["time"][peri_ix - 5]))/(2*np.pi)
+
+        order = np.argsort(power)[::-1]
+        
+        cumulative = np.cumsum(power[order])
+        fraction = cumulative / np.sum(power)
+        print("bin size", xf[1] - xf[0])
+
+        l = np.searchsorted(fraction, 0.50) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 50% of the total power out of {len(xf)-1}")
+
+        l = np.searchsorted(fraction, 0.99) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 99% of the total power out of {len(xf)-1}")
+
+        l = np.searchsorted(fraction, 0.90) + 1
+        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 90% of the total power out of {len(xf)-1}")
+
+        vals = np.arange(-5, 6)
+        closest = {}
+        print("HEYTEV", peak_freqs)
+        for j in range(len(peak_freqs)):
+            print(f"Frequency {j+1}: {peak_freqs[j]:.5e} (power = {peak_pows[j]:.5e} ; {100*peak_pows[j]/np.sum(power):.2f}% of total)")
+            hold_vals = 100, -1000, -1000, -1000
+            for l in range(len(vals)**3):
+                m, k, n = int(vals[(l//len(vals))//len(vals)]), int(vals[(l//len(vals))%len(vals)]), int(vals[l%len(vals)])
+                mode_freq = m*fph + k*fth + n*fr
+                val = np.abs((peak_freqs[j] - mode_freq)/peak_freqs[j])
+                if val <= hold_vals[0]:
+                    hold_vals = val, m, k, n
+            closest[hold_vals[1:]] = hold_vals[0]
+            print(f"    Closest Mode: {hold_vals[1:]} - {100*(1 - hold_vals[0]):.2f}% match to ({ hold_vals[1]*fph + hold_vals[2]*fth + hold_vals[3]*fr:.5e})")
+            if 100*(1 - hold_vals[0]) < 80:
+                for l in range(len(vals)**3):
+                    m, k, n = int(vals[(l//len(vals))//len(vals)]), int(vals[(l//len(vals))%len(vals)]), int(vals[l%len(vals)])
+                    mode_freq = m*f_pph + k*fth + n*fr
+                    val = np.abs((peak_freqs[j] - mode_freq)/peak_freqs[j])
+                    if val <= hold_vals[0]:
+                        hold_vals = val, m, k, n
+                print(f"    Closest Mode (periapse freq): {hold_vals[1:]} - {100*(1 - hold_vals[0]):.2f}% match to ({ hold_vals[1]*f_pph + hold_vals[2]*fth + hold_vals[3]*fr:.5e})")
+            # Uhhhh what group is that in
+            small, big, lilpow = 100000, -100000, np.nan
+        print("---")
+        #ax[i].axvline(f_safe, c="red")
+        #ax[i].axvline(f_nyq, c="blue")'''
+
+        #ax[i].axvline(2*np.abs(fph), c="red", label=r"$2f_{\phi} = $" + f"{2*np.abs(fph):.3e}", linestyle="--")  
+        #[ax[i].axvline(burp * 6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black", linewidth=1) for burp in [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]]
+        #ax[i].axvline(6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black")  
+        ax[i].plot(xf[1:], h_plus_fft[1:], label = "h+" if i==0 else None, alpha=0.8)
+        ax[i].plot(xf[1:], h_cross_fft[1:], label = "hx" if i==0 else None, alpha=0.8)
+        #ax[i].scatter(peak_freqs, peak_amps, marker="x", color="red")
+        #plt.setp(ax3.get_yticklabels(), visible=False)
+        #plt.setp(ax4.get_yticklabels(), visible=False)
+        #ax.set_title('Waveform Frequency ' + freq_unit)
+        ax[i].set_yscale('log')
+        if xlog:
+            ax[i].set_xscale('log')
+
+        else:
+            pass
+            ax[i].set_xlim(-0.001, 0.1)
+        if data["inputs"][-1] == "grav" and not m_bh:
+            freq_unit = "(1/M)"#'(G\u209C\u207B\u00B9)'
+        else:
+            freq_unit = '(Hz)'
+        if i == 0:
+            ax[i].set_title("Gravitational Waveform Fourier Transform")
+        if i == num-1:
+            ax[i].set_xlabel("Frequency " + freq_unit)
+        #ax[i].set_ylabel("Strain Intensity")
+        ax[i].grid()
+        ax[i].legend(title=data["name"])#, loc="upper right")
+    fig.subplots_adjust(wspace=0, hspace=0)
+    return fig, ax
+
+
+def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
+                     overlap=0.5, max_freq=None, log=True,
+                     interpolate=True, ax=None):
+    """
+    Plot a spectrogram of a time-domain signal.
+
+    Parameters
+    ----------
+    time : 1D numpy array
+        Coordinate-time samples. Does not need to be uniformly spaced.
+
+    signal : 1D numpy array
+        Signal corresponding to `time`.
+
+    window_time : float, optional
+        Length of each FFT window in coordinate time. If None,
+        approximately 10% of the total duration is used.
+
+    samples_per_window : int, default=2048
+        Number of uniformly spaced samples used in each FFT window.
+
+    overlap : float, default=0.5
+        Fractional overlap between adjacent windows. Must be between 0 and 1.
+
+    max_freq : float, optional
+        Maximum frequency to display. If None, displays the full
+        positive-frequency range.
+
+    log : bool, default=True
+        If True, display the Fourier amplitude on a logarithmic scale.
+
+    interpolate : bool, default=True
+        If True, interpolate the input onto a uniformly sampled time grid.
+        This should generally be left True for your adaptive-step trajectories.
+
+    ax : matplotlib axis, optional
+        Existing axis to plot on.
+
+    Returns
+    -------
+    times : 1D numpy array
+        Center time of each FFT window.
+
+    freqs : 1D numpy array
+        Positive Fourier frequencies.
+
+    spectrogram : 2D numpy array
+        Fourier amplitude for each time/frequency bin.
+        Shape is (len(freqs), len(times)).
+    """
+
+    time = np.asarray(time)
+    signal = np.asarray(signal)
+
+    if time.ndim != 1 or signal.ndim != 1:
+        raise ValueError("time and signal must both be 1D arrays")
+
+    if len(time) != len(signal):
+        raise ValueError("time and signal must have the same length")
+
+    if not 0 <= overlap < 1:
+        raise ValueError("overlap must satisfy 0 <= overlap < 1")
+
+    # Remove any non-finite values
+    good = np.isfinite(time) & np.isfinite(signal)
+    time = time[good]
+    signal = signal[good]
+
+    # Make sure time is increasing
+    order = np.argsort(time)
+    time = time[order]
+    signal = signal[order]
+
+    # Interpolate onto a uniform grid
+    if interpolate:
+        dt = np.median(np.diff(time))
+        uniform_time = np.arange(time[0], time[-1], dt)
+        uniform_signal = np.interp(uniform_time, time, signal)
+    else:
+        uniform_time = time
+        uniform_signal = signal
+        dt = np.mean(np.diff(time))
+
+    total_time = uniform_time[-1] - uniform_time[0]
+
+    if window_time is None:
+        window_time = total_time / 10
+
+    # Number of samples in each FFT window
+    nperseg = min(
+        samples_per_window,
+        int(window_time / dt)
+    )
+
+    if nperseg < 16:
+        raise ValueError(
+            "FFT window contains too few samples. "
+            "Increase window_time or sampling density."
+        )
+
+    # Make sure we have enough samples for at least one window
+    if nperseg > len(uniform_signal):
+        nperseg = len(uniform_signal)
+
+    step = max(1, int(nperseg * (1 - overlap)))
+
+    # Use a Hann window to reduce spectral leakage
+    fft_window = np.hanning(nperseg)
+
+    freqs = np.fft.rfftfreq(nperseg, d=dt)
+
+    spectra = []
+    center_times = []
+
+    for start in range(0, len(uniform_signal) - nperseg + 1, step):
+
+        segment = uniform_signal[start:start + nperseg]
+
+        # Remove the local mean
+        segment = segment - np.mean(segment)
+
+        # Window before FFT
+        segment = segment * fft_window
+
+        fft = np.fft.rfft(segment)
+
+        # Amplitude normalization analogous to your existing FFT code
+        amplitude = 2.0 / np.sum(fft_window) * np.abs(fft)
+
+        spectra.append(amplitude)
+
+        center_times.append(
+            uniform_time[start + nperseg // 2]
+        )
+
+    spectrogram = np.asarray(spectra).T
+    center_times = np.asarray(center_times)
+
+    # Frequency cutoff
+    if max_freq is not None:
+        keep = freqs <= max_freq
+        freqs = freqs[keep]
+        spectrogram = spectrogram[keep]
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+    print(np.shape(center_times), np.shape(freqs), np.shape(spectrogram))
+    if log:
+        plot_data = np.maximum(spectrogram, np.max(spectrogram) * 1e-12)
+        plot_data = np.log10(plot_data)
+
+        mesh = ax.pcolormesh(
+            center_times,
+            freqs,
+            plot_data,
+            shading="auto"
+        )
+
+        cbar = plt.colorbar(mesh, ax=ax)
+        cbar.set_label(r"$\log_{10}|h(f)|$")
+    else:
+        mesh = ax.pcolormesh(
+            center_times,
+            freqs,
+            spectrogram,
+            shading="auto"
+        )
+
+        cbar = plt.colorbar(mesh, ax=ax)
+        cbar.set_label(r"$|h(f)|$")
+
+    ax.set_xlabel("Coordinate time")
+    ax.set_ylabel(r"Frequency ($1/M$)")
+
+    return center_times, freqs, spectrogram
     
 def peters_compare(data, plot=True):
     timen = data["tracktime"]
@@ -2509,7 +3108,7 @@ def radial_axes_with_ticks(ax, r, ticks=(-0.5, -1, 0.5, 1),
     axes = {
         "x": ([ -r,  r], [0, 0], [0, 0]),
         "y": ([0, 0], [ -r,  r], [0, 0]),
-        "z": ([0, 0], [0, 0], [ -r*1.5,  r*1.5]),
+        "z": ([0, 0], [0, 0], [ -r,  r]),
     }
 
     for x, y, z in axes.values():
@@ -2574,8 +3173,8 @@ def draw_panel_dividers(fig, gridvals=(2,2), color="0.25", lw=0.8):
             color=color, lw=lw
         ))
 
-def radial_reference_circles(ax, radii, color="0.55", lw=0.8, alpha=0.7,
-                             z=0.0, label=True, label_color="0.45",
+def radial_reference_circles(ax, radii, color="0.35", lw=0.8, alpha=0.7,
+                             z=0.0, label=True, label_color="0.15",
                              fontsize=10, angle=120):
     '''
     Draw concentric circles in the XY plane at given radii.
@@ -2595,6 +3194,7 @@ def radial_reference_circles(ax, radii, color="0.55", lw=0.8, alpha=0.7,
     phi = np.linspace(0, 2*np.pi, 400)
 
     for r in radii:
+
         x = r * np.cos(phi)
         y = r * np.sin(phi)
         zc = np.full_like(x, z)
@@ -2603,7 +3203,7 @@ def radial_reference_circles(ax, radii, color="0.55", lw=0.8, alpha=0.7,
 
         if label:
             ax.text(r * np.cos(angle*np.pi/180), r * np.sin(angle*np.pi/180), z,
-                    f"{r:.0f}",
+                    f"{r:.1e}" if (r < 1.0 or r >= 1e4) else f"{r}",
                     color=label_color,
                     fontsize=fontsize,
                     ha="left", va="bottom")

@@ -58,7 +58,7 @@ class EndContext:
     tracker: list
     j: int
 
-def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, eps=1e-5, trigger=2, override=False, bonk2=True, skip_tar=0, nofix=True, time_reverse=False, weird=False, force_stop=None):
+def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15, label="default", cons=False, velorient=False, vel4=False, params=False, pos=False, veltrue=False, units="grav", verbose=1, skip_tar=0, force_stop=None):
     '''
     Generates orbit
 
@@ -101,8 +101,10 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         System of units for final output. The default is "grav".
         Current valid units:
             'grav' - Geometric units, with G, c, and M (central body mass) all set to 1.0.
-            'mks' - Standard SI units, with G = 6.67e-11 N*m^2*kg^-2, c = 3e8 m*s^-1, and M in kg
-            'cgs' - Standard cgs units, with G = 6.67e-8 dyn*cm^2*g^-2, c = 3e11 cm*s^-1, and M in g
+            'mks' - Standard SI units, with G = 6.67430e-11 (m^3)(kg^-1)(s^-2), c ~ 299792458 (m)(s^-1), and M in kg
+            'cgs' - Standard cgs units, with G = 6.67430e-8 dyn*cm^2*g^-2, c ~ 29979245800 (cm)(s^-1), and M in g
+            'parsec' - Custom units, with G = 4.4985e-15 (parsec^3)(M_sun^-1)(yr^-2), c = 0.3065951 (parsec)(yr^-1), and M in solar masses
+            'AU' - Custom units, with G = 39.4765 (AU^3)(M_sun^-1)(yr^-2), c = 63239.7785 (AU)(yr^-1), and M in solar masses
     verbose : int, optional
         Toggle for progress updates as program runs. The default is 1.
         0 - No output
@@ -149,22 +151,29 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         "plunge": 'True' if simulation ended in a plunge, False otherwise
         "issues": index and state corresponding to any point where Keplerian values read as complex
     '''
-    #termdict = {"time": "abs(all_states[i][0] - all_states[0][0])",
-    #            "radius": "all_states[i][1]",
-    #            "rad_orbit": "abs((true_anom[i] - true_anom[0])/(2*np.pi))",
-    #            "phi_orbit": "abs(abs(all_states[i][3]/(2*np.pi)) - abs(all_states[0][3]/(2*np.pi)))",
-    #            "semilat": "2*tracker[j][3]*tracker[j][4]/(tracker[j][3] + tracker[j][4])",
-    #            "eccentricity": "tracker[j][1]"}
     
-    endvars = {"time": lambda c: c.all_states[c.i][0],
-               "elapsed_time": lambda c: abs(c.all_states[c.i][0] - c.all_states[0][0]),
-               "min_radius": lambda c: c.last_chunk[:,1].min(),
-               "max_radius": lambda c: c.last_chunk[:,1].max(),
-               "rad_orbit": lambda c: abs((c.true_anom[c.i] - c.true_anom[0]) / (2*np.pi)),
-               "phi_orbit": lambda c: abs(abs(c.all_states[c.i][3] / (2*np.pi)) - abs(c.all_states[0][3] / (2*np.pi))),
-               "semilat": lambda c: (2 * c.tracker[c.j][3] * c.tracker[c.j][4] / (c.tracker[c.j][3] + c.tracker[c.j][4])),
-               "eccentricity": lambda c: c.tracker[c.j][1],
-               "inclination": lambda c: c.tracker[c.j][2]}
+    #unit conversion stuff
+    if units == "mks":
+        G, c = 6.67430e-11, 299792458
+    elif units == "cgs":
+        G, c = 6.67430e-8, 29979245800
+    elif units == "parsec":
+        G, c = 4.4985e-15, 0.3065951
+    elif units == "AU":
+        G, c = 39.4765, 63239.7785
+    else:
+        G, mass, c = 1.0, 1.0, 1.0
+
+    endvars = {"time": lambda dat: dat.all_states[dat.i][0] * (G * mass / (c * c * c)),
+               "index": lambda dat: dat.i,
+               "elapsed_time": lambda dat: abs(dat.all_states[dat.i][0] - dat.all_states[0][0]) * (G * mass / (c * c * c)),
+               "min_radius": lambda dat: dat.last_chunk[:,1].min() * (G * mass / (c * c)),
+               "max_radius": lambda dat: dat.last_chunk[:,1].max() * (G * mass / (c * c)),
+               "rad_orbit": lambda dat: abs((dat.true_anom[dat.i] - dat.true_anom[0]) / (2*np.pi)),
+               "phi_orbit": lambda dat: abs(abs(dat.all_states[dat.i][3] / (2*np.pi)) - abs(dat.all_states[0][3] / (2*np.pi))),
+               "semilat": lambda dat: (G * mass / (c * c)) * (2 * dat.tracker[dat.j][3] * dat.tracker[dat.j][4] / (dat.tracker[dat.j][3] + dat.tracker[dat.j][4])),
+               "eccentricity": lambda dat: dat.tracker[dat.j][1],
+               "inclination": lambda dat: dat.tracker[dat.j][2]}
     
     OPS = {
         ">=": operator.ge,
@@ -182,8 +191,13 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                 return endvars[lhs], op, rhs
         raise ValueError("Invalid end condition")
 
-    capacity = 10000001
-    time_check = (-1)**time_reverse
+    err_flag = 1
+    err_flags = ["Too Many Runge-Kutta Loops",
+                 "Forced Stop",
+                 "Cannot Fit Radial Fail Polynomials",
+                 "Cannot Correct Radial Fail Constants",]
+
+    capacity = 1000000
     inputs = [mass, a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, veltrue, units]          #Grab initial input in case you want to run the continue function
     inputs = [entry.tolist() if type(entry) == np.ndarray else entry for entry in inputs]                           #Convert numpy arrays to lists so that JSON doesn't complain
     all_states = np.full((capacity, 8), np.nan)       
@@ -195,7 +209,6 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         if verbose:
             print("Normalizing initial state")
         all_states[0], cons = mm.set_u_kerr(a, cons, velorient, vel4, params, pos)      #normalize initial state so it's actually physical
-    
     metric, chris = mm.kerr_2(all_states[0], a)                                     #initial metric and christoffel symbols
     
     def viable_cons(new_cons, old_cons, state, a,
@@ -241,6 +254,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         valid_flats = flats[(flats > r_peri) & (flats < r_apo)]
 
         if len(valid_flats) == 0:
+            print("no flats good")
             return -np.inf
 
         # Evaluate R at all candidate minima
@@ -314,7 +328,6 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             'new_step[2] < np.pi/2 and all_states[-1][2] > np.pi/2',                       #ascending node
             '(new_step[3] + np.pi)%(2*np.pi) >= np.pi and (all_states[-1][3] + np.pi)%(2*np.pi) < np.pi']        #passing phi=0
 
-    
     compErr = 0
     milestone = 0
     issues = []
@@ -326,14 +339,14 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     val = get_true_anom(all_states[0], 0.5*(outer_turn + inner_turn), e)
     P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
     POT_MIN = max(flats)
-    PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
+    PERIOD = 2*np.pi*((P0/(1 - ECC**2))**1.5)
     true_anom = np.full(capacity, np.nan, dtype=complex)
     true_anom[0] = (val if np.isnan(val) == False else 0.0)
     stop = False
     radial_fail = 0
     
     if label == "default":
-        label = "r" + str(pot_min) + "e" + str(e) + "zU+03C0" + str(inc/np.pi) + "mu" + str(mu) + "a" + str(a)
+        label = f"p{P0:.3f}e{ECC:.3E}\u03C0{inc/np.pi:.3f}mu{mu:.3E}a{a}"
     
     #Main Loop
     dTau = 0.1*np.abs(np.real((inner_turn/200)**(2)))
@@ -347,42 +360,53 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
         return 0.5*np.pi - np.abs(angle%np.pi - np.pi/2)
 
     if verbose > 0 and verbose < 3:
-        pbar = tqdm(total = capacity, position=0)
+        pbar = tqdm(total = 10000001, position=0)
         pbar.set_postfix_str("Semilat: %s, Ecc %s, Peri: %s, Theta_min: %s*pi" %(np.round( 0.5*(tracker[0][3] + tracker[0][4])*(1 - tracker[0][1]**2), 3), np.round(tracker[0][1], 3), np.round(tracker[0][3], 3), np.round(tracker[0][2]/np.pi, 3)))
     progress = 0
     rkfull = []
     confull = []
     upfull = []
-    skip_count = 0
     gorf = 0
     getval, op, threshold = parse_endflag(endflag)
     ctx = EndContext(i, all_states, true_anom, tracker, j)
     ctx.last_chunk = np.asarray(all_states[:i+1])
     start_val, ctx_val = getval(ctx), getval(ctx)
     trigger = False
-    wonky_test = 0
-    while not(ctx_val and op(ctx_val, threshold)) and (i < 1e7 or override):
+    con_fit_error = 0
+    skip_count = 0
+    photon_ring = mm.find_rph(a)
+    ev_hor = 1 + np.sqrt(1 - a**2)
+
+    while not(ctx_val and op(ctx_val, threshold)) and i < 1e7:
         try:
+            if capacity - i < 100 and capacity < 10000001:
+                all_states = np.concatenate((all_states, np.full((capacity, 8), np.nan)))
+                constants = np.concatenate((constants, np.full((capacity//100, 3), np.nan)))
+                tracker = np.concatenate((tracker, np.full((capacity//100, 7), np.nan, dtype=complex)))
+                true_anom = np.concatenate((true_anom, np.full(capacity, np.nan, dtype=complex)))
+                dTau_change = np.concatenate((dTau_change, np.full(capacity, np.nan)))
+                capacity = min(10000001, len(true_anom))
+                
             update = False
             condate = False
             first = True
           
             #Grab the current state
             state = all_states[i]  
-            pot_min = tracker[j][0]   
+            pot_min = tracker[j][0] 
           
-            #Break if you fall inside event horizon, or if you get really far away (orbit is unbound)
-            if (state[1] <= (1 + np.sqrt(1 - a**2))*1.0001):
+            #Break if you fall below photon ring, or if you get really far away (orbit is probably unbound)
+            if (state[1] <= photon_ring):
                 plunge = True
                 break
             
-            if (state[1] >= (1 + np.sqrt(1 - a**2))*1e15):
+            if (state[1] >= 4.872e5):    #Kind of an arbitrary distance, ~0.1 pc if M_bh = Sagittarius A*
                 unbind = True
                 break
 
             #break if something stops making sense
             if (np.nan in state or constants[j][0] < 0) or (np.isnan(state[0])):
-                print("HEWWO", np.nan in state, constants[j][0] < 0, np.isnan(state[0]))
+                print("HEWWO", np.nan in state, constants[j][0] < 0, np.isnan(state[0]), i)
                 plunge = True
                 unbind = True
                 break
@@ -394,9 +418,8 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
 
             while (err_calc >= err_target) or (first == True):
                 counter += 1
-                if counter%20 == 0:
-                    print(f"A lot! {counter} {err_calc}")
-                if counter > 30:
+                if counter > (int(-np.log10(err_target))**2)//2:
+                    err_flag = 0
                     raise KeyboardInterrupt
                 # Generate 4th and 5th order calculations for next step
                 new_step = mm.gen_RK2(*mm.ck4_2, mm.kerr_2, state, dTau, a)
@@ -404,12 +427,14 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
 
                 # Calculate the error
                 delt = new_step - step_check
-                err_calc = np.concatenate((delt[1:3], delt[4:]))
-                err_calc = np.linalg.norm(err_calc/6)
+                delt = np.concatenate((delt[1:3], delt[4:]))
+                err_calc = np.linalg.norm(delt/6)
 
                 # Correct for pole effects
                 # if ((within ~0.5 degrees of pole) and (moving closer to pole)) and (average of last few dTau_change values is much smaller than the average):
+                porp = 0
                 if ((np.sin(new_step[2]) <= 0.009) and np.sign(new_step[6]*np.cos(new_step[2])) < 0) and (np.mean(np.diff(dTau_change[i-10:i])) <= 0.001*np.mean(np.diff(dTau_change[:i]))):
+                    porp = 1
                     old_step = new_step
                     # inc is the minimum value of theta, pretend the particle is traveling on a straight line between
                     # current theta value and inc, then flash to the other side (same theta). Find phi!
@@ -469,26 +494,21 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     err_calc = 1
                     dTau = old_dTau*0.9
                 if np.isnan(err_calc):
-                    #print("you??")
                     dTau = old_dTau * (10**counter)
                     err_calc = 1
-                    #dTau = 0.1*np.abs(np.real((inner_turn/200)**(2)))   
                 first = False
-
+            if porp:
+                print("pole correction")
             metric = mm.kerr(new_step, a)[0]
             test = mm.check_interval_w_metric(metric, new_step, a)
             looper = 0
-            while ((abs(test+1)>(err_target) or new_step[4] < 0.0) and looper < 10) and nofix:
+            while (abs(test+1)>(err_target) or new_step[4] < 0.0) and looper < 10:
                 borken = borken + 1
                 og_new_step = np.copy(new_step)
-                if bonk2 == True:
-                    gtt, gtp = metric[0,0], metric[0,3]
-                    disc = 4*(gtp*new_step[4]*new_step[7])**2 - 4*gtt*(new_step[4]**2)*(np.einsum('ij, i, j ->', metric[1:,1:], new_step[5:], new_step[5:]) + 1)
-                    delt = (-2*gtp*new_step[4]*new_step[7] - np.sqrt(disc))/(2*gtt*new_step[4]*new_step[4])
-                    new_step[4] *= delt
-                else:
-                    new_step = mm.recalc_state3(constants[j], new_step, a)
-                    delt = np.nan
+                gtt, gtp = metric[0,0], metric[0,3]
+                disc = 4*(gtp*new_step[4]*new_step[7])**2 - 4*gtt*(new_step[4]**2)*(np.einsum('ij, i, j ->', metric[1:,1:], new_step[5:], new_step[5:]) + 1)
+                delt = (-2*gtp*new_step[4]*new_step[7] - np.sqrt(disc))/(2*gtt*new_step[4]*new_step[4])
+                new_step[4] *= delt
                 test = mm.check_interval_w_metric(metric, new_step, a)
                 looper += 1
             if (test+1) > err_target or new_step[4] < 0.0:
@@ -500,16 +520,20 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             rkfull.append(time.perf_counter() - rkcount)
 
             #constant modifying section
-
             if i%50 == 0:
                 if force_stop is not None:
                     if force_stop():
+                        err_flag = 1
                         raise KeyboardInterrupt
             
             if trigger == False and (((state[1] > POT_MIN and new_step[1] <= POT_MIN) and new_step[0] - tracker[j][-2] > PERIOD*0.75) or (new_step[0] - tracker[j][-2] > PERIOD*2 and ((new_step[5] - state[5] >= 0 and all_states[i-1][5] - state[5] > 0) and new_step[1] < state[1]))):
-                #register the spot where we cross pot_min
-                trigger = True
-                tracker[j+1] = [pot_min, e, inc, inner_turn, outer_turn, new_step[0], i]
+                #print(state[0], new_step[0] - tracker[j][-2], PERIOD*0.75, PERIOD, 2*np.pi*((P0/(1 - ECC**2))**1.5), ((state[1] > POT_MIN and new_step[1] <= POT_MIN) and new_step[0] - tracker[j][-2] > PERIOD*0.75), (new_step[0] - tracker[j][-2] > PERIOD*2 and ((new_step[5] - state[5] >= 0 and all_states[i-1][5] - state[5] > 0) and new_step[1] < state[1])))
+                if skip_count == skip_tar:
+                    #register the spot where we cross pot_min
+                    trigger = True
+                    tracker[j+1] = [pot_min, e, inc, inner_turn, outer_turn, new_step[0], i]
+                else:
+                    skip_count += 1
 
             if (trigger == True) and abs(new_step[0] - tracker[j+1][-2]) > 0.03*PERIOD:
                 #register when we've gone 1% of a radial orbit past pot_min
@@ -520,6 +544,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     orbitside *= -1
                 if force_stop is not None:
                     if force_stop():
+                        err_flag = 1
                         raise KeyboardInterrupt
                 if mu != 0.0:
                     condate = True
@@ -533,9 +558,9 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                         circEs, circLs, circCs, circrs = sep_cosi["energy"][circ_ixs], sep_cosi["phi_momentum"][circ_ixs], sep_cosi["carter"][circ_ixs], sep_cosi["p"][circ_ixs]
                         radial_fail = 1
 
-                    wonky_test = max(0, wonky_test - 1)
-                    if wonky_test >= 9:
-                        print("Too many wonkies!")
+                    con_fit_error = max(0, con_fit_error - 1)
+                    if con_fit_error >= 9:
+                        err_flag = 2
                         raise KeyboardInterrupt
                     
                     if radial_fail == 1 and new_step_hold is False:
@@ -550,7 +575,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                                 except np.exceptions.RankWarning:
                                     fit_num -= 1
                             if fit_err:
-                                wonky_test += 1
+                                con_fit_error += 1
 
                             fit_err, fit_num = True, 3
                             while fit_err and fit_num:
@@ -560,7 +585,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                                 except np.exceptions.RankWarning:
                                     fit_num -= 1
                             if fit_err:
-                                wonky_test += 1
+                                con_fit_error += 1
 
                             fit_err, fit_num = True, 3
                             while fit_err and fit_num:
@@ -570,7 +595,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                                 except np.exceptions.RankWarning:
                                     fit_num -= 1
                             if fit_err:
-                                wonky_test += 1
+                                con_fit_error += 1
 
                         poly = np.array([ch_cons[0]**2 - 1, 2, (a**2)*(ch_cons[0]**2 - 1) - ch_cons[1]**2 - ch_cons[2], 2*((a*ch_cons[0] - ch_cons[1])**2 + ch_cons[2]), -ch_cons[2]*(a**2)])
                         tick = 0
@@ -578,6 +603,11 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                         turns = np.roots(poly)[:2]
                         while np.polyval(poly, max(flats)) < 0.0:
                             tick += 1
+
+                            if tick > 1000:
+                                err_flag = 3
+                                raise KeyboardInterrupt
+                            
                             if ch_cons[1] != 0:
                                 dL = - ch_cons[1] * err_target
                                 ch_cons[2] = max(0.0, ch_cons[2] + 2 * ch_cons[2] * dL/ch_cons[1])
@@ -603,7 +633,8 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                         new_step = np.copy(new_step_hold)
 
                     confull.append(time.perf_counter() - concount)
-
+                else:
+                    new_step = all_states[int(np.real(tracker[j+1][-1]))]
             #Initializing for the next step
             #Updates the constants based on the calculated derivatives, then updates the state velocities based on the new constants.
             #Only happens the step before the derivatives are recalculated.
@@ -615,7 +646,7 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     newE, newLz, newC = getCons(state, a)
                 else:
                     newE, newLz, newC = ch_cons
-
+                skip_count = 0
                 turns, flats, zs = mm.root_getter(newE, newLz, newC, a)
                 pot_min = flats[-1]
                 inner_turn, outer_turn = turns[-2:]
@@ -624,18 +655,19 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                 P0, ECC = 2*(inner_turn*outer_turn)/(inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
                 POT_MIN = pot_min
                 try:
-                    PERIOD = 2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
+                    PERIOD = 2*np.pi*((P0/(1 - ECC**2))**1.5) #2*np.pi / ((1/(POT_MIN**1.5 + a)) * np.sqrt(1 - 6/POT_MIN + 8*a/(POT_MIN**1.5) - 3*a*a/(POT_MIN**2)))
                 except:
                     PERIOD = tracker[j+1][-2] - tracker[j][-2]
                 constants[j+1] = [newE, newLz, newC]
                 i = int(np.real(tracker[j+1][-1])) 
+                #print(j+1, pot_min, e, inc, inner_turn, outer_turn, new_step[0], i)
                 tracker[j+1] = [pot_min, e, inc, inner_turn, outer_turn, new_step[0], i]
                 #del all_states[i:]
                 #del dTau_change[i:]
 
                 #del true_anom[i+1:]
                 if verbose > 0 and verbose < 3:
-                    pbar.set_postfix_str("Semilat: %s, Ecc %s, Peri: %s, Theta_min: %s*pi" %(np.round( 0.5*(tracker[j][3] + tracker[j][4])*(1 - tracker[j][1]**2), 3), np.round(tracker[j][1], 3), np.round(tracker[j][3], 3), np.round(tracker[j][2]/np.pi, 3)))
+                    pbar.set_postfix_str(f"Semilat: {np.real(0.5*(tracker[j][3] + tracker[j][4])*(1 - tracker[j][1]**2)):.3f}, Ecc {np.real(tracker[j][1]):.3f}, Peri: {np.real(tracker[j][3]):.3f}, Theta_min: {np.real(tracker[j][2]/np.pi):.3f}*pi")
                 j += 1
                 i -= 1
                 ctx.j = j
@@ -670,10 +702,9 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
                     progress = max(abs((ctx_val - start_val) / (threshold - start_val)), i/1e7)
             upfull.append(time.perf_counter() - upcount)
             
-
         #Lets you end the program before the established end without breaking anything
         except KeyboardInterrupt:
-            print("\nEnding program - Halted", flush=True)
+            print(f"\nEnding program - {err_flags[err_flag]}", flush=True)
             stop = True
             break
 
@@ -689,20 +720,10 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
             stop = True
             break
 
+
     if verbose > 0 and verbose < 3:
         pbar.close()
     #print(len(issues), len(all_states))
-    #unit conversion stuff
-    if units == "mks":
-        G, c = 6.67e-11, 3e8
-    elif units == "cgs":
-        G, c = 6.67e-8,  3e10
-    else:
-        G, mass, c = 1.0, 1.0, 1.0
-        
-    if mu == 1e-100:
-        #so it gives actual numbers for pure geodesics
-        mu = 1.0
     
     constants = constants[:j+1]
     tracker = tracker[:j+1]
@@ -732,9 +753,11 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
     des_node, des_node_time = np.array([]), np.array([])
     interval = mm.check_interval_vec(all_states, a)
     if max(all_states[:,2]) - min(all_states[:,2]) > 1e-15:
-        theta_derv = np.interp(all_states[:,0], 0.5*(all_states[:,0][:-1] + all_states[:,0][1:]), np.diff(all_states[:,2])/np.diff(all_states[:,0]))
-        ind2 = argrelmin(theta_derv)[0] #indices for the ascending node
-        ind3 = argrelmin(-theta_derv)[0] #indices for the descending node
+        guh = np.cos(all_states[:, 2])**2
+        ind_cross = argrelmin(guh)
+        ind2 = ind_cross[0][::2] if all_states[ind_cross[0][0], 6] < 0.0 else ind_cross[0][1::2]
+        ind3 = ind_cross[0][1::2] if all_states[ind_cross[0][0], 6] < 0.0 else ind_cross[0][::2]
+
         asc_node, asc_node_time = all_states[ind2,3] - 2*np.pi*np.arange(len(ind2)), all_states[ind2,0] #subtract the normal phi advancement
         des_node, des_node_time = all_states[ind3,3] - 2*np.pi*np.arange(len(ind3)), all_states[ind3,0] #subtract the normal phi advancement
         if asc_node.size == 0:
@@ -770,14 +793,14 @@ def EMRIGenerator(a, mu, endflag="min_radius < 0.5", mass=1.0, err_target=1e-15,
              #"Lz_momentum": false_constants[:, 3],
              "spin": a,
              #"freqs": freqs,
-             "pot_min": tracker[:,0],
-             "e": tracker[:,1],
-             "inc": tracker[:,2],
+             "pot_min": np.real(tracker[:,0]),
+             "e": np.real(tracker[:,1]),
+             "inc": np.real(tracker[:,2]),
              "it": tracker[:,3],
              "ot": tracker[:,4],
-             "r0": 0.5*(tracker[:,3] + tracker[:,4]),
-             "p": 0.5*(tracker[:,3] + tracker[:,4])*(1 - tracker[:,1]**2),
-             "tracktime": tracker[:,5],
+             "r0": np.real(0.5*(tracker[:,3] + tracker[:,4])),
+             "p": np.real(0.5*(tracker[:,3] + tracker[:,4])*(1 - tracker[:,1]**2)),
+             "tracktime": np.real(tracker[:,5]),
              "trackix": np.array([int(np.real(num)) for num in tracker[:,6]]),
              "omega": omega,
              "otime": otime,
@@ -939,6 +962,7 @@ def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reco
         # Decode JSONs back into Python objects
         final['inputs'] = json.loads(f['inputs'][()].decode('utf-8', errors='replace'))
         final['issues'] = [tuple(x) for x in json.loads(f['issues'][()].decode('utf-8'))]
+        final["spin"] = final["inputs"][1]
         
         if reconstruct:
             # Reconstruct derived values
@@ -949,7 +973,6 @@ def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reco
             final["time"] = raw[:,0]
             time = final["time"]
             final["vel"] = (np.square(raw[:,5]) + np.square(raw[:,1]) * (np.square(raw[:,6]) + (np.sin(raw[:,2])**2)*np.square(raw[:,7])))**(0.5)
-            final["spin"] = final["inputs"][1]
             #final["qarter"] = final["carter"] + (final["spin"]*final["energy"] - final["phi_momentum"])**2
             final["tracktime"] = time[trackix + 1]
             final["tracktime"][0] = time[0]

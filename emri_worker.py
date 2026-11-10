@@ -182,8 +182,8 @@ def make_inspiral_str(cfg):
                 "veltrue": False, 
                 "units": "grav",
                 "verbose": 0,
-                "weird": False,
-                "force_stop": "should_stop"
+                "force_stop": "should_stop",
+                "skip_tar": 0
                 } 
     
     insp_str = "ml.EMRIGenerator("
@@ -254,9 +254,13 @@ def main():
     processes = []
     active = []
 
+    #counter = 0
     for cfg, p in zip(inspiral_cfgs, polls):
         while len(active) >= max_workers and not shutdown_requested:
+            #counter += 1
+            #print("___________________________________________________") if counter%30 == 0 else None
             for proc in active[:]:
+                #print(f"PID={proc.pid}, alive={proc.is_alive()}, "f"exitcode={proc.exitcode}", flush=True) if counter%30 == 0 else None
                 if not proc.is_alive():
                     proc.join()
                     active.remove(proc)
@@ -270,6 +274,9 @@ def main():
         lower_priority(proc)
         processes.append(proc)
         active.append(proc)
+
+    #for proc in active[:]:
+        #print(f"PID={proc.pid}, alive={proc.is_alive()}, "f"exitcode={proc.exitcode}", flush=True)
     
     for proc in active[:]:
         while proc.is_alive():
