@@ -371,7 +371,7 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
         "x": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.cos(data["raw"][:,3])', "X", 'data["raw"][:, 0]'],
         "y": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.sin(data["raw"][:,3])', "Y", 'data["raw"][:, 0]'],
         "z": ['data["raw"][:,1]*np.cos(data["raw"][:,3])', "Z", 'data["raw"][:, 0]'],
-        "true_anom": ['data["true_anom"]/(2*np.pi)', "True Anomaly", 'data["tracktime"]'],
+        "true_anom": ['data["true_anom"]', "True Anomaly", 'data["tracktime"]'],
         "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
         "pot_min": ['data["pot_min"]', "Effective Potential Minimum", 'data["tracktime"]'],
         "ecc": ['data["e"]', "Eccentricity", 'data["tracktime"]'],

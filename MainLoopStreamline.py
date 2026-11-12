@@ -78,7 +78,7 @@ def EMRIGenerator(a, mu,
     vel4 : 4-element list/array of floats, optional
         Tetrad component velocities [t, r, theta, phi].
     params : 3-element list/array of floats, optional
-        Semimajor axis, eccentricity, and inclination of orbit.
+        Semilatus rectum, eccentricity, and inclination of orbit.
     pos : 4-element list/array of floats, optional
         Initial 4-position of particle. The default is False
     veltrue : 4-element list/array of floats, optional
@@ -112,7 +112,6 @@ def EMRIGenerator(a, mu,
         "Ly_momentum": Y-component of Specific Angular Momentum of orbiting body at all points in "time"
         "Lz_momentum": Z-component of Specific Angular Momentum of orbiting body at all points in "time"
         "spin": Dimensionless spin of central body
-        "freqs": Characteristic frequencies of orbit w.r.t. time at points of recalculation [radial, theta, phi]
         "pot_min": Radial distance of potential minimum at points of recalculation
         "e": Eccentricity at points of recalculation
         "inc": Inclination at points of recalculation
@@ -192,7 +191,10 @@ def EMRIGenerator(a, mu,
     r0, e = 0.5 * (inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
     inc = np.sign(cons[1])*np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
     val = get_true_anom(all_states[0], r0, e)
-    PERIOD = 2 * np.pi * (r0**1.5)
+    # Get the approximate radial period for circular orbits
+    PERIOD = 2 * np.pi / (np.sqrt(1 - 6/r0 + 8*a/(r0**1.5) + 8*(a**2)/(r0*r0)) / (r0**1.5 + a))
+    # But it blows up at ISCO, so cap it when necessary (probably won't come up)
+    PERIOD = min(PERIOD, 7*(r0**1.5) + 1000, r0)
 
     true_anom = np.full(capacity, np.nan, dtype=complex)
     true_anom[0] = (val if np.isnan(val) == False else 0.0)
@@ -200,20 +202,6 @@ def EMRIGenerator(a, mu,
     constants[0] = [*cons]
     tracker = np.full((capacity//100, 7), np.nan, dtype=complex)
     tracker[0] = [pot_min, e, inc, inner_turn, outer_turn, all_states[0][0], 0]
-    
-    # r0 stuff is basically hard-coded; either change it or get rid of this
-    cond = ['((S2-compl) > 0 and (compl-S1) > 0)',                                         #outgoing r0
-            '((S2-compl) > 0 and (compl-S1) > 0) or ((S2-comph) > 0 and (comph-S1) > 0)',  #both r0s
-            '((S2-comph) > 0 and (comph-S1) > 0)',                                         #ingoing r0
-            '(S1 > np.pi and S2 < np.pi)',                                                 #at r_min
-            '(S1 < np.pi and S2 > np.pi)',                                                 #at r_max
-            '(S1 > np.pi and S2 < np.pi) or (S1 < np.pi and S2 > np.pi)',                  #at extrema
-            '((S2-np.pi/2) > 0 and (np.pi/2-S1) > 0)',                                     #outgoing p
-            '((S2-np.pi/2) > 0 and (np.pi/2-S1) > 0) or ((S2-1.5*np.pi) > 0 and (1.5*np.pi-S1) > 0)',  #both ps
-            '((S2-1.5*np.pi) > 0 and (1.5*np.pi-S1) > 0)',                                 #ingoing p
-            '((S2-comph) > 0 and (comph-S1) > 0) and (new_step[3] - all_states[int(tracker[j][-1])][3] >= 6*np.pi)',  #ingoing r0 + 3 phi orbits (deprecated?)
-            'new_step[2] < np.pi/2 and all_states[-1][2] > np.pi/2',                       #ascending node
-            '(new_step[3] + np.pi)%(2*np.pi) >= np.pi and (all_states[-1][3] + np.pi)%(2*np.pi) < np.pi']        #passing phi=0
 
     compErr = 0
     milestone = 0
@@ -398,10 +386,11 @@ def EMRIGenerator(a, mu,
                     if force_stop():
                         err_flag = 1
                         raise KeyboardInterrupt
-            
-            if trigger == False and (((state[1] > pot_min and new_step[1] <= pot_min) and new_step[0] - tracker[j][-2] > PERIOD*0.75) or (new_step[0] - tracker[j][-2] > PERIOD*2 and ((new_step[5] - state[5] >= 0 and all_states[i-1][5] - state[5] > 0) and new_step[1] < state[1]))):
+
+            # (hasn't triggered yet) and (((has just crossed potential minimum) and (it's been >75% of an orbit)) or ((orbit is very circular) and (it's been more than one orbit))
+            if trigger == False and (((state[1] > pot_min and new_step[1] <= pot_min) and new_step[0] - tracker[j][-2] > PERIOD*0.75) or ((e <= 1e-4) and (new_step[0] - tracker[j][-2] > PERIOD))):
                 if skip_count == skip_tar:
-                    #register the spot where we cross pot_min
+                    orbCount += 1
                     trigger = True
                     tracker[j+1] = [pot_min, e, inc, inner_turn, outer_turn, new_step[0], i]
                 else:
@@ -515,12 +504,17 @@ def EMRIGenerator(a, mu,
             #Update stuff!
             if (update == True):
                 skip_count = 0
-                turns, flats, zs = mm.root_getter(new_cons, a)
+                if condate:
+                    new_cons = ch_cons
+                else:
+                    new_cons = constants[j]
+                turns, flats, zs = mm.root_getter(*new_cons, a)
                 pot_min = flats[-1]
                 inner_turn, outer_turn = turns[-2:]
                 r0, e = 0.5 * (inner_turn + outer_turn), (outer_turn - inner_turn)/(outer_turn + inner_turn)
                 inc = np.sign(new_cons[1])*np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
-                PERIOD = np.real(2*np.pi*((r0)**1.5))
+                PERIOD = 2 * np.pi / (np.sqrt(1 - 6/r0 + 8*a/(r0**1.5) + 8*(a**2)/(r0*r0)) / (r0**1.5 + a))
+                PERIOD = min(PERIOD, 7*(r0**1.5) + 1000)
                 if condate == False:
                     new_cons = mm.getCons(state, a)
                 else:
@@ -544,7 +538,7 @@ def EMRIGenerator(a, mu,
             i += 1
             proper_time[i] = proper_time[i-1] + old_dTau
             all_states[i] = new_step    #update position and velocity
-            anomval = get_true_anom(new_step, 0.5*(outer_turn + inner_turn), e) + orbCount*2*np.pi
+            anomval = get_true_anom(new_step, r0, e) + orbCount*2*np.pi
             if anomval - true_anom[i-1] < -np.pi:
                 anomval += 2*np.pi
                 orbCount += 1
@@ -562,7 +556,7 @@ def EMRIGenerator(a, mu,
                 if update or trigger:
                     #print(ctx_val, start_val, threshold, progress, abs((ctx_val - start_val) / (threshold - start_val)) - progress, i/1e7 - progress)
                     val = max(abs((ctx_val - start_val) / (threshold - start_val)) - progress, i/1e7 - progress, 0)
-                    pbar.update(val*1e7)
+                    pbar.update(int(val*1e7))
                     progress = max(abs((ctx_val - start_val) / (threshold - start_val)), i/1e7)
             upfull.append(time.perf_counter() - upcount)
             

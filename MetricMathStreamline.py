@@ -342,7 +342,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
     vel4 : 4-element list/array of floats
         tetrad component velocities [t, r, theta, phi]
     params : 3-element list/array of floats
-        minimum of effective radial potential (GU distance), eccentricity, inclination (pi/2 as equatorial, negative values correspond to retrograde motion)
+        Semilatus rectum (GU distance), eccentricity, inclination (pi/2 as equatorial, negative values correspond to retrograde motion)
     pos : 4-element list/array of floats
         initial 4-position of particle
     Returns
@@ -464,15 +464,15 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         cons = [energy, lz, cart]
     return new, cons
 
-def schmidtparam3(r0, e, i, a):
+def schmidtparam3(p, e, i, a):
     '''
     Returns characteristic constants of an orbit given observable parameters + spin
     Cannot generate unbound orbits (e >= 1.0)
 
     Parameters
     ----------
-    r0 : int/float
-        semi-major axis of the approximate Keplerian orbit
+    p : int/float
+        semilatus rectum of the approximate Keplerian orbit
     e : int/float
         eccentricity of approximate Keplerian orbit, between 0 and 1
     i : int/float
@@ -488,7 +488,7 @@ def schmidtparam3(r0, e, i, a):
     '''
     #sympy doesn't like tiny e?? idk what the issue is
     e = 0.0 if e < 1e-15 else e
-    p = r0*(1 - (e**2))  #p is semi-latus rectum 
+    r0 = p/(1 - (e**2))  #p is semi-latus rectum 
     rp, ra = p/(1 + e), p/(1 - e)
     polar = False
     i = i%(2*np.pi)
@@ -3165,7 +3165,7 @@ def freqs_finder(E, L, C, a):
 
 def freqs_finder2(E, L, C, a):
     '''
-    Calculates characteristic frequencies of a given orbit
+    Calculates characteristic frequencies of a given orbit, from Schmidt 2002
 
     Parameters
     ----------
