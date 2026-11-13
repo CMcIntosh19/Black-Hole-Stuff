@@ -5,6 +5,9 @@
 __pycache__\
 *.py[cod]
 *$py.class
+*.pyc
+*.pyo
+
 
 # Virtual environments
 venv/
@@ -29,6 +32,9 @@ dist/
 .pytest_cache/
 .coverage
 htmlcov/
+.mypy_cache/
+.ruff_cache/
+/Testing/
 
 # =========================
 # IDEs
@@ -73,3 +79,5 @@ figures/
 *.tmp
 *.bak
 *~
+*.swp
+*.swo

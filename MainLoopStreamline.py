@@ -9,11 +9,6 @@ import numpy as np
 import MetricMathStreamline as mm
 from scipy.signal import argrelmin
 from tqdm import tqdm
-import scipy.interpolate as spi
-import OrbitPlotter as op
-from scipy import optimize
-import sympy as sp
-from numba import njit
 import h5py
 import json
 import os
@@ -22,9 +17,10 @@ import time
 from dataclasses import dataclass
 import operator
 import traceback
-import matplotlib.pyplot as plt
 import warnings
-
+import glob
+import re
+from filelock import FileLock
 
 @dataclass
 class EndContext:
@@ -409,7 +405,15 @@ def EMRIGenerator(a, mu,
                         raise KeyboardInterrupt
                 if mu != 0.0:
                     condate = True
-                    new_step_hold, ch_cons = mm.peters_integrate6_6_4_7(all_states[int(np.real(tracker[j][-1])):i], a, mu, ctx.j, i, all_states[int(np.real(tracker[j+1][-1]))], constants[j], label, err_target)
+                    new_step_hold, ch_cons = mm.peters_integrate(all_states[int(np.real(tracker[j][-1])):i], 
+                                                                 a, 
+                                                                 mu, 
+                                                                 ctx.j, 
+                                                                 i, 
+                                                                 all_states[int(np.real(tracker[j+1][-1]))], 
+                                                                 constants[j], 
+                                                                 label, 
+                                                                 err_target)
 
                     if radial_fail == 0 and new_step_hold is False:
                         #Radial issue, actual problem
@@ -659,7 +663,6 @@ def decode_filename(name):
     unix = (mjd - 40587)*86400
     return unix
 
-from filelock import FileLock
 def update_index(filename, metadata, index_path="D:/EMRIData/saved_sims/index.json"):
     with FileLock(index_path + ".lock"):
         if os.path.exists(index_path):
@@ -901,12 +904,8 @@ def delete_emri_data(filename, index_path="D:/EMRIData/saved_sims/index.json", f
     else:
         print("Index file does not exist.")
 
-import glob
-import re
-
 def normalize(s: str) -> str:
     return re.sub(r"[ _]+", "", s.lower())
-
 
 def clean_logs(log_folder="D:/EMRIDATA/", json_path="D:/EMRIDATA/saved_sims/index.json", delete=False):
     # Load JSON
