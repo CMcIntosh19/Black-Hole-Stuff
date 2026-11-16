@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import sympy as sp
 from numba import njit
 from tqdm import tqdm
-import OrbitPlotter as op
 import warnings
 from scipy.optimize import brentq
 from itertools import product
@@ -433,9 +432,8 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             velorient = np.real(velorient)
             #print("Calculating intial velocity from tetrad velocity and orientation")
             beta, eta, xi = velorient
-            #eta is radial angle - 0 degrees is radially outwards, 90 degrees is in the phi direction
-            #xi is up/down - 0 degrees is in the theta , 90 degrees is no up/down component
-            eta, xi = eta*np.pi/180, xi*np.pi/180
+            #eta is radial angle - 0 radians is radially outwards, pi/2 radians is in the phi direction
+            #xi is up/down - 0 radians is in the -theta direction, pi/2 radians is no theta component
             if (beta > 1):
                 print("Tetrad velocity exceeds c. Normalizing to 0.05")
                 beta = 0.05
@@ -448,8 +446,8 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             vel_2 = (rdot**2 + thetadot**2 + phidot**2)
             beta = np.sqrt(vel_2)
             if beta >= 1.0:
-                print("Tetrad velocity exceeds or equals c, Normalizing to 0.05")
-                rdot, thetadot, phidot = np.array([rdot, thetadot, phidot])*(0.05/beta)
+                print("Tetrad velocity exceeds or equals c, Normalizing to 0.01")
+                rdot, thetadot, phidot = np.array([rdot, thetadot, phidot])*(0.01/beta)
                 vel_2 = (rdot**2 + thetadot**2 + phidot**2)
                 beta = np.sqrt(vel_2)
             gamma = 1/np.sqrt(1 - vel_2)
@@ -459,8 +457,8 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
         new = np.array([*pos, *new])
 
     else:
-        print("Insufficent information provided, have a plunge")
-        return set_u_kerr(a, params=[find_rms(a), 0.2, np.pi/2])
+        print("Insufficent information provided, defaulting to plunge")
+        return set_u_kerr(a, pos=[0.0, 10, np.pi/2, 0.0], velorient=[0.01, np.pi, np.pi/2])
 
     if np.shape(cons) != (3,):
         metric, chris = kerr(new, a)
@@ -3326,7 +3324,9 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
     # Useful to keep track of the ISCO and marginally bound radius for later
 
     sep_stuff = get_sep_cosi(a, cosi, mult=500)
-    dist = p - sep_stuff["p"][op.get_index(sep_stuff["e"], 1)]
+    
+    
+    dist = p - sep_stuff["p"][np.where(sep_stuff["e"] == sep_stuff["e"].flat[np.nanargmin(np.abs(sep_stuff["e"] - 1))])[0][0]]
     line = np.polyfit(sep_stuff["p"][:len(sep_stuff["p"])//2], sep_stuff["e"][:len(sep_stuff["p"])//2], 1)
 
     r_isco, r_mb = find_rms(a*np.sign(L)), find_rmb(a*np.sign(L))
@@ -3421,7 +3421,8 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
                 # Tell the user where we're at right now
                 if verbose == True:
                     pbar.set_postfix_str(f"Semilat: {np.real(p):.4f}, Ecc {np.real(e):.4f}, Peri: {np.real((p/(1 + e))):.4f}, dt={dt:.4e}")
-                    new_prog = np.real(max(prog, 1 - (p - sep_stuff["p"][op.get_index(sep_stuff["e"], 1)])/dist))
+                    
+                    new_prog = np.real(max(prog, 1 - (p - sep_stuff["p"][np.where(sep_stuff["e"] == sep_stuff["e"].flat[np.nanargmin(np.abs(sep_stuff["e"] - 1))])[0][0]])/dist))
                     pbar.update(int((new_prog - prog)*10000))
                     prog = new_prog
 

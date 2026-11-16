@@ -32,7 +32,7 @@ class EndContext:
 
 def EMRIGenerator(a, mu, 
                   endflag="min_radius < 0.5", 
-                  err_target=1e-15, 
+                  err_target=1e-12, 
                   label="default", 
                   cons=False, 
                   velorient=False, 
@@ -51,77 +51,90 @@ def EMRIGenerator(a, mu,
     a : float
         Dimensionless spin parameter of the central body. Valid for values between -1 and 1.
     mu : float
-        Mass ratio between secondary body and central body. EMRI systems require mu to be less than or equal to 10^-4.
+        Mass ratio between secondary body and central body. EMRI systems implicitly require mu to be less than or equal to 10^-4, but there are no explicit restrictions on this value.
     endflag : string, optional
         Condition for ending the simulation, written in the form '(variable) (comp.operator) (value)'
         Current valid variables:
-            time - time, measured in geometric units
-            phi_orbit - absolute phi displacement from original position, measured in radians
-            rad_orbit - number of completed radial oscillations
-            radius - distance from central body, measured in geometric units
-            inclination - maximum displacement from north pole of central body, measured in radians
+            time - final time, measured in geometric units
+            index - number of steps run, regardless of time
+            elapsed_time - difference between final and initial time, measured in geometric units
+            min_radius - minimum radius of the last radial orbit, in geometric units
+            max_radius - maximum radius of the last radial orbit, in geometric units
+            rad_orbit - number of completed radial orbits
+            phi_orbit - number of completed azimuthal orbits
             semilat - semilatus rectum of orbit, measured in geometric units
             eccentricity - eccentricity of orbit
-        The default is "radius < 2"
+            inclination - maximum displacement from north pole of central body, measured in radians
+        The default is "min_radius < 0.5", which places the requested stopping radius inside the event horizon. The simulation 
+            normally terminates upon detecting plunge or reaching the maximum of 10^7 integration steps, whichever occurs first.
     err_target : float, optional
-        Maximum error allowed during the geodesic evaluation. The default is 1e-15.
+        Maximum error allowed during the geodesic evaluation. The default is 1e-12.
     label : string, optional
-        Internal label for the simulation. The default is "default", which gives it a label based on Keplerian paramters.
+        Internal label for the simulation. The default option automatically generates label based on Keplerian parameters.
     cons : 3-element list of floats, optional
-        Energy, Angular Momentum, and Carter Constant per unit mass. The default is False.
+        Specific Energy, Specific Angular Momentum, and Specific Carter Constant. The default is False.
+        The version of the Carter Constant used in EMRIGenerator vanishes for equatorial orbits and is non-negative for the physical timelike trajectories considered.
     velorient : 3-element list/array of floats, optional
-        Ratio of velocity/speed of light (beta), angle between r-hat and trajectory (eta - radians), angle between phi hat and trajectory (xi - radians)
+        Ratio of velocity/speed of light (beta), angle from r_hat direction (eta - radians), angle from phi_hat (xi - radians),
+            as measured from the Zero Angular Momentum (ZAMO) Frame
     vel4 : 4-element list/array of floats, optional
-        Tetrad component velocities [t, r, theta, phi].
+         4-velocity [gamma, gamma * v_r, gamma * v_theta, gamma * v_phi] as measured from the ZAMO frame.
+         3-velocity components must be in fractions of c, and should satisfy gamma = (1 - (v_r^2 + v_theta^2 + v_phi^2))^(-1/2)
     params : 3-element list/array of floats, optional
-        Semilatus rectum, eccentricity, and inclination of orbit.
+        Semilatus rectum (geometric units), eccentricity, and inclination (radians) of orbit.
+        Inclination is defined as the minimum polar coordinate theta_min reached along the trajectory, with a negative sign assigned to retrograde orbits. 
+            pi/2 corresponds to an equatorial prograde orbit, 0 to a polar orbit, and -pi/2 to an equatorial retrograde orbit.
     pos : 4-element list/array of floats, optional
-        Initial 4-position of particle. The default is False
+        Initial 4-position [t (geometric time), r (geometric distance), theta (radians), phi (radians)] of particle in Boyer-Lindquist coordinates. The default is False
     veltrue : 4-element list/array of floats, optional
-        Initial 4-velocity of particle. The default is False.
+        Initial contravariant four-velocity [u^t, u^r, u^theta, u^phi] in Boyer-Lindquist coordinates, where u^mu = dx^mu/dtau. 
+            Components are expressed in geometric units (G = c = M = 1). The default is False.
     verbose : int, optional
         Toggle for progress updates as program runs. The default is 1.
         0 - No output
         1 - progress bar
         2 - full output
+    skip_tar : int, optional
+        Allows the geodesic to run for N + 1 radial orbits before evaluating losses due to radiation reaction. 
+        The default is 0, which corresponds to a single orbit.
+    force_stop : function, optional
+        really only used for the multiprocessing stuff
 
     Returns
     -------
     final: 35 element dict
         Various tracked and record-keeping values for the resulting orbit
-        "name": Label for orbit if plotted, defaults to a list of Keplerian values for initial trajectory
-        "raw": 8 element state of the orbiting body from beginning to end [time, radius, theta, phi, dt, dradius, dtheta, dphi]
-        "inputs": initial input for function
-        "pos": Subset of "raw", only includes radius, theta position, and phi positions
-        "all_vel": Subset of "raw", only includes time, radius, theta position, and phi velocities
-        "time": Subset of "raw", only includes time
-        "true_anom": True anomaly measured at every moment in "time"; approximate
-        "interval": Derived from "raw", spacetime interval at every point measured in "time"; should equal -1 at all times
-        "vel": Derived from "raw", absolute velocity w.r.t. Mino time
-        "proper_time": Change in timestep 
-        "energy": Energy of orbiting body at points of recalculation
-        "phi_momentum": Angular momentum of orbiting body at points of recalculation
-        "carter": Carter Constant of orbiting body (set to 0 for equatorial orbits) at points of recalculation
-        "qarter": Carter Constant of orbiting body at points of recalculation
-        "energy2": Specific Energy of orbiting body at all points in "time"
-        "Lx_momentum": X-component of Specific Angular Momentum of orbiting body at all points in "time"
-        "Ly_momentum": Y-component of Specific Angular Momentum of orbiting body at all points in "time"
-        "Lz_momentum": Z-component of Specific Angular Momentum of orbiting body at all points in "time"
-        "spin": Dimensionless spin of central body
-        "pot_min": Radial distance of potential minimum at points of recalculation
-        "e": Eccentricity at points of recalculation
-        "inc": Inclination at points of recalculation
-        "it": Inner turning point at points of recalculation
-        "ot": Outer turning point at points of recalculation
-        "r0": Semimajor axis at points of recalculation
-        "tracktime": Value of time corresponding to points of recalculation
-        "trackix": Indices of "raw" corresponding to points of recalculation
-        "omega": Phi position of periapse
-        "otime": Time at periapse
-        "asc_node": Phi position of ascending node
-        "asc_node_time": Time at ascending node
-        "stop": 'True' if simulation was aborted before reaching end condition, False otherwise
+        "name": String, default label for orbit if plotted with OrbitPlotter functions
+        "raw": N x 8 element numpy array of position and velocity of the secondary body
+        "inputs": 11 element list of initial inputs for function call
+        "pos": N x 4 subset of "raw", only includes 4-positions
+        "vel": N x 4 Subset of "raw", only includes 4-velocities
+        "time": N element array, Subset of "raw", only includes coordinate time
+        "true_anom": N element array, True anomaly measured at every moment in "time"; approximate
+        "interval": N element array, Spacetime interval at every point measured in "time"; should equal -1 at all times
+        "proper_time": N element array, Proper time along trajectory
+        "energy": M element array, Specific Energy of orbiting body at the beginning of each radial orbit
+        "phi_momentum": M element array, Specific Angular Momentum of orbiting body at the beginning of each radial orbit
+        "carter": M element array, Specific Carter Constant of orbiting body at the beginning of each radial orbit
+        "spin": float, Dimensionless spin of central body
+        "pot_min": M element array, radial potential minimum of orbiting body at the beginning of each radial orbit
+        "e": M element array, eccentricity of orbiting body at the beginning of each radial orbit
+        "inc": M element array, inclination of orbiting body at the beginning of each radial orbit
+        "it": M element array, inner turning point of orbiting body at the beginning of each radial orbit
+        "ot": M element array, outer turning point of orbiting body at the beginning of each radial orbit
+        "r0": M element array, semimajor axis of orbiting body at the beginning of each radial orbit
+        "p": M element array, semilatus rectum of orbiting body at the beginning of each radial orbit
+        "tracktime": M element array, coordinate time at the beginning of each radial orbit
+        "trackix": M element array, indices for the elements of all N-length arrays corresponding to the values in M-length arrays
+        "omega": J element array, phi position of secondary body at periapse
+        "otime": J element array, coordinate time at periapse
+        "asc_node": K element array, phi position of secondary body at ascending node
+        "asc_node_time": K element array, coordinate time at ascending node
+        "des_node": L element array, phi position of secondary body at ascending node
+        "des_node_time": L element array, coordinate time at ascending node
+        "stop": bool, 'True' if simulation was aborted before reaching end condition, False otherwise
         "plunge": 'True' if simulation ended in a plunge, False otherwise
+        "unbind": 'True' if secondary body moves out of primary body's approximated region of gravitational dominance (assumed unbound), False otherwise
         "issues": index and state corresponding to any point where Keplerian values read as complex
     '''
 
@@ -163,20 +176,26 @@ def EMRIGenerator(a, mu,
     err_flags = ["Too Many Runge-Kutta Loops",
                  "Forced Stop",
                  "Cannot Fit Radial Fail Polynomials",
-                 "Cannot Correct Radial Fail Constants",
-                 "Successfully rea"]
-
+                 "Cannot Correct Radial Fail Constants"]
+    
     inputs = [a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, veltrue]          #Grab initial input in case you want to run the continue function
     inputs = [entry.tolist() if type(entry) == np.ndarray else entry for entry in inputs]              #Convert numpy arrays to lists so that JSON doesn't complain      
 
     capacity = 1000000
     all_states = np.full((capacity, 8), np.nan)                                                                       #initialize step counter
     if (np.shape(veltrue) == (4,)) and (np.shape(pos) == (4,)):
-        all_states[0] = np.array([*pos, *veltrue])
+        start_check = mm.check_interval(mm.kerr_2, [*pos, *veltrue], a)
+        if abs(start_check + 1) <= err_target:
+            all_states[0] = np.array([*pos, *veltrue])
+        else:
+            print("Nonviable initial state provided, defaulting to plunge.")
+            all_states[0], cons = mm.set_u_kerr(a, pos, velorient=[0.01, np.pi, np.pi/2])
+
     else:
         if verbose:
             print("Normalizing initial state")
         all_states[0], cons = mm.set_u_kerr(a, cons, velorient, vel4, params, pos)      #normalize initial state so it's actually physical
+        
     metric, chris = mm.kerr_2(all_states[0], a)                                     #initial metric and christoffel symbols
     if type(cons) == bool:
         cons = mm.getCons(all_states[0], a)
@@ -621,12 +640,11 @@ def EMRIGenerator(a, mu,
     final = {"name": label,
              "raw": all_states,
              "inputs": inputs,
-             "pos": all_states[:,1:4],
-             "all_vel": all_states[:,4:], 
+             "pos": all_states[:, 1:4],
+             "vel": all_states[:, 4:], 
              "time": all_states[:,0],
              "true_anom": true_anom,
              "interval": interval,
-             "vel": (np.square(all_states[:,5]) + np.square(all_states[:,1]) * (np.square(all_states[:,6]) + (np.sin(all_states[:,2])**2)*np.square(all_states[:,7])))**(0.5),
              "proper_time": proper_time,
              "energy": constants[:, 0],
              "phi_momentum": constants[:, 1],

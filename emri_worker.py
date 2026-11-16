@@ -4,9 +4,7 @@ import sys
 import time
 import signal
 import numpy as np
-import MetricMathStreamline as mm
 import MainLoopStreamline as ml
-import OrbitPlotter as op
 from email.utils import parsedate_to_datetime
 from multiprocessing import Process, Lock
 import argparse
@@ -35,7 +33,7 @@ def last_index_write_time():
 
     return 0.0
 
-def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=None):
+def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=None, log_folder="D:/EMRIData/"):
     """
     inspiral_str : string defining initial EMRI
     write_poll   : seconds to wait when checking if it's safe to write
@@ -46,7 +44,7 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
     stop_requested = False
     inspiral_str = make_inspiral_str(inspiral_cfg)
     title = inspiral_str.split("label")[1].split("'")[1]
-    heartbeat_path = f"D:/EMRIData/inspiral_{title.replace(' ', '_')}.log"
+    heartbeat_path = f"{log_folder}inspiral_{title.replace(' ', '_')}.log"
 
     def heartbeat(msg):
         """Append a message to the worker log immediately."""
@@ -156,13 +154,13 @@ def format_value(val):
         except ValueError:
             return repr(val)
 
-    # Numbers
-    if isinstance(val, (int, float)):
-        return repr(val)
-
     # Booleans
     if isinstance(val, bool):
         return "True" if val else "False"
+
+    # Numbers
+    if isinstance(val, (int, float)):
+        return repr(val)
 
     return repr(val)
 
@@ -172,7 +170,7 @@ def make_inspiral_str(cfg):
                 "mu": 0.0,
                 "endflag": "min_radius < 0.5", 
                 "mass": 1.0, 
-                "err_target": 1e-15, 
+                "err_target": 1e-12, 
                 "label": "default", 
                 "cons": False, 
                 "velorient": False, 
@@ -180,10 +178,9 @@ def make_inspiral_str(cfg):
                 "params": False, 
                 "pos": False, 
                 "veltrue": False, 
-                "units": "grav",
                 "verbose": 0,
+                "skip_tar": 0,
                 "force_stop": "should_stop",
-                "skip_tar": 0
                 } 
     
     insp_str = "ml.EMRIGenerator("
@@ -204,12 +201,14 @@ def make_inspiral_str(cfg):
 
 def lower_priority(proc):
     try:
+        process = psutil.Process(proc.pid)
+
         if sys.platform.startswith("win"):
-            import psutil
-            psutil.Process(proc.pid).nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+            process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
         else:
-            os.setpriority(os.PRIO_PROCESS, proc.pid, 10)
-    except Exception as e:
+            process.nice(10)
+
+    except (psutil.Error, OSError) as e:
         print(f"Priority set failed: {e}", flush=True)
 
 def main():
