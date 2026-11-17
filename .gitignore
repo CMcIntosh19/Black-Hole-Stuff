@@ -8,7 +8,6 @@ __pycache__\
 *.pyc
 *.pyo
 
-
 # Virtual environments
 venv/
 .venv*/
@@ -79,5 +78,6 @@ figures/
 *.tmp
 *.bak
 *~
+*.lock
 *.swp
 *.swo

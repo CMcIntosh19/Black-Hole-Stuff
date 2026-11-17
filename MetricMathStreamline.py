@@ -1575,7 +1575,7 @@ def full_transform(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat 
     else:
         return 1e-4*h_plus, 1e-4*h_cross, int_time
 
-def full_transform2(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat = None):    #defunctish??
+def full_transform2(data, distance, samp_freq=1, m_bh=False, n_hat = None, start=None, end=None):    #defunctish??
     '''
     Calculates gravitational wave moment from orbit dictionary
 
@@ -1597,29 +1597,12 @@ def full_transform2(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat
         N is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
     sphere, time = data["raw"][:, 1:], data["raw"][:, 0]
-    int_time = np.arange(int(time[-1]))
+    int_time = np.arange(int(start or 0), int(end or time[-1]), samp_freq)
     int_sphere = np.transpose([spi.CubicSpline(time, sphere[:, 0])(int_time),
                                spi.CubicSpline(time, sphere[:, 1])(int_time),
                                spi.CubicSpline(time, sphere[:, 2])(int_time)])
 
-    if data["inputs"][-1] == "grav":
-        # Convert to mks units if it's grav
-        if m_bh is False:
-            G, c, mass = 1, 1, 1
-        else:
-            G, c, mass = 6.67e-11, 3e8, 1.989e30 * m_bh
-            int_time *= G * mass / (c**3)
-            int_sphere[:,0] *= G * mass / (c**2)
-
-    elif data["inputs"][-1] != "grav":
-        if data["inputs"][-1] == "mks":
-            G, c, M_sun = 6.67e-11, 3e8, 1.989e30
-        elif data["inputs"][-1] == "cgs":
-            G, c, M_sun = 6.67e-8, 3e10, 1.989e33
-        mass = m_bh * M_sun if m_bh else data["inputs"][0]
-
-    distance *= G * mass / (c**2)
-    rho = np.sqrt(int_sphere[:, 0]**2 + (G * mass * data["inputs"][1] / (c**2))**2)
+    rho = np.sqrt(int_sphere[:, 0]**2 + data["inputs"][0]**2)
     carts = np.zeros((len(rho), 3))
     carts[:, 0] = rho * np.sin(int_sphere[:, 1]) * np.cos(int_sphere[:, 2])
     carts[:, 1] = rho * np.sin(int_sphere[:, 1]) * np.sin(int_sphere[:, 2])
@@ -1631,9 +1614,9 @@ def full_transform2(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat
 
     h_plus, h_cross = gwaves(qmom, int_time, distance, n_hat)
     if data["inputs"][2]:
-        return data["inputs"][2]*h_plus, data["inputs"][2]*h_cross, int_time
+        return data["inputs"][1]*h_plus, data["inputs"][1]*h_cross, int_time
     else:
-        return 1e-5*h_plus, 1e-5*h_cross, int_time
+        return h_plus, h_cross, int_time
 
 def trace_ortholize_old(pos_list):
     '''

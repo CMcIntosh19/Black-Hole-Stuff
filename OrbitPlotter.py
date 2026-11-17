@@ -168,13 +168,13 @@ def plotvalues(datalist, yvalue="radius", xvalue=None,
     for thing in range(len(datalist)):
         data = datalist[thing]
         if (type(yvalue) == str) and (yvalue in termdict):
-            ystuff = [termdict[yvalue][0](data), termdict[yvalue][1], termdict[yvalue][2]]
+            ystuff = [np.real(termdict[yvalue][0](data)), termdict[yvalue][1], termdict[yvalue][2]]
             if ((type(xvalue) == str) and (xvalue in termdict)):
                 pass
             else:
                 print(f"Defaulting x-axis to {termdict[ystuff[2]][1]}.") 
                 xvalue = ystuff[2]
-            xstuff = [termdict[xvalue][0](data), termdict[xvalue][1], termdict[xvalue][2]]       
+            xstuff = [np.real(termdict[xvalue][0](data)), termdict[xvalue][1], termdict[xvalue][2]]       
             
             if (start and xstuff[0][-1] < start) or (end and xstuff[0][0] > end):
                 print(f"{data["name"]} lies outside selected domain, skipping.")
@@ -2128,7 +2128,7 @@ def justfourier(datalist, start=0, end=-1, filename=False, supress=True, m_bh=Fa
     else:
         plt.show()
 
-def justfouriernew(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
+def justfouriernew(datalist, start=None, end=None, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
     if type(datalist) != list:
         datalist = [datalist]
     num = len(datalist)
@@ -2145,15 +2145,11 @@ def justfouriernew(datalist, start=0, end=-1, filename=False, supress=True, m_bh
         print(data["name"])
         if not distance:
             distance = max(data["raw"][:,1])*100000  # distance is in GU
-        h_plus, h_cross, time = mm.full_transform2(data, distance, supress=supress, m_bh=m_bh, n_hat=n_hat, samp_freq=samp_freq)
-        to = get_index(time, start)
-        if end > 0.0:
-            tf = get_index(time, end)
-        else:
-            tf = None
-        x = np.copy(time[to:tf])
-        y1 = np.copy(h_plus[to:tf])
-        y2 = np.copy(h_cross[to:tf])
+        h_plus, h_cross, time = mm.full_transform2(data, distance, samp_freq=samp_freq, m_bh=m_bh, n_hat=n_hat, start=start, end=end)
+ 
+        x = np.copy(time)
+        y1 = np.copy(h_plus)
+        y2 = np.copy(h_cross)
         N = x.size
         T = x[1] - x[0]
         yf1 = np.fft.rfft(y1)

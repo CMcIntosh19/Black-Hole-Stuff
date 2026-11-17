@@ -61,6 +61,11 @@ orbit3 = EMRIGenerator(
 )
 
 print("Available data:", list(orbit1.keys()))
+# EMRICode stores quantities at different sampling rates:
+# - "raw" and "time" contain values at each integration step.
+# - "energy", "phi_momentum", and "carter" track the orbital evolution
+#   at radiation-reaction update points.
+# - "tracktime" gives the corresponding coordinate times.
 print("Number of integration steps:", len(orbit1["time"]))
 print("Number of orbital updates:", len(orbit1["energy"]))
 
@@ -75,4 +80,5 @@ plt.show()
 from OrbitPlotter import plotvalues
 
 fig2, ax2 = plotvalues([orbit1, orbit2, orbit3], "radius", "theta")
+
 plt.show()
