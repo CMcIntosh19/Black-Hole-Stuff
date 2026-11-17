@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import MainLoopStreamline as ml
 from OrbitPlotter import plotvalues
 
-RUN_NEW_SIM = False
+RUN_NEW_SIM = True
 
 if RUN_NEW_SIM:
     # Gotta do a big ol example inspiral, lets do something with 1e-4?
