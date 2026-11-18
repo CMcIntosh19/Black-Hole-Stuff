@@ -9,22 +9,20 @@ import numpy as np
 import MetricMathStreamline as mm
 from scipy.signal import argrelmin
 from tqdm import tqdm
-import scipy.interpolate as spi
-import OrbitPlotter as op
-from scipy import optimize
-import sympy as sp
-from numba import njit
 import h5py
 import json
 import os
+import sys
 import statistics as st
 import time
 from dataclasses import dataclass
 import operator
 import traceback
-import matplotlib.pyplot as plt
 import warnings
-
+import glob
+import re
+from filelock import FileLock
+from pathlib import Path
 
 @dataclass
 class EndContext:
@@ -36,7 +34,7 @@ class EndContext:
 
 def EMRIGenerator(a, mu, 
                   endflag="min_radius < 0.5", 
-                  err_target=1e-15, 
+                  err_target=1e-12, 
                   label="default", 
                   cons=False, 
                   velorient=False, 
@@ -55,77 +53,90 @@ def EMRIGenerator(a, mu,
     a : float
         Dimensionless spin parameter of the central body. Valid for values between -1 and 1.
     mu : float
-        Mass ratio between secondary body and central body. EMRI systems require mu to be less than or equal to 10^-4.
+        Mass ratio between secondary body and central body. EMRI systems implicitly require mu to be less than or equal to 10^-4, but there are no explicit restrictions on this value.
     endflag : string, optional
         Condition for ending the simulation, written in the form '(variable) (comp.operator) (value)'
         Current valid variables:
-            time - time, measured in geometric units
-            phi_orbit - absolute phi displacement from original position, measured in radians
-            rad_orbit - number of completed radial oscillations
-            radius - distance from central body, measured in geometric units
-            inclination - maximum displacement from north pole of central body, measured in radians
+            time - final time, measured in geometric units
+            index - number of steps run, regardless of time
+            elapsed_time - difference between final and initial time, measured in geometric units
+            min_radius - minimum radius of the last radial orbit, in geometric units
+            max_radius - maximum radius of the last radial orbit, in geometric units
+            rad_orbit - number of completed radial orbits
+            phi_orbit - number of completed azimuthal orbits
             semilat - semilatus rectum of orbit, measured in geometric units
             eccentricity - eccentricity of orbit
-        The default is "radius < 2"
+            inclination - maximum displacement from north pole of central body, measured in radians
+        The default is "min_radius < 0.5", which places the requested stopping radius inside the event horizon. The simulation 
+            normally terminates upon detecting plunge or reaching the maximum of 10^7 integration steps, whichever occurs first.
     err_target : float, optional
-        Maximum error allowed during the geodesic evaluation. The default is 1e-15.
+        Maximum error allowed during the geodesic evaluation. The default is 1e-12.
     label : string, optional
-        Internal label for the simulation. The default is "default", which gives it a label based on Keplerian paramters.
+        Internal label for the simulation. The default option automatically generates label based on Keplerian parameters.
     cons : 3-element list of floats, optional
-        Energy, Angular Momentum, and Carter Constant per unit mass. The default is False.
+        Specific Energy, Specific Angular Momentum, and Specific Carter Constant. The default is False.
+        The version of the Carter Constant used in EMRIGenerator vanishes for equatorial orbits and is non-negative for the physical timelike trajectories considered.
     velorient : 3-element list/array of floats, optional
-        Ratio of velocity/speed of light (beta), angle between r-hat and trajectory (eta - radians), angle between phi hat and trajectory (xi - radians)
+        Ratio of velocity/speed of light (beta), angle from r_hat direction (eta - radians), angle from phi_hat (xi - radians),
+            as measured from the Zero Angular Momentum (ZAMO) Frame
     vel4 : 4-element list/array of floats, optional
-        Tetrad component velocities [t, r, theta, phi].
+         4-velocity [gamma, gamma * v_r, gamma * v_theta, gamma * v_phi] as measured from the ZAMO frame.
+         3-velocity components must be in fractions of c, and should satisfy gamma = (1 - (v_r^2 + v_theta^2 + v_phi^2))^(-1/2)
     params : 3-element list/array of floats, optional
-        Semilatus rectum, eccentricity, and inclination of orbit.
+        Semilatus rectum (geometric units), eccentricity, and inclination (radians) of orbit.
+        Inclination is defined as the minimum polar coordinate theta_min reached along the trajectory, with a negative sign assigned to retrograde orbits. 
+            pi/2 corresponds to an equatorial prograde orbit, 0 to a polar orbit, and -pi/2 to an equatorial retrograde orbit.
     pos : 4-element list/array of floats, optional
-        Initial 4-position of particle. The default is False
+        Initial 4-position [t (geometric time), r (geometric distance), theta (radians), phi (radians)] of particle in Boyer-Lindquist coordinates. The default is False
     veltrue : 4-element list/array of floats, optional
-        Initial 4-velocity of particle. The default is False.
+        Initial contravariant four-velocity [u^t, u^r, u^theta, u^phi] in Boyer-Lindquist coordinates, where u^mu = dx^mu/dtau. 
+            Components are expressed in geometric units (G = c = M = 1). The default is False.
     verbose : int, optional
         Toggle for progress updates as program runs. The default is 1.
         0 - No output
         1 - progress bar
         2 - full output
+    skip_tar : int, optional
+        Allows the geodesic to run for N + 1 radial orbits before evaluating losses due to radiation reaction. 
+        The default is 0, which corresponds to a single orbit.
+    force_stop : function, optional
+        really only used for the multiprocessing stuff
 
     Returns
     -------
     final: 35 element dict
         Various tracked and record-keeping values for the resulting orbit
-        "name": Label for orbit if plotted, defaults to a list of Keplerian values for initial trajectory
-        "raw": 8 element state of the orbiting body from beginning to end [time, radius, theta, phi, dt, dradius, dtheta, dphi]
-        "inputs": initial input for function
-        "pos": Subset of "raw", only includes radius, theta position, and phi positions
-        "all_vel": Subset of "raw", only includes time, radius, theta position, and phi velocities
-        "time": Subset of "raw", only includes time
-        "true_anom": True anomaly measured at every moment in "time"; approximate
-        "interval": Derived from "raw", spacetime interval at every point measured in "time"; should equal -1 at all times
-        "vel": Derived from "raw", absolute velocity w.r.t. Mino time
-        "proper_time": Change in timestep 
-        "energy": Energy of orbiting body at points of recalculation
-        "phi_momentum": Angular momentum of orbiting body at points of recalculation
-        "carter": Carter Constant of orbiting body (set to 0 for equatorial orbits) at points of recalculation
-        "qarter": Carter Constant of orbiting body at points of recalculation
-        "energy2": Specific Energy of orbiting body at all points in "time"
-        "Lx_momentum": X-component of Specific Angular Momentum of orbiting body at all points in "time"
-        "Ly_momentum": Y-component of Specific Angular Momentum of orbiting body at all points in "time"
-        "Lz_momentum": Z-component of Specific Angular Momentum of orbiting body at all points in "time"
-        "spin": Dimensionless spin of central body
-        "pot_min": Radial distance of potential minimum at points of recalculation
-        "e": Eccentricity at points of recalculation
-        "inc": Inclination at points of recalculation
-        "it": Inner turning point at points of recalculation
-        "ot": Outer turning point at points of recalculation
-        "r0": Semimajor axis at points of recalculation
-        "tracktime": Value of time corresponding to points of recalculation
-        "trackix": Indices of "raw" corresponding to points of recalculation
-        "omega": Phi position of periapse
-        "otime": Time at periapse
-        "asc_node": Phi position of ascending node
-        "asc_node_time": Time at ascending node
-        "stop": 'True' if simulation was aborted before reaching end condition, False otherwise
+        "name": String, default label for orbit if plotted with OrbitPlotter functions
+        "raw": N x 8 element numpy array of position and velocity of the secondary body
+        "inputs": 11 element list of initial inputs for function call
+        "pos": N x 4 subset of "raw", only includes 4-positions
+        "vel": N x 4 Subset of "raw", only includes 4-velocities
+        "time": N element array, Subset of "raw", only includes coordinate time
+        "true_anom": N element array, True anomaly measured at every moment in "time"; approximate
+        "interval": N element array, Spacetime interval at every point measured in "time"; should equal -1 at all times
+        "proper_time": N element array, Proper time along trajectory
+        "energy": M element array, Specific Energy of orbiting body at the beginning of each radial orbit
+        "phi_momentum": M element array, Specific Angular Momentum of orbiting body at the beginning of each radial orbit
+        "carter": M element array, Specific Carter Constant of orbiting body at the beginning of each radial orbit
+        "spin": float, Dimensionless spin of central body
+        "pot_min": M element array, radial potential minimum of orbiting body at the beginning of each radial orbit
+        "e": M element array, eccentricity of orbiting body at the beginning of each radial orbit
+        "inc": M element array, inclination of orbiting body at the beginning of each radial orbit
+        "it": M element array, inner turning point of orbiting body at the beginning of each radial orbit
+        "ot": M element array, outer turning point of orbiting body at the beginning of each radial orbit
+        "r0": M element array, semimajor axis of orbiting body at the beginning of each radial orbit
+        "p": M element array, semilatus rectum of orbiting body at the beginning of each radial orbit
+        "tracktime": M element array, coordinate time at the beginning of each radial orbit
+        "trackix": M element array, indices for the elements of all N-length arrays corresponding to the values in M-length arrays
+        "omega": J element array, phi position of secondary body at periapse
+        "otime": J element array, coordinate time at periapse
+        "asc_node": K element array, phi position of secondary body at ascending node
+        "asc_node_time": K element array, coordinate time at ascending node
+        "des_node": L element array, phi position of secondary body at ascending node
+        "des_node_time": L element array, coordinate time at ascending node
+        "stop": bool, 'True' if simulation was aborted before reaching end condition, False otherwise
         "plunge": 'True' if simulation ended in a plunge, False otherwise
+        "unbind": 'True' if secondary body moves out of primary body's approximated region of gravitational dominance (assumed unbound), False otherwise
         "issues": index and state corresponding to any point where Keplerian values read as complex
     '''
 
@@ -135,6 +146,8 @@ def EMRIGenerator(a, mu,
                 lhs, rhs = flag.split(op_str)
                 lhs = lhs.strip()
                 rhs = float(rhs)
+                if "radius" in lhs and rhs == 0.5:
+                    rhs = mm.find_rms(a)
                 return endvars[lhs], op, rhs
         raise ValueError("Invalid end condition")
 
@@ -167,20 +180,26 @@ def EMRIGenerator(a, mu,
     err_flags = ["Too Many Runge-Kutta Loops",
                  "Forced Stop",
                  "Cannot Fit Radial Fail Polynomials",
-                 "Cannot Correct Radial Fail Constants",
-                 "Successfully rea"]
-
+                 "Cannot Correct Radial Fail Constants"]
+    
     inputs = [a, mu, endflag, err_target, label, cons, velorient, vel4, params, pos, veltrue]          #Grab initial input in case you want to run the continue function
     inputs = [entry.tolist() if type(entry) == np.ndarray else entry for entry in inputs]              #Convert numpy arrays to lists so that JSON doesn't complain      
 
     capacity = 1000000
     all_states = np.full((capacity, 8), np.nan)                                                                       #initialize step counter
     if (np.shape(veltrue) == (4,)) and (np.shape(pos) == (4,)):
-        all_states[0] = np.array([*pos, *veltrue])
+        start_check = mm.check_interval(mm.kerr_2, [*pos, *veltrue], a)
+        if abs(start_check + 1) <= err_target:
+            all_states[0] = np.array([*pos, *veltrue])
+        else:
+            print("Nonviable initial state provided, defaulting to plunge.")
+            all_states[0], cons = mm.set_u_kerr(a, pos, velorient=[0.01, np.pi, np.pi/2])
+
     else:
         if verbose:
             print("Normalizing initial state")
         all_states[0], cons = mm.set_u_kerr(a, cons, velorient, vel4, params, pos)      #normalize initial state so it's actually physical
+
     metric, chris = mm.kerr_2(all_states[0], a)                                     #initial metric and christoffel symbols
     if type(cons) == bool:
         cons = mm.getCons(all_states[0], a)
@@ -271,7 +290,6 @@ def EMRIGenerator(a, mu,
 
             #break if something stops making sense
             if (True in np.isnan(state) in state or constants[j][0] < 0):
-                print("HEWWO", np.nan in state, constants[j][0] < 0, np.isnan(state[0]), i)
                 plunge = True
                 unbind = True
                 break
@@ -409,7 +427,15 @@ def EMRIGenerator(a, mu,
                         raise KeyboardInterrupt
                 if mu != 0.0:
                     condate = True
-                    new_step_hold, ch_cons = mm.peters_integrate6_6_4_7(all_states[int(np.real(tracker[j][-1])):i], a, mu, ctx.j, i, all_states[int(np.real(tracker[j+1][-1]))], constants[j], label, err_target)
+                    new_step_hold, ch_cons = mm.peters_integrate(all_states[int(np.real(tracker[j][-1])):i], 
+                                                                 a, 
+                                                                 mu, 
+                                                                 ctx.j, 
+                                                                 i, 
+                                                                 all_states[int(np.real(tracker[j+1][-1]))], 
+                                                                 constants[j], 
+                                                                 label, 
+                                                                 err_target)
 
                     if radial_fail == 0 and new_step_hold is False:
                         #Radial issue, actual problem
@@ -485,7 +511,7 @@ def EMRIGenerator(a, mu,
                         new_step_hold = mm.recalc_state3(ch_cons, new_step_hold, a, tol=err_target)
 
                     if new_step_hold is None or new_step_hold is False:
-                        print(f"skip! radial fail? {radial_fail == 1}")
+                        #print(f"skip! radial fail? {radial_fail == 1}")
                         #Theta issue, just try running longer
                         new_step_hold = new_step
                         update = False
@@ -594,16 +620,14 @@ def EMRIGenerator(a, mu,
     des_node, des_node_time = np.array([]), np.array([])
     interval = mm.check_interval_vec(all_states, a)
     if max(all_states[:,2]) - min(all_states[:,2]) > 1e-15:
-        guh = np.cos(all_states[:, 2])**2
-        ind_cross = argrelmin(guh)
+        cos2theta = np.cos(all_states[:, 2])**2
+        ind_cross = argrelmin(cos2theta)
         ind2 = ind_cross[0][::2] if all_states[ind_cross[0][0], 6] < 0.0 else ind_cross[0][1::2]
         ind3 = ind_cross[0][1::2] if all_states[ind_cross[0][0], 6] < 0.0 else ind_cross[0][::2]
 
         asc_node, asc_node_time = all_states[ind2,3] - 2*np.pi*np.arange(len(ind2)), all_states[ind2,0] #subtract the normal phi advancement
         des_node, des_node_time = all_states[ind3,3] - 2*np.pi*np.arange(len(ind3)), all_states[ind3,0] #subtract the normal phi advancement
-        if asc_node.size == 0:
-            asc_node = np.array([])
-            asc_node_time = np.array([])
+
     if verbose == 3:
         print("There were " + str(compErr) + " issues with complex roots/turning points.")
     if verbose >= 2:
@@ -617,12 +641,11 @@ def EMRIGenerator(a, mu,
     final = {"name": label,
              "raw": all_states,
              "inputs": inputs,
-             "pos": all_states[:,1:4],
-             "all_vel": all_states[:,4:], 
+             "pos": all_states[:, 1:4],
+             "vel": all_states[:, 4:], 
              "time": all_states[:,0],
              "true_anom": true_anom,
              "interval": interval,
-             "vel": (np.square(all_states[:,5]) + np.square(all_states[:,1]) * (np.square(all_states[:,6]) + (np.sin(all_states[:,2])**2)*np.square(all_states[:,7])))**(0.5),
              "proper_time": proper_time,
              "energy": constants[:, 0],
              "phi_momentum": constants[:, 1],
@@ -650,20 +673,92 @@ def EMRIGenerator(a, mu,
     return final
 
 def encode_filename():
+    """Creates a filename based on UTC date and time"""
     now = time.time()
     return hex(int(40587.0 + now//86400.0))[2:] + "_" + hex(int((now/86400.0 - now//86400.0)*60*24))[2:]
 
 def decode_filename(name):
+    """Turns filenames created by encode_filename back into unix dates"""
     splits = os.path.splitext(name)[0].split("_")
     mjd = int(splits[1], 16) + int(splits[2], 16)/(60*24)
     unix = (mjd - 40587)*86400
     return unix
 
-from filelock import FileLock
-def update_index(filename, metadata, index_path="D:/EMRIData/saved_sims/index.json"):
-    with FileLock(index_path + ".lock"):
-        if os.path.exists(index_path):
-            with open(index_path, 'r') as f:
+def get_size(obj, seen=None):
+    """Recursive function that returns the size of obj in bytes"""
+    if seen is None:
+        seen = set()
+    obj_id = id(obj)
+    if obj_id in seen:
+        return 0
+    seen.add(obj_id)
+
+    size = sys.getsizeof(obj)
+
+    if isinstance(obj, dict):
+        size += sum(get_size(v, seen) for v in obj.values())
+        size += sum(get_size(k, seen) for k in obj.keys())
+    elif hasattr(obj, '__dict__'):
+        size += get_size(obj.__dict__, seen)
+    elif hasattr(obj, '__iter__') and not isinstance(obj, (str, bytes, bytearray)):
+        size += sum(get_size(item, seen) for item in obj)
+    return size
+
+def resolve_data_folder(folder=None, create=False):
+    """Resolve a data directory, optionally creating it."""
+    if folder is None:
+        # Track a folder called "saved_sims" on the same level as MainLoopStreamline
+        path = Path(__file__).resolve().parent / "saved_sims"
+    else:
+        # Accepts absolute and relative paths
+        path = Path(folder).expanduser()
+    path = path.resolve()
+
+    if create:
+        # Creates a new directory, or silently does nothing if the directory already exists
+        path.mkdir(parents=True, exist_ok=True)
+    elif not path.is_dir():
+        raise FileNotFoundError(f"EMRI data directory does not exist: {path}")
+
+    return path
+
+def resolve_data_file(filename, folder=None, create_folder=False):
+    """Resolve an EMRI HDF5 filename within a data directory."""
+    directory = resolve_data_folder(folder, create=create_folder)
+
+    filename = Path(filename).name
+    if not filename.endswith((".h5", ".hdf5")):
+        filename += ".h5"
+
+    return directory / filename
+
+INPUT_LABELS = ["Spin", "Mass Ratio", "Endflag", "Target Error", 
+                "Label", "Constants", "Orientation Velocity",
+                "Tetrad Velocity", "Kepler Parameters", "Position",
+                "True Velocity"]
+
+def make_index_metadata(inputs, stop, plunge, unbind, uncompressed, compressed, created=None):
+    """Creates metadata for EMRI data in an index"""
+    metadata = dict(zip(INPUT_LABELS, inputs))
+    metadata.update({
+        "Halted": bool(stop),
+        "Plunged": bool(plunge),
+        "Escaped": bool(unbind),
+        "Dataset Size (MiB)": uncompressed,
+        "File Size (MiB)": compressed, 
+        "Created": created or time.strftime("%a, %d %b %Y %H:%M:%S UTC",
+                                            time.gmtime())})
+
+    return metadata
+
+def update_index(filename, metadata, folder=None):
+    """Adds an entry for a file created by save_emri_data in an index"""
+    directory = resolve_data_folder(folder, create=True)
+    index_path = directory / "index.json"
+
+    with FileLock(str(index_path) + ".lock"):
+        if index_path.exists():
+            with index_path.open("r", encoding="utf-8") as f:
                 index = json.load(f)
         else:
             print(f"{index_path} is not a valid index path. Creating new index.")
@@ -671,113 +766,277 @@ def update_index(filename, metadata, index_path="D:/EMRIData/saved_sims/index.js
 
         index[filename] = metadata
 
-        tmp_path = index_path + ".tmp"
+        tmp_path = directory / "index.json.tmp"
 
-        with open(tmp_path, 'w') as f:
+        with tmp_path.open("w", encoding="utf-8") as f:
             json.dump(index, f, indent=2)
 
         os.replace(tmp_path, index_path)
 
-def load_index(index_path="D:/EMRIData/saved_sims/index.json"):
-    if os.path.exists(index_path):
-        with open(index_path, 'r') as f:
-            return json.load(f)
-    else:
-        print(f"{index_path} does not exist.")
+def rebuild_index(folder=None, overwrite=False):
+    """
+    Scan a directory for EMRICode HDF5 files and rebuild its index.
 
-def save_emri_data(final, filename=False, folder="D:/EMRIData/saved_sims/", auto=False, lock=None):
-    if filename == False:
+    Parameters
+    ----------
+    folder : str or Path, optional
+        Directory to scan. Defaults to EMRICode/saved_sims/.
+    overwrite : bool, optional
+        If True, replace the existing index with entries found
+        in the directory. Otherwise, preserve existing entries
+        and add/update entries for files discovered.
+
+    Returns
+    -------
+    dict
+        The resulting index.
+    """
+    directory = resolve_data_folder(folder, create=False)
+    index_path = directory / "index.json"
+
+    # Coordinate with save_emri_data so files aren't being
+    #   published while we scan the directory.
+    with FileLock(str(directory / ".emri_save.lock")):
+
+        # Also coordinate with update_index/load_index.
+        with FileLock(str(index_path) + ".lock"):
+
+            if index_path.exists() and not overwrite:
+                with index_path.open("r", encoding="utf-8") as f:
+                    index = json.load(f)
+            else:
+                index = {}
+
+            files = sorted(path for path in directory.iterdir()
+                           if path.is_file()
+                           and path.suffix.lower() in (".h5", ".hdf5"))
+
+            added = 0
+            skipped = 0
+
+            for path in files:
+                try:
+                    with h5py.File(path, "r") as f:
+                        required = {"raw", "energy", "phi_momentum",
+                                    "carter", "trackix", "inputs", "issues"}
+
+                        if not required.issubset(f.keys()):
+                            skipped += 1
+                            continue
+
+                        if not all(key in f.attrs
+                                   for key in ("name", "stop", "plunge", "unbind")):
+                            skipped += 1
+                            continue
+
+                        inputs_raw = f["inputs"][()]
+                        if isinstance(inputs_raw, bytes):
+                            inputs_raw = inputs_raw.decode("utf-8")
+
+                        inputs = json.loads(inputs_raw)
+
+                        if not isinstance(inputs, list) or len(inputs) != len(INPUT_LABELS):
+                            skipped += 1
+                            continue
+
+                        # Use the file modification time
+                        # when no previous index entry exists.
+                        old_created = index.get(path.name, {}).get("Created")
+                        created = old_created or time.strftime("%a, %d %b %Y %H:%M:%S UTC", 
+                                                               time.gmtime(path.stat().st_mtime))
+
+                        # Calculate total uncompressed dataset size
+                        uncompressed_bytes = sum(obj.nbytes for obj in f.values() if isinstance(obj, h5py.Dataset))
+
+                        # Get actual file size on disk
+                        compressed_bytes = path.stat().st_size
+
+                        metadata = make_index_metadata(inputs, 
+                                                       f.attrs["stop"],
+                                                       f.attrs["plunge"],
+                                                       f.attrs["unbind"],
+                                                       round(uncompressed_bytes / 1024**2, 2),
+                                                       round(compressed_bytes / 1024**2, 2),
+                                                       created=created)
+
+                        index[path.name] = metadata
+                        added += 1
+
+                except (OSError, KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                    print(f"Skipping {path.name}: {exc}")
+                    skipped += 1
+
+            # Atomically replace the index.
+            tmp_path = directory / "index.json.tmp"
+
+            with tmp_path.open("w", encoding="utf-8") as f:
+                json.dump(index, f, indent=2)
+
+            os.replace(tmp_path, index_path)
+
+    print(f"Indexed {added} EMRI files; skipped {skipped} files.")
+    return index
+
+def load_index(folder=None):
+    """Load a chosen index to a dict object"""
+    directory = resolve_data_folder(folder)
+    index_path = directory / "index.json"
+
+    if not index_path.exists():
+        print(f"{index_path.resolve()} does not exist.")
+        return {}
+
+    with FileLock(str(index_path) + ".lock"):
+        with index_path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+
+def save_emri_data(final, filename=False, folder=None, auto=False, lock=None):
+    """
+    Save the output of EMRIGenerator to an HDF5 file and record it in an index.
+
+    Parameters
+    ----------
+    final : dict
+        result of EMRIGenerator
+    filename : str, optional
+        name of HDF5 file data is saved to. Defaults to a UTC-derived
+            string generated by encode_filename
+    folder : str or Path, optional
+        Directory to save data to. Defaults to EMRICode/saved_sims/.
+    auto : bool, optional
+        If True, automatically adjust filename in order to prevent overwrite
+        of an existing file with the same name. Otherwise, ask the user.
+    lock : lock object, optional
+        for multiprocessing
+
+    Returns
+    -------
+    Path
+        The resulting file path.
+    """
+    directory = resolve_data_folder(folder, create=True)
+
+    if filename is False or filename is None:
         filename = "auto_" + encode_filename()
 
-    if not filename.endswith('.h5') and not filename.endswith('.hdf5'):
-        filename += '.h5' 
+    path = resolve_data_file(filename, directory)
 
-    full = os.path.join(folder, filename)
-    if lock:
-        with lock:
-            if not os.path.exists(full):
-                pass
-            else:
-                if not auto:
-                    overwrite = input(f"Data for {filename} already exists. Overwrite? (y/n): ").strip().lower()
-                else:
-                    overwrite = 'n'
+    def choose_path(path):
+        if not path.exists():
+            return path
 
-                if overwrite == 'y':
-                    print(f"Overwriting {filename}...")
-                else:
-                    num = 1
-                    base, ext = os.path.splitext(filename)
-                    while os.path.exists(f"{folder}{filename}"):
-                        filename = f"{base}_{num}{ext}"
-                        num += 1
-                    print(f"File now saving as {filename}")
-    else:
-        if not os.path.exists(full):
-            pass
+        if not auto:
+            overwrite = input(f"Data for {path.name} already exists. Overwrite? (y/n): ").strip().lower()
         else:
-            if not auto:
-                overwrite = input(f"Data for {filename} already exists. Overwrite? (y/n): ").strip().lower()
-            else:
-                overwrite = 'n'
+            overwrite = "n"
 
-            if overwrite == 'y':
-                print(f"Overwriting {filename}...")
-            else:
-                num = 1
-                base, ext = os.path.splitext(filename)
-                while os.path.exists(f"{folder}{filename}"):
-                    filename = f"{base}_{num}{ext}"
-                    num += 1
-                print(f"File now saving as {filename}")
+        if overwrite == "y":
+            print(f"Overwriting {path.name}...")
+            return path
 
-    with h5py.File(folder + filename, 'w') as f:
-        # String attributes
-        f.attrs['name'] = final['name']
+        base = path.stem
+        ext = path.suffix
+        num = 1
 
-        # Boolean flags
-        f.attrs['stop'] = final['stop']
-        f.attrs['plunge'] = final['plunge']
-        f.attrs['unbind'] = final['unbind']
+        while True:
+            candidate = path.with_name(f"{base}_{num}{ext}")
+            if not candidate.exists():
+                print(f"File now saving as {candidate.name}")
+                return candidate
+            num += 1
 
-        # Raw numerical data
-        f.create_dataset('raw', data=final['raw'], compression='gzip', compression_opts=9, shuffle=True)
-        f.create_dataset('dTau_change', data=final['dTau_change'], compression='gzip', compression_opts=9, shuffle=True)
-        f.create_dataset('energy', data=final['energy'], compression='gzip', compression_opts=9, shuffle=True)
-        f.create_dataset('phi_momentum', data=final['phi_momentum'], compression='gzip', compression_opts=9, shuffle=True)
-        f.create_dataset('carter', data=final['carter'], compression='gzip', compression_opts=9, shuffle=True)
-        f.create_dataset('trackix', data=final['trackix'], compression='gzip', compression_opts=9, shuffle=True)
-
-        # Store inputs and issues as JSON strings
-        inputs_json = json.dumps(final['inputs'])
-        issues_json = json.dumps(final['issues'])
-
-        dt = h5py.string_dtype(encoding='utf-8')
-        f.create_dataset('inputs', data=inputs_json, dtype=dt)
-        f.create_dataset('issues', data=issues_json, dtype=dt)
-
-    input_labels = ["Central Body Mass", "Spin", "Mass Ratio", "Endflag", "Target Error", "Label", "Constants", "Orientation Velocity", "Tetrad Velocity", "Kepler Parameters", "Position", "True Velocity", "Units"]
-    metadata = dict(zip(input_labels, final["inputs"]))
-    moredata = {
-        "Halted": final["stop"],
-        "Plunged": final["plunge"],
-        "Escaped": final["unbind"],
-        "Created": time.strftime("%a, %d %b %Y %H:%M:%S UTC", time.gmtime())
-    }
-    for key, value in moredata.items():
-        metadata[key] = value
-
-    if lock:
+    # Choose the output path
+    if lock is not None:
         with lock:
-            update_index(filename, metadata)
+            path = choose_path(path)
     else:
-        update_index(filename, metadata)
+        path = choose_path(path)
 
-    return filename
+    # Write the HDF5 file
+    with h5py.File(path, "w") as f:
+        f.attrs["name"] = final["name"]
+        f.attrs["stop"] = final["stop"]
+        f.attrs["plunge"] = final["plunge"]
+        f.attrs["unbind"] = final["unbind"]
 
-def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reconstruct=True):
-    print(f"Loading {folder + filename}") if not quiet else None
-    with h5py.File(folder + filename, 'r') as f:
+        for key in ("raw", "proper_time", "energy",
+                    "phi_momentum", "carter", "trackix"):
+            f.create_dataset(key, data=final[key],
+                             compression="gzip", compression_opts=9, shuffle=True)
+
+        dt = h5py.string_dtype(encoding="utf-8")
+
+        f.create_dataset("inputs", data=json.dumps(final["inputs"]), dtype=dt)
+        f.create_dataset("issues", data=json.dumps(final["issues"]), dtype=dt)
+
+    uncompressed_bytes = get_size(final)
+    #for key in final.keys():
+    #    size = get_size(final[key])
+    #    print(key, size)
+    #    uncompressed_bytes += size
+
+    compressed_bytes = path.stat().st_size
+
+    metadata = make_index_metadata(final["inputs"],
+                                   final["stop"],
+                                   final["plunge"],
+                                   final["unbind"],
+                                   round(uncompressed_bytes / 1024**2, 2),
+                                   round(compressed_bytes / 1024**2, 2))
+
+    if lock is not None:
+        with lock:
+            update_index(path.name, metadata, folder=directory)
+    else:
+        update_index(path.name, metadata, folder=directory)
+
+    return path.name
+
+def load_emri_data(filename, folder=None, quiet=False, reconstruct=True):
+    """
+    Load an HDF5 file and save the data into a new EMRIGenerator object.
+
+    Parameters
+    ----------
+    filename : str
+        name of HDF5 file data is saved to.
+    folder : str or Path, optional
+        Directory to search. Defaults to EMRICode/saved_sims/.
+    quiet : bool, optional
+        If False, announce progress as the function runs.
+        Otherwise, remain silent.
+    reconstruct : bool, optional
+        If True, rebuild the original EMRIGenerator object in its entirety.
+        Otherwise, only load values that cannot be reconstructed from the others.
+        This includes:
+            name - str, Internally resolved object label
+            stop - bool, tracks forced stop
+            plunge - bool, tracks if simulation ended in a plunge
+            unbind - bool, tracks if secondary object moved too far from primary
+            raw - N x 8 numpy array, position and velocity data throughout orbit
+            proper_time - length N numpy array, proper time along orbit
+            energy - length M numpy array, specific energy once per orbit
+            phi_momentum - length M numpy array, specific axial angular momentum once per orbit
+            carter - length M numpy array, specific Carter constant once per orbit
+            trackix - length M numpy array, indices that map M-length arrays to N-length arrays
+            inputs - mixed object list, original inputs to EMRIGenerator
+            issues - mixed object list, lists errors in original geodesic run
+            spin - float, dimensionless spin of black hole
+
+    Returns
+    -------
+    dict
+        EMRIGenerator results
+    """
+    path = resolve_data_file(filename, folder)
+
+    if not path.is_file():
+        raise FileNotFoundError(f"EMRI data file does not exist: {path}")
+
+    if not quiet:
+        print(f"Loading {path}")
+
+    with h5py.File(path, 'r') as f:
         final = {}
 
         # Basic attributes
@@ -788,7 +1047,10 @@ def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reco
 
         # Arrays
         final['raw'] = f['raw'][:]
-        final['dTau_change'] = f['dTau_change'][:]
+        try:
+            final['proper_time'] = f['proper_time'][:]
+        except:
+            final['proper_time'] = f['dTau_change'][:]
         final['energy'] = f['energy'][:]
         final['phi_momentum'] = f['phi_momentum'][:]
         final['carter'] = f['carter'][:]
@@ -797,29 +1059,27 @@ def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reco
         # Decode JSONs back into Python objects
         final['inputs'] = json.loads(f['inputs'][()].decode('utf-8', errors='replace'))
         final['issues'] = [tuple(x) for x in json.loads(f['issues'][()].decode('utf-8'))]
-        final["spin"] = final["inputs"][1]
+        final["spin"] = final["inputs"][0]
         
         if reconstruct:
             # Reconstruct derived values
             raw = final["raw"]
             trackix = final["trackix"]
             final["pos"] = raw[:,1:4]
-            final["all_vel"] = raw[:,4:]
+            final["vel"] = raw[:,4:]
             final["time"] = raw[:,0]
             time = final["time"]
-            final["vel"] = (np.square(raw[:,5]) + np.square(raw[:,1]) * (np.square(raw[:,6]) + (np.sin(raw[:,2])**2)*np.square(raw[:,7])))**(0.5)
-            #final["qarter"] = final["carter"] + (final["spin"]*final["energy"] - final["phi_momentum"])**2
             final["tracktime"] = time[trackix + 1]
             final["tracktime"][0] = time[0]
                 # Numba + vectorized version of check_interval
             final["interval"] = mm.check_interval_vec(raw, final["spin"])
                 # Vectorized version of root_getter
-            stuff = mm.root_getter_vec(final["energy"], final["phi_momentum"], final["carter"], final["spin"])
-            final["pot_min"] = stuff[1][:, -1]
-            incstuff = np.mean(np.abs(stuff[2][:, 1:3]), axis=1)
+            roots = mm.root_getter_vec(final["energy"], final["phi_momentum"], final["carter"], final["spin"])
+            final["pot_min"] = roots[1][:, -1]
+            incstuff = np.mean(np.abs(roots[2][:, 1:3]), axis=1)
             final["inc"] = np.arccos(np.where(incstuff <= 1.0, incstuff, 1.0))*np.sign(final['phi_momentum'])
-            final["it"] = stuff[0][:, -2]
-            final["ot"] = stuff[0][:, -1]
+            final["it"] = roots[0][:, -2]
+            final["ot"] = roots[0][:, -1]
             it, ot = final["it"], final["ot"]
             final["e"] = (ot - it)/(ot + it)
             final["r0"] = 0.5*(ot + it)
@@ -846,14 +1106,13 @@ def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reco
             asc_node, asc_node_time = np.array([]), np.array([])
             des_node, des_node_time = np.array([]), np.array([])
             if max(raw[:,2]) - min(raw[:,2]) > 1e-15:
-                theta_derv = np.interp(raw[:,0], 0.5*(raw[:,0][:-1] + raw[:,0][1:]), np.diff(raw[:,2])/np.diff(raw[:,0]))
-                ind2 = argrelmin(theta_derv)[0] #indices for the ascending node
-                ind3 = argrelmin(-theta_derv)[0] #indices for the descending node
+                cos2theta = np.cos(raw[:, 2])**2
+                ind_cross = argrelmin(cos2theta)
+                ind2 = ind_cross[0][::2] if raw[ind_cross[0][0], 6] < 0.0 else ind_cross[0][1::2]
+                ind3 = ind_cross[0][1::2] if raw[ind_cross[0][0], 6] < 0.0 else ind_cross[0][::2]
+                
                 asc_node, asc_node_time = raw[ind2,3] - 2*np.pi*np.arange(len(ind2)), raw[ind2,0] #subtract the normal phi advancement
                 des_node, des_node_time = raw[ind3,3] - 2*np.pi*np.arange(len(ind3)), raw[ind3,0] #subtract the normal phi advancement
-                if asc_node.size == 0:
-                    asc_node = np.array([])
-                    asc_node_time = np.array([])
             final["omega"] = omega
             final["otime"] = otime
             final["asc_node"] = asc_node
@@ -865,48 +1124,63 @@ def load_emri_data(filename, folder="D:/EMRIData/saved_sims/", quiet=False, reco
         print(f"Done") if not quiet else None
         return final
 
-def delete_emri_data(filename, index_path="D:/EMRIData/saved_sims/index.json", folder="D:/EMRIData/saved_sims/", auto=False):
-    full_path = os.path.join(folder, filename)
-    
-    # Delete the file
-    if os.path.exists(full_path):
-        if auto == True:
-            confirm = "y"
-        else:
-            confirm = input(f"Are you sure you want to delete {filename}? (y/n): ").strip().lower()
+def delete_emri_data(filename, folder=None, auto=False):
+    """
+    Delete a saved HDF5 file and its associated index entry
 
-        if confirm == "y":
-            os.remove(full_path)
-            print(f"Deleted file: {full_path}")
-        else:
+    Parameters
+    ----------
+    filename : str
+        name of HDF5 file data is saved to.
+    folder : str or Path, optional
+        Directory to search. Defaults to EMRICode/saved_sims/.
+    auto : bool, optional
+        If False, requires user to manually verify deletion request.
+        Otherwise, deletes file without user input.
+
+    Returns
+    -------
+    bool
+        True for successful deletion, False otherwise.
+    """
+    path = resolve_data_file(filename, folder)
+
+    if not path.exists():
+        raise FileNotFoundError(f"EMRI data file does not exist: {path}")
+
+    if not auto:
+        confirm = input(
+            f"Are you sure you want to delete {path.name}? (y/n): "
+        ).strip().lower()
+
+        if confirm != "y":
             print("File deletion aborted.")
-    else:
-        print(f"File not found: {full_path}")
+            return False
 
-    # Remove from index
-    if os.path.exists(index_path):
-        if confirm == "y":
-            with open(index_path, 'r') as f:
+    path.unlink()
+    print(f"Deleted file: {path}")
+
+    directory = path.parent
+    index_path = directory / "index.json"
+
+    with FileLock(str(index_path) + ".lock"):
+        if index_path.exists():
+            with index_path.open("r", encoding="utf-8") as f:
                 index = json.load(f)
 
-            if filename in index:
-                del index[filename]
-                with open(index_path, 'w') as f:
-                    json.dump(index, f, indent=2)
-                print(f"Removed {filename} from index.")
-            else:
-                print(f"{filename} not found in index.")
-        else:
-            pass
-    else:
-        print("Index file does not exist.")
+            if path.name in index:
+                del index[path.name]
 
-import glob
-import re
+                tmp_path = directory / "index.json.tmp"
+                with tmp_path.open("w", encoding="utf-8") as f:
+                    json.dump(index, f, indent=2)
+
+                os.replace(tmp_path, index_path)
+
+    return True
 
 def normalize(s: str) -> str:
     return re.sub(r"[ _]+", "", s.lower())
-
 
 def clean_logs(log_folder="D:/EMRIDATA/", json_path="D:/EMRIDATA/saved_sims/index.json", delete=False):
     # Load JSON

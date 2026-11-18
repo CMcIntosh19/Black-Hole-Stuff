@@ -60,261 +60,11 @@ def sph2cart(pos, a):
     z = pos[0] * np.cos(pos[1])
     return [x, y, z]
 
-def plotvalue(data, value, vsphase=False, linefit=True, start=0, end=-1):
-    '''
-    Parameters
-    ----------
-    data : dictionary
-        the thing
-    value : string
-        thing to plot
-    vsphase : bool, optional
-        decide whether you're plotting against coordinate time or phase. The default is False, which corresponds to time.
-    linefit : bool, optional
-        toggle linear fitting. Defaults to True
-    start : int, optional
-        starting time or phase. The default is 0.
-    end : int, optional
-        ending time or phase. The default is -1.
-
-    Returns
-    -------
-    bool
-        True!
-
-    '''
-
-    termdict = {"time": [data["time"], "Coordinate Time"],
-                "radius": [data["pos"][:,0], "Radius"],
-                "theta": [data["pos"][:,1], "Theta"],
-                "phase": [data["pos"][:,2]/(2*np.pi), "Phi"],
-                "r0": [data["r0"], "Effective Potential Minimum"],
-                "ecc": [data["e"], "Eccentricity"],
-                "inc": [data["inc"], "Inclination"],
-                "periapse": [data["it"], "Periapse"],
-                "apoapse": [data["ot"], "Apoapse"],
-                "omega": [data["omega"], "Phi Position of Periapse"],
-                "otime": [data["otime"], "Time of Periapse"],
-                "semi_maj": [0.5*(data["it"] + data["ot"]), "Semimajor Axis"],
-                "semi_lat": [0.5*(data["it"] + data["ot"])*(1 - data["e"]**2), "Semilatus Rectum"],
-                "radial_v": [data["all_vel"][:,1], "Radial Velocity"],
-                "theta_v": [data["all_vel"][:,2], "Theta Velocity"],
-                "phi_v": [data["all_vel"][:,3], "Phi Velocity"],
-                "total_v": [data["vel"], "Velocity"],
-                "radial_freq": [data["freqs"][:, 0], "Radial Frequency"],
-                "theta_freq": [data["freqs"][:, 1], "Theta Frequency"],
-                "phi_freq": [data["freqs"][:, 2], "Phi Frequency"],
-                "energy": [data["energy"], "Specific Energy"],
-                "l_momentum": [data["phi_momentum"], "Specific Angular Momentum"],
-                "carter": [data["carter"], "Carter Constant"],
-                "qarter": [data["qarter"], "Carter Constant (Unnormalized)"],
-                "l_momentumx": [data["Lx_momentum"], "Specific Angular Momentum (x-component)"],
-                "l_momentumy": [data["Ly_momentum"], "Specific Angular Momentum (y-component)"],
-                "l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)"]}
-    
-    if (type(value) == str) and (value in termdict):
-        fig, ax = plt.subplots()
-        if len(termdict[value][0]) == len(data["time"]):
-            if vsphase == True:
-                title = "%s vs Phase"%(termdict[value][1])
-                xvals = termdict["phase"][0][start:end]
-                yvals = termdict[value][0][start:end]
-            else:
-                title = "%s vs Time"%(termdict[value][1])
-                to = get_index(data["time"], start)
-                if end > 0.0:
-                    tf = get_index(data["time"], end)
-                else:
-                    tf = len(data["time"])
-                xvals = termdict["time"][0][to:tf]
-                yvals = termdict[value][0][to:tf]
-        elif len(termdict[value][0]) == len(data["tracktime"]):
-            to = get_index(data["tracktime"], start)
-            if end > 0.0:
-                tf = get_index(data["tracktime"], end)
-            else:
-                tf = len(data["tracktime"])
-            if vsphase == True:
-                title = "%s vs Phase"%(termdict[value][1])
-                newphase = np.interp(data["tracktime"], data["time"], termdict["phase"][0])
-                xvals = newphase[to:tf]
-                yvals = termdict[value][0][to:tf]
-            else:
-                title = "%s vs Time"%(termdict[value][1])
-                xvals = data["tracktime"][to:tf]
-                yvals = termdict[value][0][to:tf]
-        elif value == "omega":
-            to = get_index(data["otime"], start)
-            if end > 0.0:
-                tf = get_index(data["otime"], end)
-            else:
-                tf = len(data["otime"])
-            if vsphase == True:
-                title = "%s vs Phase"%(termdict[value][1])
-                newphase = np.interp(data["otime"], data["time"], termdict["phase"][0])
-                xvals = newphase[to:tf]
-                yvals = termdict[value][0][to:tf]
-            else:
-                title = "%s vs Time"%(termdict[value][1])
-                xvals = data["otime"][to:tf]
-                yvals = termdict[value][0][to:tf]
-        ax.plot(xvals, yvals)
-        if linefit == True:
-            stuff = np.polyfit(xvals, yvals, 1)
-            ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label="Slope: {res:.3e}".format(res=stuff[0]))
-            ax.legend()
-        ax.set_title(title)
-        
-    else:
-        print("Not a valid plottable. Chose one of the following:")
-        for name in termdict:
-            print("'" + name + "':", termdict[name][1])
-    return True
-    
-def plotvalue2(datalist, value, vsphase=False, linefit=True, start=0, end=-1, xscale='linear', yscale='linear', filename=False):
-    '''
-    Parameters
-    ----------
-    data : single dict OR list/array of dicts
-        orbit dictionar(y/ies). Inputting a single dict will turn it into a list.
-    value : string
-        variable to plot
-    vsphase : bool, optional
-        decide whether you're plotting against coordinate time or phase. The default is False, which corresponds to time.
-    linefit : bool, optional
-        toggle linear fitting. Defaults to True
-    start : int, optional
-        starting time or phase. The default is 0.
-    end : int, optional
-        ending time or phase. The default is -1.
-
-    Returns
-    -------
-    bool
-        True!
-
-    '''
-    # The time thing becomes an issue, since I'm using geometric time that could be different for each orbit
-    # Although now that I think about it that's been an issue from the beginning
-    # Hadn't even considered it until now
-    # Actually it's all based on the central body so?? Shut up??
-    
-    if type(datalist) != list:
-        datalist = [datalist]
-    fig, ax = plt.subplots()
-    colors = list(mcolors.TABLEAU_COLORS)
-    for thing in range(len(datalist)):
-        data = datalist[thing]
-        # ["value": [location in data dict, Value name, extra bit if timing is weird]]
-        termdict = {"time": [data["time"], "Coordinate Time"],
-                    "radius": [data["pos"][:,0], "Radius"],
-                    "theta": [data["pos"][:,1], "Theta"],
-                    "phase": [data["pos"][:,2]/(2*np.pi), "Phase"],
-                    "true_anom": [data["true_anom"]/(2*np.pi), "True Anomaly"],
-                    "r0": [data["r0"], "Semimajor Axis"],
-                    "pot_min": [data["pot_min"], "Effective Potential Minimum"],
-                    "ecc": [data["e"], "Eccentricity"],
-                    "semilat": [data["r0"]*(1 - data["e"]**2), "Semilatus-Rectum"],
-                    "inc": [data["inc"], "Inclination"],
-                    "periapse": [data["it"], "Periapse"],
-                    "apoapse": [data["ot"], "Apoapse"],
-                    "omega": [data["omega"], "Phi Position of Periapse", "otime"],
-                    "otime": [data["otime"], "Time of Periapse", "otime"],
-                    "omegadot": [np.diff(data["omega"])/np.diff(data["otime"]), "Advance of Periapse", "odottime"],
-                    "odottime": [0.5*data["otime"][:-1] + 0.5*data["otime"][1:], "Periadvance time", "odottime"],
-                    "asc_node": [data["asc_node"], "Phi Position of Ascending Node", "asc_node_time"],
-                    "asc_node_time": [data["asc_node_time"], "Time of Ascending Node", "asc_node_time"],
-                    "semi_maj": [0.5*(data["it"] + data["ot"]), "Semimajor Axis"],
-                    "semi_lat": [data["p"], "Semilatus Rectum"],
-                    "radial_v": [data["all_vel"][:,1], "Radial Velocity"],
-                    "theta_v": [data["all_vel"][:,2], "Theta Velocity"],
-                    "phi_v": [data["all_vel"][:,3], "Phi Velocity"],
-                    "total_v": [data["vel"], "Velocity"],
-                    "radial_freq": [data["freqs"][:, 0], "Radial Frequency"],
-                    "theta_freq": [data["freqs"][:, 1], "Theta Frequency"],
-                    "phi_freq": [data["freqs"][:, 2], "Phi Frequency"],
-                    "all_freq": [data["freqs"], "All Frequencies"],
-                    "energy": [data["energy"], "Specific Energy"],
-                    "l_momentum": [data["phi_momentum"], "Specific Angular Momentum"],
-                    "carter": [data["carter"], "Carter Constant"],
-                    "qarter": [data["qarter"], "Carter Constant (Unnormalized)"],
-                    "l_momentumx": [data["Lx_momentum"], "Specific Angular Momentum (x-component)"],
-                    "l_momentumy": [data["Ly_momentum"], "Specific Angular Momentum (y-component)"],
-                    "l_momentumz": [data["Lz_momentum"], "Specific Angular Momentum (z-component)"],
-                    "interval": [data["interval"], "Spacetime Interval"],
-                    "energy2": [data["energy2"], "other energy"],
-                    "CartLx": [data["Lx_momentum"], "cartLx"],
-                    "CartLy": [data["Ly_momentum"], "cartLy"],
-                    "CartLz": [data["Lz_momentum"], "cartLz"]}
-        
-        if (type(value) == str) and (value in termdict):
-            if len(termdict[value][0]) == len(data["time"]):
-                if vsphase == True:
-                    title = "%s vs Phase"%(termdict[value][1])
-                    xvals = termdict["phase"][0][start:end]
-                    yvals = termdict[value][0][start:end]
-                else:
-                    title = "%s vs Time"%(termdict[value][1])
-                    to = get_index(data["time"], start)
-                    if end > 0.0:
-                        tf = get_index(data["time"], end)
-                    else:
-                        tf = len(data["time"])
-                    xvals = termdict["time"][0][to:tf]
-                    yvals = termdict[value][0][to:tf]
-            elif len(termdict[value][0]) == len(data["tracktime"]):
-                to = get_index(data["tracktime"], start)
-                if end > 0.0:
-                    tf = get_index(data["tracktime"], end)
-                else:
-                    tf = len(data["tracktime"])
-                if vsphase == True:
-                    title = "%s vs Phase"%(termdict[value][1])
-                    newphase = np.interp(data["tracktime"], data["time"], termdict["phase"][0])
-                    xvals = newphase[to:tf]
-                    yvals = termdict[value][0][to:tf]
-                else:
-                    title = "%s vs Time"%(termdict[value][1])
-                    xvals = data["tracktime"][to:tf]
-                    yvals = termdict[value][0][to:tf]
-            else:
-                timething = termdict[termdict[value][2]][0]
-                #change otime to timething
-                to = get_index(timething, start)
-                if end > 0.0:
-                    tf = get_index(timething, end)
-                else:
-                    tf = len(timething)
-                if vsphase == True:
-                    title = "%s vs Phase"%(termdict[value][1])
-                    newphase = np.interp(timething, data["time"], termdict["phase"][0])
-                    xvals = newphase[to:tf]
-                    yvals = termdict[value][0][to:tf]
-                else:
-                    title = "%s vs Time"%(termdict[value][1])
-                    xvals = timething[to:tf]
-                    yvals = termdict[value][0][to:tf]
-            ax.plot(xvals, yvals, color=colors[thing%len(colors)])
-            if linefit == True:
-                stuff = np.polyfit(xvals, yvals, 1)
-                ax.plot(xvals, np.polyval(stuff, xvals), linestyle="dashed", label=data["name"]+": {res:.3e}".format(res=stuff[0]), color=colors[thing%len(colors)])
-                ax.legend(title="Linear Fit")
-        
-        else:
-            print("Not a valid plottable. Chose one of the following:")
-            for name in termdict:
-                print("'" + name + "':", termdict[name][1])
-            return False
-        
-    ax.set_xscale(xscale)
-    ax.set_yscale(yscale)
-    ax.set_title(title)
-    if filename == False:
-        plt.show()
-    else:
-        plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
-
-def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=None, polyfit=False, start=False, end=False, xscale='linear', yscale='linear', filename=False, derv=0, grid=False):
+def plotvalues(datalist, yvalue="radius", xvalue=None, 
+               legend=True, select_legend=None, polyfit=False, 
+               start=None, end=None, xscale='linear', 
+               yscale='linear', filename=False, derv=0, 
+               grid=False, **kwargs):
     '''
     Parameters
     ----------
@@ -323,26 +73,30 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
     xvalue : string, optional
         variable to plot along the x-axis. Defaults to time
     yvalue : string, optional
-        variable to plot along the y-axis. Defaults to semimajor axis
+        variable to plot along the y-axis. Defaults to radial coordinate
     legend : bool, optional
         toggle legend, defaults to True
     polyfit : int/bool
         toggle fitting to a n-th degree polynomial, defaults to False/0
     start : bool/int, optional
-        desired starting value of xvalue. The default is False, which corresponds to the initial value
+        desired starting value of xvalue. The default is None, which corresponds to the initial value
     end : bool/int, optional
-        desired ending value of xvalue. The default is False, which corresponds to the final value
+        desired ending value of xvalue. The default is None, which corresponds to the final value
     xscale : string, optional
-        scaling for x-axis, matches options for matplotlib.set_xscale(). Defaults to linear
+        scaling for x-axis, matches options for matplotlib.pyplot.set_xscale(). Defaults to linear
     yscale : string, optional
-        scaling for y-axis, matches options for matplotlib.set_yscale(). Defaults to linear
+        scaling for y-axis, matches options for matplotlib.pyplot.set_yscale(). Defaults to linear
     filename : bool/string, optional
         Saves the output as a png file if a string is provided. Defaults to False
+    derv : int, optional
+        take an n-th derivative of the yvalue w.r.t. the x-value, defaults to 0/No derivative
+    grid : bool, optional
+        add a grid to the figure, defaults to false
+    **kwargs - passed along to plt.subplots()
 
     Returns
     -------
-    bool
-        True!
+    figure and axes
 
     '''
     # The time thing becomes an issue, since I'm using geometric time that could be different for each orbit
@@ -361,78 +115,92 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
 
     # ["value": [location in data dict, Value name, extra bit if timing is weird]]
     termdict = {
-        "index": ['np.arange(len(data["raw"]))', "Index", 'np.arange(len(data["raw"]))'],
-        "time": ['data["raw"][:, 0]', "Coordinate Time", 'data["raw"][:, 0]'],
-        "tracktime": ['data["tracktime"]', "Coordinate Time", 'data["tracktime"]'],
-        "radius": ['data["raw"][:,1]', "Radius", 'data["raw"][:, 0]'],
-        "theta": ['data["raw"][:,2]', "Theta", 'data["raw"][:, 0]'],
-        "phi": ['data["raw"][:,3]%(2*np.pi)', "Phi", 'data["raw"][:, 0]'],
-        "phase": ['data["raw"][:,3]/(2*np.pi)', "Phase", 'data["raw"][:, 0]'],
-        "x": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.cos(data["raw"][:,3])', "X", 'data["raw"][:, 0]'],
-        "y": ['np.sqrt(data["raw"][:,1]**2 + data["spin"]**2)*np.sin(data["raw"][:,2])*np.sin(data["raw"][:,3])', "Y", 'data["raw"][:, 0]'],
-        "z": ['data["raw"][:,1]*np.cos(data["raw"][:,3])', "Z", 'data["raw"][:, 0]'],
-        "true_anom": ['data["true_anom"]', "True Anomaly", 'data["tracktime"]'],
-        "r0": ['data["r0"]', "Semimajor Axis", 'data["tracktime"]'],
-        "pot_min": ['data["pot_min"]', "Effective Potential Minimum", 'data["tracktime"]'],
-        "ecc": ['data["e"]', "Eccentricity", 'data["tracktime"]'],
-        "semilat": ['data["p"]', "Semilatus-Rectum", 'data["tracktime"]'],
-        "inc": ['data["inc"]', "Inclination", 'data["tracktime"]'],
-        "inc_deg": ['np.rad2deg(data["inc"])', "Inclination (degrees)", 'data["tracktime"]'],
-        "periapse": ['data["it"]', "Periapse", 'data["tracktime"]'],
-        "apoapse": ['data["ot"]', "Apoapse", 'data["tracktime"]'],
-        "omega": ['data["omega"]', "Phi Position of Periapse", 'otime'],
-        "otime": ['data["otime"]', "Time of Periapse", 'otime'],
-        "omegadot": ['np.diff(data["omega"])/np.diff(data["otime"])', "Advance of Periapse", 'odottime'],
-        "odottime": ['0.5*data["otime"][:-1] + 0.5*data["otime"][1:]', "Periadvance time", 'odottime'],
-        "asc_node": ['data["asc_node"]', "Phi Position of Ascending Node", 'asc_node_time'],
-        "asc_node_time": ['data["asc_node_time"]', "Time of Ascending Node", 'asc_node_time'],
-        "semi_maj": ['0.5*(data["it"] + data["ot"])', "Semimajor Axis", 'data["tracktime"]'],
-        "semi_lat": ['data["p"]', "Semilatus Rectum", 'data["tracktime"]'],
-        "radial_v": ['data["all_vel"][:,1]', "Radial Velocity", 'data["raw"][:, 0]'],
-        "theta_v": ['data["all_vel"][:,2]', "Theta Velocity", 'data["raw"][:, 0]'],
-        "phi_v": ['data["all_vel"][:,3]', "Phi Velocity", 'data["raw"][:, 0]'],
-        "total_v": ['data["vel"]', "Velocity", 'data["raw"][:, 0]'],
-        "energy": ['data["energy"]', "Specific Energy", 'data["tracktime"]'],
-        "L_z": ['data["phi_momentum"]', "Specific Axial Angular Momentum", 'data["tracktime"]'],
-        "carter": ['data["carter"]', "Carter Constant", 'data["tracktime"]'],
-        "qarter": ['data["carter"] + (data["spin"]*data["energy"] - data["phi_momentum"])**2', "Carter Constant (Unnormalized)", 'data["tracktime"]'],
-        "approx_L": ['np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Full Angular Momentum sqrt(C + L\u2080\u00B2)", 'data["tracktime"]'],
-        "interval": ['data["interval"]', "Spacetime Interval", 'data["raw"][:, 0]'],
-        "cosi": ['data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)', "Inclination (cosi)", 'data["tracktime"]'],
-        "cosi_deg": ['np.rad2deg(np.arccos(data["phi_momentum"]/np.sqrt(data["carter"] + data["phi_momentum"]**2)))', "Inclination (cosi, degrees)", 'data["tracktime"]']
-        }
+        "index": [lambda d: np.arange(len(d["raw"])), "Index", "time"],
+        "time": [lambda d: d["raw"][:, 0], "Coordinate Time (M)", "time"],
+        "proper_time": [lambda d: d["proper_time"], "Proper Time (M)", "time"],
+        "radius": [lambda d: d["raw"][:, 1], "Radial Coordinate (M)", "time"],
+        "theta": [lambda d: d["raw"][:, 2], "Polar Coordinate (radians)", "time"],
+        "phi": [lambda d: d["raw"][:, 3] % (2 * np.pi), "Azimuthal Coordinate (radians)", "time"],
+        "phase": [lambda d: d["raw"][:, 3] / (2 * np.pi), "Phase", "time"],
+        "radial_v": [lambda d: d["vel"][:, 1], "Radial Velocity", "time"],
+        "theta_v": [lambda d: d["vel"][:, 2], "Polar Velocity", "time"],
+        "phi_v": [lambda d: d["vel"][:, 3], "Azimuthal Velocity", "time"],
+        "interval": [lambda d: d["interval"], "Spacetime Interval", "time"],
+        "x": [lambda d: np.sqrt(d["raw"][:, 1]**2 + d["spin"]**2) * np.sin(d["raw"][:, 2]) * np.cos(d["raw"][:, 3]),
+              "X", "time"],
+        "y": [lambda d: np.sqrt(d["raw"][:, 1]**2 + d["spin"]**2) * np.sin(d["raw"][:, 2]) * np.sin(d["raw"][:, 3]),
+              "Y", "time"],
+        "z": [lambda d: d["raw"][:, 1] * np.cos(d["raw"][:, 2]), "Z", "time"],
+        "true_anom": [lambda d: d["true_anom"], "True Anomaly", "time"],
+        "tracktime": [lambda d: d["tracktime"], "Coordinate Time (at Radial Orbit) (M)", "tracktime"],
+        "energy": [lambda d: d["energy"], "Specific Energy", "tracktime"],
+        "L_z": [lambda d: d["phi_momentum"], "Specific Axial Angular Momentum", "tracktime"],
+        "carter": [lambda d: d["carter"], "Specific Carter Constant", "tracktime"],
+        "approx_L": [lambda d: np.sqrt(d["carter"] + d["phi_momentum"]**2),
+                     r"Effective Angular Momentum $\sqrt{C + L_z^2}$", "tracktime"],
+        "qarter": [lambda d: d["carter"] + (d["spin"] * d["energy"] - d["phi_momentum"])**2,
+                   "Carter Constant (Non-normalized)", "tracktime"],
+        "periapse": [lambda d: d["it"], "Periapse", "tracktime"],
+        "apoapse": [lambda d: d["ot"], "Apoapse", "tracktime"],
+        "r0": [lambda d: d["r0"], "Semimajor Axis", "tracktime"],
+        "pot_min": [lambda d: d["pot_min"], "Effective Potential Minimum", "tracktime"],
+        "ecc": [lambda d: d["e"], "Eccentricity", "tracktime"],
+        "semilat": [lambda d: d["p"], "Semilatus-Rectum", "tracktime"],
+        "inc": [lambda d: d["inc"], "Inclination", "tracktime"],
+        "inc_deg": [lambda d: np.rad2deg(d["inc"]), "Inclination (degrees)", "tracktime"],
+        "cosi": [lambda d: d["phi_momentum"] / np.sqrt(d["carter"] + d["phi_momentum"]**2),
+                 "Inclination (cosi)", "tracktime"],
+        "cosi_deg": [lambda d: np.rad2deg(np.arccos(d["phi_momentum"] / np.sqrt(d["carter"] + d["phi_momentum"]**2))),
+                     "Inclination (cosi, degrees)", "tracktime"],
+        "omega": [lambda d: d["omega"], "Phi Position of Periapse", "otime"],
+        "otime": [lambda d: d["otime"], "Time of Periapse", "otime"],
+        "omegadot": [lambda d: np.diff(d["omega"]) / np.diff(d["otime"]), "Advance of Periapse", "odottime"],
+        "odottime": [lambda d: 0.5 * (d["otime"][:-1] + d["otime"][1:]),
+                     "Coordinate Time (at Advance of Periapse)", "odottime"],
+        "asc_node": [lambda d: d["asc_node"], "Ascending Node", "asc_node_time"],
+        "asc_node_time": [lambda d: d["asc_node_time"], "Coordinate Time (at Ascending Node)", "asc_node_time"],
+        "des_node": [lambda d: d["des_node"], "Descending Node", "des_node_time"],
+        "des_node_time": [lambda d: d["des_node_time"], "Coordinate Time (at Descending Node)", "des_node_time"],
+    }
 
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(**kwargs)
     colors = list(mcolors.TABLEAU_COLORS)
     for thing in range(len(datalist)):
         data = datalist[thing]
-        if ((type(xvalue) == str) and (xvalue in termdict)) and ((type(yvalue) == str) and (yvalue in termdict)):
-            xstuff = [eval(termdict[xvalue][0]), termdict[xvalue][1], termdict[xvalue][2]]
-            ystuff = [eval(termdict[yvalue][0]), termdict[yvalue][1], termdict[yvalue][2]]
+        if (type(yvalue) == str) and (yvalue in termdict):
+            ystuff = [np.real(termdict[yvalue][0](data)), termdict[yvalue][1], termdict[yvalue][2]]
+            if ((type(xvalue) == str) and (xvalue in termdict)):
+                pass
+            else:
+                print(f"Defaulting x-axis to {termdict[ystuff[2]][1]}.") 
+                xvalue = ystuff[2]
+            xstuff = [np.real(termdict[xvalue][0](data)), termdict[xvalue][1], termdict[xvalue][2]]       
+            
             if (start and xstuff[0][-1] < start) or (end and xstuff[0][0] > end):
                 print(f"{data["name"]} lies outside selected domain, skipping.")
                 continue
             title = "%s vs %s"%(termdict[yvalue][1], termdict[xvalue][1])
             title = ""
             title_add = ""
-            if len(xstuff[0]) == len(ystuff[0]):
+            if xstuff[2] == ystuff[2]:
                 #if the values have the same length, just grab the data
-                xo = 0 if start==False else get_index(xstuff[0], start)
-                xf = len(xstuff[0]) if end==False else get_index(xstuff[0], end)
+                xo = 0 if start==None else get_index(xstuff[0], start)
+                xf = len(xstuff[0]) if end==None else get_index(xstuff[0], end)
                 xvals, yvals = xstuff[0][xo:xf], ystuff[0][xo:xf]
             else: 
                 #if the values don't have the same length, interpolate using time
                 xvals, yvals = np.real_if_close(xstuff[0], 1000), np.real_if_close(ystuff[0], 1000)
                 if len(xvals) != len(data["raw"][:, 0]):
-                    xvals = np.interp(data["raw"][:, 0], eval(xstuff[2]), xstuff[0])
+                    xvals = np.interp(data["raw"][:, 0], termdict[xstuff[2]](data), xstuff[0])
                 if len(yvals) != len(data["raw"][:, 0]):
-                    yvals = np.interp(data["raw"][:, 0], eval(ystuff[2]), ystuff[0])
+                    yvals = np.interp(data["raw"][:, 0], termdict[ystuff[2]](data), ystuff[0])
                 xo = 0 if start==False else get_index(xvals, start)
                 xf = len(xvals) if end==False else get_index(xvals, end)
                 xvals, yvals = xvals[xo:xf], yvals[xo:xf]
             if derv > 0:
                 try:
-                    title_add = "(%s%s derivative)"%(derv, ["st", "nd", "rd"][derv-1] if derv%10 < 4 else "th")
+                    suffix = ("th" if 10 <= derv % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(derv % 10, "th"))
+                    title_add = f"({derv}{suffix} derivative)"
                     xvals_sub = np.copy(xvals)
                     yvals_sub = np.copy(yvals)
                     for i in range(derv):
@@ -484,9 +252,9 @@ def plotvalue3(datalist, xvalue="time", yvalue="r0", legend=True, select_legend=
         ax.legend(title="Datasets")
     
     if not filename:
-        plt.show()
+        return fig, ax
     else:
-        plt.savefig('%s.png'%(str(filename)), bbox_inches='tight')
+        fig.savefig('%s.png'%(str(filename)), bbox_inches='tight')
 
 def comparevalues(data, values, start=0, end=-1, leg=True):
     clean_list = []
@@ -2360,166 +2128,122 @@ def justfourier(datalist, start=0, end=-1, filename=False, supress=True, m_bh=Fa
     else:
         plt.show()
 
-def justfouriernew(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
+def justfouriernew(datalist, distance=None, samp_freq=1.0, n_hat=None, start=None, end=None, polarization=False, analyze_peaks=None):
     if type(datalist) != list:
         datalist = [datalist]
+
     num = len(datalist)
-    if not width:
-        width = max(8, 2*num)
-    if not height:
-        height = max(3, 1.5*num)
-    fig, ax = plt.subplots(num, figsize=(width, height), sharex=True, sharey=True)
+    fig, ax = plt.subplots(num, figsize=(max(8, 2*num), max(3, 1.5*num)), sharex=True, sharey=True)
     if num == 1:
         ax = [ax]
 
+    if analyze_peaks:
+        final_report = []
+
     for i in range(num):
         data = datalist[i]
-        print(data["name"])
-        if not distance:
-            distance = max(data["raw"][:,1])*100000  # distance is in GU
-        h_plus, h_cross, time = mm.full_transform2(data, distance, supress=supress, m_bh=m_bh, n_hat=n_hat, samp_freq=samp_freq)
-        to = get_index(time, start)
-        if end > 0.0:
-            tf = get_index(time, end)
+        if distance is None:
+            distance = mm.find_rms(data["spin"]) * 100000
+        h_plus, h_cross, time = mm.full_transform2(data, distance=distance, samp_freq=samp_freq, n_hat=n_hat, start=start, end=end)
+ 
+        N = time.size
+        dt = time[1] - time[0]
+        window = np.hanning(N)
+        Hp = np.fft.rfft(h_plus * window)
+        Hc = np.fft.rfft(h_cross * window)
+        xf = np.fft.rfftfreq(N, d=dt)
+
+        if analyze_peaks is not None and analyze_peaks > 0:
+            final_report.append(analyze_fourier_peaks(xf, Hp, num_peaks=analyze_peaks))
+
+        if not polarization:
+            # Plot absolute values of h+ and h_x
+            h_plus_fft = 2.0/N * np.abs(Hp)
+            h_cross_fft = 2.0/N * np.abs(Hc)
+            ax[i].plot(xf[1:], h_plus_fft[1:], label = "h+" if i==0 else None, alpha=0.8)
+            ax[i].plot(xf[1:], h_cross_fft[1:], label = "hx" if i==0 else None, alpha=0.8)
+            ax[i].set_yscale('log')
         else:
-            tf = None
-        x = np.copy(time[to:tf])
-        y1 = np.copy(h_plus[to:tf])
-        y2 = np.copy(h_cross[to:tf])
-        N = x.size
-        T = x[1] - x[0]
-        yf1 = np.fft.rfft(y1)
-        yf2 = np.fft.rfft(y2)
-        xf = np.fft.rfftfreq(N, d=T)
-        h_plus_fft = 2.0/N * np.abs(yf1)
-        h_cross_fft = 2.0/N * np.abs(yf2)
-        power = np.abs(yf1)**2
-        power[1:-1] *= 2
-        # Don't include DC
-        power[0] = 0
+            if i == 0:
+                print("Experimental Polarization mode, unfinished.")
+            # Plot polarization information
+            I = np.abs(Hp)**2 + np.abs(Hc)**2
+            Q = np.abs(Hp)**2 - np.abs(Hc)**2
+            V = 2 * np.imag(Hp * np.conj(Hc))
+            threshold = 1e-8 * np.max(I)
+            valid = I > threshold
+            ax[i].plot(xf[valid], (V/I)[valid], label = "linear vs circular" if i==0 else None, alpha=0.8)
+            ax[i].plot(xf[valid], (Q/I)[valid], label = "relative strength" if i==0 else None, alpha=0.8)
+            ax[i].plot(xf[1:], 0.0*(Q/I)[1:], alpha=0.0) # Invisible plot so the bounds match non-polarization mode
 
-        num_peaks = 3
-        peaks, properties = find_peaks(h_plus_fft,
-                                    prominence=np.max(h_plus_fft) * 0.01,
-                                    distance=10)
-        highest = peaks[np.argsort(h_plus_fft[peaks])[::-1]]
-        counted = len(highest[:num_peaks])
-
-        peak_freqs = xf[highest[:num_peaks]]
-        peak_amps = h_plus_fft[highest[:num_peaks]]
-        peak_pows = power[highest[:num_peaks]]
-
-        #print("Peak frequencies:", peak_freqs)
-        #print("Peak amplitudes:", peak_amps)
-        fr, fth, fph = np.abs(mm.freqs_finder(data["energy"][0], data["phi_momentum"][0], data["carter"][0], data["spin"])/(2 * np.pi))
-        peri_ix = np.argmin(data["raw"][:data["trackix"][1], 1])
-        #f_pph = (np.abs(data["raw"][peri_ix + 2, 3] - data["raw"][peri_ix - 2, 3])/(data["time"][peri_ix + 2] - data["time"][peri_ix - 2]))/(2*np.pi)
-        #f_pph = np.abs(np.mean(data["raw"][peri_ix - 2: peri_ix + 2, 7]))/(2*np.pi)
-        f_pph = np.abs(((data["raw"][peri_ix+3, 3] - data["raw"][peri_ix-2, 3])/(data["time"][peri_ix+3] - data["time"][peri_ix-2]))/(2*np.pi))
-
-        last_ix, fr_f = -1, np.nan
-        if data["plunge"] == True:
-            last_ix = -2
-        else:
-            last_ix = -1
-        fr_f, fth_f, fph_f = np.abs(mm.freqs_finder(data["energy"][last_ix], data["phi_momentum"][last_ix], data["carter"][last_ix], data["spin"])/(2 * np.pi))
-        peri_ix_f = np.argmin(data["raw"][data["trackix"][last_ix-1]:data["trackix"][last_ix], 1])
-        #f_pph_f = (np.abs(data["raw"][peri_ix_f + 2, 3] - data["raw"][peri_ix_f - 2, 3])/(data["time"][peri_ix_f + 2] - data["time"][peri_ix_f - 2]))/(2*np.pi)
-        #f_pph_f = np.abs(np.mean(data["raw"][peri_ix_f - 2: peri_ix_f + 2, 7]))/(2*np.pi)
-        f_pph_f = np.abs(((data["raw"][peri_ix_f+3, 3] - data["raw"][peri_ix_f-2, 3])/(data["time"][peri_ix_f+3] - data["time"][peri_ix_f-2]))/(2*np.pi))
-        print(f"fr span: init={fr:.5e}, final={fr_f:.5e}, diff={fr_f - fr:.5e}")
-        print(f"fth span: init={fth:.5e}, final={fth_f:.5e}, diff={fth_f - fth:.5e}")
-        print(f"fph span: init={fph:.5e}, final={fph_f:.5e}, diff={fph_f - fph:.5e}")
-        print(f"f_pph span: init={f_pph:.5e}, final={f_pph_f:.5e}, diff={f_pph_f - f_pph:.5e}")
-
-        f_nyq = 1/(2*T)
-        f_safe = 0.1*f_nyq
-        
-    
-        order = np.argsort(power)[::-1]
-        
-        cumulative = np.cumsum(power[order])
-        fraction = cumulative / np.sum(power)
-        print("bin size", xf[1] - xf[0])
-
-        l = np.searchsorted(fraction, 0.50) + 1
-        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 50% of the total power out of {len(xf)-1}")
-
-        l = np.searchsorted(fraction, 0.99) + 1
-        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 99% of the total power out of {len(xf)-1}")
-
-        l = np.searchsorted(fraction, 0.90) + 1
-        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 90% of the total power out of {len(xf)-1}")
-
-        print("HEYTEV", peak_freqs)
-        for j in range(len(peak_freqs)):
-            int_num = 0
-            flip_base = False
-            flip_pph = False
-            print(f"Frequency {j+1}: {peak_freqs[j]:.5e} (power = {peak_pows[j]:.5e} ; {100*peak_pows[j]/np.sum(power):.2f}% of total)")
-            hold_base = [100, 0.0, -1000, -1000, -1000]
-            hold_pph = [100, 0.0, -1000, -1000, -1000]
-            while (100*(1 - hold_base[0]) < 99.5 or 100*(1 - hold_pph[0]) < 99.5) and int_num < 30:
-                int_num += 1
-                vals = np.arange(-int_num, int_num + 1)
-                for m, k, n, m2 in product(vals[::-1], repeat=4):
-                    if np.max(np.abs([m, k, n, m2])) != int_num or m < 0:
-                        continue
-                    mode_freq_base = np.abs(m*fph + k*fth + n*fr)
-                    mode_freq_pph = np.abs(m2*f_pph + k*fth + n*fr)
-                    val_base = np.abs((peak_freqs[j] - mode_freq_base)/peak_freqs[j])
-                    val_pph = np.abs((peak_freqs[j] - mode_freq_pph)/peak_freqs[j])
-                    if m2 == 0:   # Doesn't include periapse freq
-                        if val_base < hold_base[0]:     # Is closer to the target frequency
-                            hold_base = [val_base, mode_freq_base, m, k, n]
-                            if 100*(1 - hold_base[0]) >= 99.5 and not flip_base:
-                                flip_base = True
-                                print(f"    First Base Mode: {hold_base[1]:.5e} - {100*(1 - hold_base[0]):.2f}% match to ({hold_base[2]}*fph + {hold_base[3]}*fth + {hold_base[4]}*fr)")
-                    else:
-                        if val_pph < hold_pph[0]:
-                            if m2 < 0:
-                                m2, k, n = -m2, -k, -n
-                            hold_pph = [val_pph, mode_freq_pph, m2, k, n]
-                            if 100*(1 - hold_pph[0]) >= 99.5 and not flip_pph:
-                                flip_pph = True
-                                print(f"    First pph Mode: {hold_pph[1]:.5e} - {100*(1 - hold_pph[0]):.2f}% match to ({hold_pph[2]}*f_pph + {hold_pph[3]}*fth + {hold_pph[4]}*fr)")
-            print(f"    Closest Base Mode: {hold_base[1]:.5e} - {100*(1 - hold_base[0]):.2f}% match to ({hold_base[2]}*fph + {hold_base[3]}*fth + {hold_base[4]}*fr)")
-            print(f"    Closest fpph Mode: {hold_pph[1]:.5e} - {100*(1 - hold_pph[0]):.2f}% match to ({hold_pph[2]}*f_pph + {hold_pph[3]}*fth + {hold_pph[4]}*fr)")
-        print("---")                                                   #'''
-        #ax[i].axvline(f_safe, c="red")
-        #ax[i].axvline(f_nyq, c="blue")'''
-
-        #ax[i].axvline(2*np.abs(fph), c="red", label=r"$2f_{\phi} = $" + f"{2*np.abs(fph):.3e}", linestyle="--")  
-        #[ax[i].axvline(burp * 6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black", linewidth=1) for burp in [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]]
-        #ax[i].axvline(6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black")  
-        ax[i].plot(xf[1:], h_plus_fft[1:], label = "h+" if i==0 else None, alpha=0.8)
-        ax[i].plot(xf[1:], h_cross_fft[1:], label = "hx" if i==0 else None, alpha=0.8)
-        #ax[i].scatter(peak_freqs, peak_amps, marker="x", color="red")
-        #plt.setp(ax3.get_yticklabels(), visible=False)
-        #plt.setp(ax4.get_yticklabels(), visible=False)
-        #ax.set_title('Waveform Frequency ' + freq_unit)
-        ax[i].set_yscale('log')
-        if xlog:
-            ax[i].set_xscale('log')
-        else:
-            #ax[i].set_xlim(-0.001, 0.15)
-            pass
-        if data["inputs"][-1] == "grav" and not m_bh:
-            freq_unit = r"$M^{-1}$"#'(G\u209C\u207B\u00B9)'
-        else:
-            freq_unit = '(Hz)'
         if i == 0:
             ax[i].set_title("Gravitational Waveform Fourier Transform")
         if i == num-1:
-            ax[i].set_xlabel("Frequency " + freq_unit)
-        #ax[i].set_ylabel("Strain Intensity")
+            ax[i].set_xlabel("Frequency " + r"$M^{-1}$")
+
         ax[i].grid()
-        ax[i].legend(title=data["name"])#, loc="upper right")
+        ax[i].legend(title=data["name"])
+
     fig.subplots_adjust(wspace=0, hspace=0)
-    if filename:
-        plt.savefig("%s.png"%(filename), bbox_inches="tight")
+
+    if analyze_peaks:
+        return fig, ax, final_report
     else:
-        plt.show()
+        return fig, ax, None
+
+def analyze_fourier_peaks(xf, Hp, num_peaks=5):
+    """Summarize the strongest peaks in a windowed h+ Fourier spectrum."""
+
+    # One-sided spectral power, excluding the DC component.
+    power = np.abs(Hp)**2
+    if len(power) > 2:
+        power[1:-1] *= 2
+    power[0] = 0
+
+    total_power = np.sum(power)
+    if total_power <= 0:
+        return [], {}
+
+    # Identify local peaks in the amplitude spectrum.
+    amplitude = np.abs(Hp)
+    peaks, _ = find_peaks(amplitude, prominence=0.01 * np.max(amplitude))
+
+    # Sort by peak power, strongest first.
+    peaks = peaks[np.argsort(power[peaks])[::-1]]
+    peaks = peaks[:num_peaks]
+
+    peak_results = [{"frequency": xf[i], "power_fraction": power[i] / total_power} for i in peaks]
+
+    # Number of bins containing specified fractions of total power.
+    cumulative = np.cumsum(np.sort(power[1:])[::-1])
+    cumulative /= total_power
+
+    summary = {"frequency_resolution": xf[1] - xf[0],
+               "bins_50": np.searchsorted(cumulative, 0.50) + 1,
+               "bins_90": np.searchsorted(cumulative, 0.90) + 1,
+               "bins_99": np.searchsorted(cumulative, 0.99) + 1,
+               "total_bins": len(power) - 1,
+               "peak_results": peak_results}
+    return summary
+
+def print_peak_summary(name, summary):
+    big_str = f"{name}\n"
+
+    total = summary["total_bins"]
+    big_str += f"Power Distribution among {total} bins\n"
+    for fraction in (50, 90, 99):
+        count = summary[f"bins_{fraction}"]
+        big_str += f"{fraction}% of spectral power:      {count} bins ({100 * count / total:.2f}%)\n"
+
+
+    big_str += f"Frequency resolution: {summary['frequency_resolution']:.5e} M^-1\n"
+    big_str += f"{'Peak':>5} | {'Frequency (M^-1)':>18} | {'Power (%)':>12}\n"
+    big_str += "-" * 43 + "\n"
+
+    for i, peak in enumerate(summary["peak_results"], start=1):
+        big_str += f"{i:>5} | {peak['frequency']:>18.6e} | {100 * peak['power_fraction']:>12.4f}\n"
+
+    return big_str
 
 def justfourier2(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
     if type(datalist) != list:
@@ -2651,10 +2375,8 @@ def justfourier2(datalist, start=0, end=-1, filename=False, supress=True, m_bh=F
     fig.subplots_adjust(wspace=0, hspace=0)
     return fig, ax
 
-
-def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
-                     overlap=0.5, max_freq=None, log=True,
-                     interpolate=True, ax=None):
+def plot_spectrogram(data, distance=None, samp_freq=1.0, n_hat=None, start=None, end=None, 
+                     window_time=None, overlap=0.6, max_freq=None, polarization=False):
     """
     Plot a spectrogram of a time-domain signal.
 
@@ -2662,33 +2384,18 @@ def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
     ----------
     time : 1D numpy array
         Coordinate-time samples. Does not need to be uniformly spaced.
-
     signal : 1D numpy array
         Signal corresponding to `time`.
-
     window_time : float, optional
         Length of each FFT window in coordinate time. If None,
-        approximately 10% of the total duration is used.
-
-    samples_per_window : int, default=2048
-        Number of uniformly spaced samples used in each FFT window.
-
-    overlap : float, default=0.5
+        approximately 10% of the total duration is used. NUH UH
+    overlap : float, default=0.6
         Fractional overlap between adjacent windows. Must be between 0 and 1.
-
     max_freq : float, optional
         Maximum frequency to display. If None, displays the full
         positive-frequency range.
-
     log : bool, default=True
         If True, display the Fourier amplitude on a logarithmic scale.
-
-    interpolate : bool, default=True
-        If True, interpolate the input onto a uniformly sampled time grid.
-        This should generally be left True for your adaptive-step trajectories.
-
-    ax : matplotlib axis, optional
-        Existing axis to plot on.
 
     Returns
     -------
@@ -2703,58 +2410,28 @@ def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
         Shape is (len(freqs), len(times)).
     """
 
-    time = np.asarray(time)
-    signal = np.asarray(signal)
-
-    if time.ndim != 1 or signal.ndim != 1:
-        raise ValueError("time and signal must both be 1D arrays")
-
-    if len(time) != len(signal):
-        raise ValueError("time and signal must have the same length")
+    h_plus, h_cross, time = mm.full_transform2(data, distance=distance, samp_freq=samp_freq, n_hat=n_hat, start=start, end=end)
+    N = time.size
+    dt = time[1] - time[0]
 
     if not 0 <= overlap < 1:
         raise ValueError("overlap must satisfy 0 <= overlap < 1")
 
-    # Remove any non-finite values
-    good = np.isfinite(time) & np.isfinite(signal)
-    time = time[good]
-    signal = signal[good]
-
-    # Make sure time is increasing
-    order = np.argsort(time)
-    time = time[order]
-    signal = signal[order]
-
-    # Interpolate onto a uniform grid
-    if interpolate:
-        dt = np.median(np.diff(time))
-        uniform_time = np.arange(time[0], time[-1], dt)
-        uniform_signal = np.interp(uniform_time, time, signal)
-    else:
-        uniform_time = time
-        uniform_signal = signal
-        dt = np.mean(np.diff(time))
-
-    total_time = uniform_time[-1] - uniform_time[0]
-
     if window_time is None:
-        window_time = total_time / 10
+        window_time = data["tracktime"][2] - data["tracktime"][1]
+        window_time = min(200 * window_time * np.sqrt(1e-4 / data["inputs"][1]), window_time * 2000)
 
     # Number of samples in each FFT window
-    nperseg = min(
-        samples_per_window,
-        int(window_time / dt)
-    )
+    nperseg = int(window_time / dt)
 
     if nperseg < 16:
         raise ValueError(
             "FFT window contains too few samples. "
-            "Increase window_time or sampling density."
-        )
+            "Increase window_time or sampling density.")
 
     # Make sure we have enough samples for at least one window
-    if nperseg > len(uniform_signal):
-        nperseg = len(uniform_signal)
+    if nperseg > len(time):
+        nperseg = len(time)
 
     step = max(1, int(nperseg * (1 - overlap)))
 
@@ -2765,29 +2442,43 @@ def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
 
     spectra = []
     center_times = []
+    if polarization:
+        from matplotlib import colormaps
+        cmap = colormaps["bwr"]
 
-    for start in range(0, len(uniform_signal) - nperseg + 1, step):
+    for start in range(0, len(time) - nperseg + 1, step):
 
-        segment = uniform_signal[start:start + nperseg]
+        hp_segment = h_plus[start:start + nperseg]
+        hc_segment = h_cross[start:start + nperseg]
 
         # Remove the local mean
-        segment = segment - np.mean(segment)
+        hp_segment = hp_segment - np.mean(hp_segment)
+        hc_segment = hc_segment - np.mean(hc_segment)
 
         # Window before FFT
-        segment = segment * fft_window
+        hp_segment = hp_segment * fft_window
+        hc_segment = hc_segment * fft_window
 
-        fft = np.fft.rfft(segment)
+        hp_fft = np.abs(np.fft.rfft(hp_segment))
+        hc_fft = np.abs(np.fft.rfft(hc_segment))
 
-        # Amplitude normalization analogous to your existing FFT code
-        amplitude = 2.0 / np.sum(fft_window) * np.abs(fft)
+        if polarization:
+            I = hp_fft**2 + hc_fft**2
+            Q = hp_fft**2 - hc_fft**2
+            amplitude = cmap((Q/I + 1)/2)[:, :-1]
+            amplitude[:, 0] *= I/max(I)
+            amplitude[:, 1] *= I/max(I)
+            amplitude[:, 2] *= I/max(I)
+        else:
+            amplitude = 2.0 / np.sum(fft_window) * np.sqrt(hp_fft**2 + hc_fft**2)
 
         spectra.append(amplitude)
+        center_times.append(time[start + nperseg // 2])
 
-        center_times.append(
-            uniform_time[start + nperseg // 2]
-        )
-
-    spectrogram = np.asarray(spectra).T
+    if polarization:
+        spectrogram = np.transpose(spectra, (1, 0, 2))
+    else:
+        spectrogram = np.transpose(spectra)
     center_times = np.asarray(center_times)
 
     # Frequency cutoff
@@ -2796,38 +2487,21 @@ def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
         freqs = freqs[keep]
         spectrogram = spectrogram[keep]
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    print(np.shape(center_times), np.shape(freqs), np.shape(spectrogram))
-    if log:
-        plot_data = np.maximum(spectrogram, np.max(spectrogram) * 1e-12)
-        plot_data = np.log10(plot_data)
 
-        mesh = ax.pcolormesh(
-            center_times,
-            freqs,
-            plot_data,
-            shading="auto"
-        )
+    mesh = ax.pcolormesh(center_times,
+                         freqs,
+                         spectrogram,
+                         shading="auto")
 
-        cbar = plt.colorbar(mesh, ax=ax)
-        cbar.set_label(r"$\log_{10}|h(f)|$")
-    else:
-        mesh = ax.pcolormesh(
-            center_times,
-            freqs,
-            spectrogram,
-            shading="auto"
-        )
-
-        cbar = plt.colorbar(mesh, ax=ax)
-        cbar.set_label(r"$|h(f)|$")
+    cbar = plt.colorbar(mesh, ax=ax)
+    cbar.set_label(r"$|h(f)|$")
 
     ax.set_xlabel("Coordinate time")
     ax.set_ylabel(r"Frequency ($1/M$)")
 
-    return center_times, freqs, spectrogram
+    return fig, ax, center_times, freqs, spectrogram
     
 def peters_compare(data, plot=True):
     timen = data["tracktime"]

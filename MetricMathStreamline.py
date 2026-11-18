@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import sympy as sp
 from numba import njit
 from tqdm import tqdm
-import OrbitPlotter as op
 import warnings
 from scipy.optimize import brentq
 from itertools import product
@@ -327,6 +326,39 @@ def check_interval_vec(states, a):
                 interval[i] += metric[mu, nu]*states[i][4 + mu]*states[i][4 + nu]
     return interval
 
+def zamo_tetrads(pos, a):
+    """
+    Return matrices mapping between ZAMO orthonormal components
+    and Boyer-Lindquist contravariant coordinate components.
+
+    tet_to_kerr @ u_zamo = u_BL
+    kerr_to_tet @ u_BL = u_zamo
+    """
+    t, r, theta, phi = pos
+    rho2 = r**2 + a**2 * np.cos(theta)**2
+    delta = r**2 - 2*r + a**2
+
+    denom = rho2 * delta + 2*r*(a**2 + r**2)
+
+    if delta <= 0 or rho2 <= 0 or denom <= 0:
+        raise ValueError("Point is outside the valid ZAMO tetrad domain.")
+
+    alpha2 = rho2 * delta / denom
+    omega = 2*r*a / denom
+    g_phiphi = denom / rho2 * np.sin(theta)**2
+
+    if alpha2 <= 0 or g_phiphi <= 0:
+        raise ValueError("Invalid lapse or azimuthal metric component.")
+
+    tet_to_kerr = np.array([[1 / np.sqrt(alpha2),     0.0,                   0.0,               0.0                  ],
+                            [0.0,                     np.sqrt(delta / rho2), 0.0,               0.0                  ],
+                            [0.0,                     0.0,                   1 / np.sqrt(rho2), 0.0                  ],
+                            [omega / np.sqrt(alpha2), 0.0,                   0.0,               1 / np.sqrt(g_phiphi)]])
+
+    kerr_to_tet = np.linalg.inv(tet_to_kerr)
+
+    return tet_to_kerr, kerr_to_tet
+
 def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=False):
     '''
     Creates and normalizes an input state vector according to kerr metric given a variety of inputs
@@ -372,66 +404,7 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             flats = np.sort(np.real(np.roots(np.polyder(R))))
             pos = np.array([0.0, flats[-1], np.pi/2, 0.0])
             new = recalc_state3(cons, pos, a)
-    elif (np.shape(velorient) == (3,)) and np.shape(pos) == (4,):
-        velorient, pos = np.real(velorient), np.real(pos)
-        #print("Calculating intial velocity from tetrad velocity and orientation")
-        beta, eta, xi = velorient
-        #eta is radial angle - 0 degrees is radially outwards, 90 degrees is in the phi direction
-        #xi is up/down - 0 degrees is in the theta , 90 degrees is no up/down component
-        eta, xi = eta*np.pi/180, xi*np.pi/180
-        if (beta > 1):
-            #print("Tetrad velocity exceeds c. Normalizing to 0.05")
-            beta = 0.05
-        gamma = 1/np.sqrt(1 - beta**2)
-        r, theta = pos[1], pos[2]
-            
-        #various defined values that make math easier
-        rho2 = r**2 + (a**2)*(np.cos(theta)**2)
-        tri = r**2 - 2*r + a**2
-        al2 = (rho2*tri)/(rho2*tri + 2*r*((a**2) + (r**2)))
-        w = (2*r*a)/(rho2*tri + 2*r*((a**2) + (r**2)))
-        wu2 = ((rho2*tri + 2*r*((a**2) + (r**2)))/rho2)*(np.sin(theta)**2)
-        tetrad_matrix = np.array([[1/(np.sqrt(al2)), 0,                 0,               0],
-                                  [0,                np.sqrt(tri/rho2), 0,               0],
-                                  [0,                0,                 1/np.sqrt(rho2), 0],
-                                  [w/np.sqrt(al2),   0,                 0,               1/np.sqrt(wu2)]])
-        
-        tilde = np.array([gamma, gamma*beta*np.cos(eta), -gamma*beta*np.sin(eta)*np.cos(xi), gamma*beta*np.sin(eta)*np.sin(xi)])
-        new = np.matmul(tetrad_matrix, tilde)
-        new = np.array([*pos, *new])
-    elif (np.shape(vel4) == (4,)) and np.shape(pos) == (4,):
-        vel4, pos = np.real(vel4), np.real(pos)
-        #print("Calculating initial velocity from tetrad component velocities")
-        r, theta = pos[1], pos[2]
-        metric, chris = kerr(pos, a)
-        #various defined values that make math easier
-        rho2 = r**2 + (a**2)*(np.cos(theta)**2)
-        tri = r**2 - 2*r + a**2
-        al2 = (rho2*tri)/(rho2*tri + 2*r*((a**2) + (r**2)))
-        w = (2*r*a)/(rho2*tri + 2*r*((a**2) + (r**2)))
-        wu2 = ((rho2*tri + 2*r*((a**2) + (r**2)))/rho2)*(np.sin(theta)**2)
-        tetrad_matrix = np.array([[1/(np.sqrt(al2)), 0,                 0,               0],
-                                  [0,                np.sqrt(tri/rho2), 0,               0],
-                                  [0,                0,                 1/np.sqrt(rho2), 0],
-                                  [w/np.sqrt(al2),   0,                 0,               1/np.sqrt(wu2)]])
-        rdot, thetadot, phidot = vel4[1]/vel4[0], vel4[2]/vel4[0], vel4[3]/vel4[0]
-        vel_2 = (rdot**2 + thetadot**2 + phidot**2)
-        beta = np.sqrt(vel_2)
-        #print("uhhh", beta, vel_2)
-        if beta >= 1.0:
-            #print("Tetrad velocity exceeds or equals c, Normalizing to 0.05")
-            rdot, thetadot, phidot = np.array([rdot, thetadot, phidot])*(0.05/beta)
-            vel_2 = (rdot**2 + thetadot**2 + phidot**2)
-            beta = np.sqrt(vel_2)
-            #print(vel2, beta, "wonk")
-        #print("yo?", vel_2)
-        gamma = 1/np.sqrt(1 - vel_2)
-        #eta = np.arccos(np.sqrt((r * np.sin(theta) * phidot)**2)/beta)
-        #xi = np.arccos(np.sqrt(rdot**2)/(beta*np.sin(eta)))
-        #tilde = np.array([gamma, gamma*beta*np.cos(eta), -gamma*beta*np.sin(eta)*np.cos(xi), gamma*beta*np.sin(eta)*np.sin(xi)])
-        tilde = np.array([gamma, gamma*rdot, gamma*thetadot, gamma*phidot])
-        new = np.matmul(tetrad_matrix, tilde)
-        new = np.array([*pos, *new])
+
     elif np.shape(params) == (3,):
         params = np.real(params)
         #print("Calculating initial velocity from orbital parameters r0, e, i (WIP)")
@@ -451,9 +424,41 @@ def set_u_kerr(a, cons=False, velorient=False, vel4=False, params=False, pos=Fal
             cons[0] *= 1 + 1e-15
             new = recalc_state3(cons, pos, a)
 
+    elif np.shape(pos) == (4,):
+        pos = np.real(pos)
+        tet2kerr, kerr2tet = zamo_tetrads(pos, a)
+
+        if np.shape(velorient) == (3,):
+            velorient = np.real(velorient)
+            #print("Calculating intial velocity from tetrad velocity and orientation")
+            beta, eta, xi = velorient
+            #eta is radial angle - 0 radians is radially outwards, pi/2 radians is in the phi direction
+            #xi is up/down - 0 radians is in the -theta direction, pi/2 radians is no theta component
+            if (beta > 1):
+                print("Tetrad velocity exceeds c. Normalizing to 0.05")
+                beta = 0.05
+            gamma = 1/np.sqrt(1 - beta**2)
+            tilde = np.array([gamma, gamma*beta*np.cos(eta), -gamma*beta*np.sin(eta)*np.cos(xi), gamma*beta*np.sin(eta)*np.sin(xi)])
+
+        elif np.shape(vel4) == (4,):
+            vel4 = np.real(vel4)
+            rdot, thetadot, phidot = vel4[1]/vel4[0], vel4[2]/vel4[0], vel4[3]/vel4[0]
+            vel_2 = (rdot**2 + thetadot**2 + phidot**2)
+            beta = np.sqrt(vel_2)
+            if beta >= 1.0:
+                print("Tetrad velocity exceeds or equals c, Normalizing to 0.01")
+                rdot, thetadot, phidot = np.array([rdot, thetadot, phidot])*(0.01/beta)
+                vel_2 = (rdot**2 + thetadot**2 + phidot**2)
+                beta = np.sqrt(vel_2)
+            gamma = 1/np.sqrt(1 - vel_2)
+            tilde = np.array([gamma, gamma*rdot, gamma*thetadot, gamma*phidot])
+
+        new = np.matmul(tet2kerr, tilde)
+        new = np.array([*pos, *new])
+
     else:
-        print("Insufficent information provided, have a plunge")
-        return set_u_kerr(a, params=[find_rms(a), 0.2, np.pi/2])
+        print("Insufficent information provided, defaulting to plunge")
+        return set_u_kerr(a, pos=[0.0, 10, np.pi/2, 0.0], velorient=[0.01, np.pi, np.pi/2])
 
     if np.shape(cons) != (3,):
         metric, chris = kerr(new, a)
@@ -1458,7 +1463,7 @@ def gwaves(quad_moment, time, distance, n_hat=None):
         Distance to the source in geometric units.
     n_hat : array-like, shape (3,), optional
         Unit vector pointing from the source toward the observer.
-        If omitted, the observer is placed along the +x direction.
+        If omitted, the observer is placed along the +z direction.
 
     Returns
     -------
@@ -1570,18 +1575,26 @@ def full_transform(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat 
     else:
         return 1e-4*h_plus, 1e-4*h_cross, int_time
 
-def full_transform2(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat = None):    #defunctish??
+def full_transform2(data, distance=None, samp_freq=1.0, n_hat = None, start=None, end=None):
     '''
     Calculates gravitational wave moment from orbit dictionary
 
     Parameters
     ----------
-    data : 30 element dictionary
-        full data package of an orbit given by clean_inspiral
-    distance : float
-        distance from GW source in geometric units
-    m_bh : float
-        central body mass in solar masses - optional
+    data : dict
+        full data package of an orbit given by EMRIGenerator
+    distance : float, optional
+        distance from GW source to observer in geometric units (M). 
+        Defaults to 10^4 times the maximum radius of the orbit
+    samp_freq : float, optional
+        sampling frequency in geometric units (1/M). Defaults to 1.
+    n_hat : array-like, shape (3,), optional
+        Unit vector pointing from the source toward the observer.
+        If omitted, the observer is placed along the +z direction.
+    start : float, optional
+        timestamp of when to start evaluating signal. Defaults to beginning of data.
+    end : float, optional
+            timestamp of when to stop evaluating signal. Defaults to end of data.
 
     Returns
     -------
@@ -1592,29 +1605,12 @@ def full_transform2(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat
         N is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
     sphere, time = data["raw"][:, 1:], data["raw"][:, 0]
-    int_time = np.arange(int(time[-1]))
+    int_time = np.arange(int(start or 0), int(end or time[-1]), 1/samp_freq)
     int_sphere = np.transpose([spi.CubicSpline(time, sphere[:, 0])(int_time),
                                spi.CubicSpline(time, sphere[:, 1])(int_time),
                                spi.CubicSpline(time, sphere[:, 2])(int_time)])
 
-    if data["inputs"][-1] == "grav":
-        # Convert to mks units if it's grav
-        if m_bh is False:
-            G, c, mass = 1, 1, 1
-        else:
-            G, c, mass = 6.67e-11, 3e8, 1.989e30 * m_bh
-            int_time *= G * mass / (c**3)
-            int_sphere[:,0] *= G * mass / (c**2)
-
-    elif data["inputs"][-1] != "grav":
-        if data["inputs"][-1] == "mks":
-            G, c, M_sun = 6.67e-11, 3e8, 1.989e30
-        elif data["inputs"][-1] == "cgs":
-            G, c, M_sun = 6.67e-8, 3e10, 1.989e33
-        mass = m_bh * M_sun if m_bh else data["inputs"][0]
-
-    distance *= G * mass / (c**2)
-    rho = np.sqrt(int_sphere[:, 0]**2 + (G * mass * data["inputs"][1] / (c**2))**2)
+    rho = np.sqrt(int_sphere[:, 0]**2 + data["inputs"][0]**2)
     carts = np.zeros((len(rho), 3))
     carts[:, 0] = rho * np.sin(int_sphere[:, 1]) * np.cos(int_sphere[:, 2])
     carts[:, 1] = rho * np.sin(int_sphere[:, 1]) * np.sin(int_sphere[:, 2])
@@ -1624,11 +1620,11 @@ def full_transform2(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat
     qmom = carts[:, :, None] * carts[:, None, :]
     qmom -= np.eye(3)[None,:,:] * (r2[:,None,None]/3)
 
-    h_plus, h_cross = gwaves(qmom, int_time, distance, n_hat)
+    h_plus, h_cross = gwaves(qmom, int_time, distance or (10**4) * np.max(sphere[:, 0]), n_hat)
     if data["inputs"][2]:
-        return data["inputs"][2]*h_plus, data["inputs"][2]*h_cross, int_time
+        return data["inputs"][1]*h_plus, data["inputs"][1]*h_cross, int_time
     else:
-        return 1e-5*h_plus, 1e-5*h_cross, int_time
+        return h_plus, h_cross, int_time
 
 def trace_ortholize_old(pos_list):
     '''
@@ -1715,413 +1711,7 @@ def trace_ortholize_njit(pos_list, a=0):
 
     return qmom
 
-def RR_radial(states, a, mu, ind1, ind2, state, constants, label, tol):
-    '''
-    Calculates change in characteristic orbital values from path of test particle through space 
-
-    Parameters
-    ----------
-    states : N x 8 numpy array of floats
-        list of state vectors - [4-position, 4-velocity] in geometric units
-    a : int/float
-        dimensionless spin constant of black hole, between 0 and 1 inclusive
-    mu : float
-        mass ratio of test particle to central body
-    ind1 : int
-        index value of the first entry in states relative to the master state list in clean_inspiral
-    ind2 : int
-        index value of the last entry in states relative to the master state list in clean_inspiral
-
-    Returns
-    -------
-     4-element numpy array of floats
-        change in orbital characteristics (energy, cartesian components of L) per unit mass 
-    '''
-    if (ind2 - ind1 - 10) > 2:
-        states = np.array(states)
-        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
-        int_sphere, int_time = interpolate3(sphere, time)
-        div = np.mean(np.diff(int_time))
-        quad = trace_ortholize_njit(int_sphere, a)
-        coolquad = traceless_quad(quad)
-        dt = np.mean(np.diff(int_time))
-        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
-        # Get reference point values - radius and velocity from index 5
-        ref_r = int_sphere[5, 0]
-        drdt = np.zeros_like(int_time)
-        drdt[1:-1] = (int_sphere[2:, 0] - int_sphere[:-2, 0]) / (int_time[2:] - int_time[:-2])
-        ref_drdt = drdt[5]
-        # Create a phase space mapping of points on the BACK HALF of the orbit
-        #  (exclude the last 5 points, since we want a buffer for the derivative stuff)
-        r_scale = np.std(int_sphere[:,0])
-        v_scale = np.std(drdt[1:-1])
-        r_candidates = int_sphere[len(int_time)//2:-5, 0]
-        drdt_candidates = drdt[len(int_time)//2:-5]
-        phase_space_diffs = ((r_candidates - ref_r)/r_scale)**2 + ((drdt_candidates - ref_drdt)/v_scale)**2
-        # Estimate the radial period
-        rad = max(find_rms(a*np.sign(constants[1]))*1.01, np.mean(int_sphere[:,0]))
-        Omega_phi = 1.0 / (rad**1.5 + a)
-        Omega_r = Omega_phi * np.sqrt(1 - 6/rad + 8*a/(rad**1.5) - 3*a*a/(rad**2))
-        T_r = 2*np.pi / Omega_r
-        # Calculate a number of anchor points based on how many radial periods have passed (rounding down)
-        N = int(np.nanmax([1, np.floor(int_time[-1]/T_r)]))
-        # Get the indexes of the candidates, sorted by proximity in phase space (and adjust the indexes to match the original data)
-        sorted_ix = np.argsort(phase_space_diffs) + len(int_time)//2
-        # Grab the first N indexes, since these correspond to the best matches
-        candidates = sorted_ix[:N]
-        # Grab the BIGGEST index, since that corresponds to the one FURTHEST from the start and will give us as many full orbits as possible
-        # (with the assumption that it will usually just be one, but could be more)
-        ref_ix = np.max(candidates)                       
-
-        # If the sign of the radial velocity doesn't match (fully in the wrong phase of the orbit)
-        # Just grab index -5 and take basically the whole thing
-        if np.sign(drdt[5]) != np.sign(drdt[ref_ix]):
-            ref_ix = -5
-        dt2 = dt2[5:ref_ix]
-        dt3 = dt3[5:ref_ix]
-        int_time = int_time[5:ref_ix]   
-        int_sphere = int_sphere[5:ref_ix]    
-
-        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
-        dldt = compute_dldt(dt2, dt3)
-        dE = mu*np.sum(dedt*div)
-        dLx, dLy, dLz = mu*np.sum(dldt*div, axis=0)
-
-        E0, L0, C0 = constants
-        if a == 0:
-            z2 = C0/(L0**2 + C0)
-        else:
-            A = (a**2)*(1 - E0**2)
-            sig = A + L0**2 + C0
-            z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
-
-        P = E0*(int_sphere[:, 0]**2 + a*a) - a*L0
-        D = int_sphere[:, 0]*(int_sphere[:, 0] - 2) + a*a
-        dC = np.sum(((2*P*(int_sphere[:, 0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:, 2])*div*mu)    
-
-        E, L, C = E0 + dE, L0 + dLz, C0 + dC
-
-        new_state = recalc_state3([E, L, C], state, a, tol=tol)
-        return new_state, np.array([E, L, C])
-    else:
-        #print("----------- kaput!")
-        return state, constants
-
-def RR_least_squares(states, a, mu, ind1, ind2, state, constants, tol):
-    '''
-    Calculates change in characteristic orbital values from path of test particle through space 
-
-    Parameters
-    ----------
-    states : N x 8 numpy array of floats
-        list of state vectors - [4-position, 4-velocity] in geometric units
-    a : int/float
-        dimensionless spin constant of black hole, between 0 and 1 inclusive
-    mu : float
-        mass ratio of test particle to central body
-    ind1 : int
-        index value of the first entry in states relative to the master state list in clean_inspiral
-    ind2 : int
-        index value of the last entry in states relative to the master state list in clean_inspiral
-
-    Returns
-    -------
-     4-element numpy array of floats
-        change in orbital characteristics (energy, cartesian components of L) per unit mass 
-    '''
-    if (ind2 - ind1 - 10) > 2:
-        states = np.array(states)
-        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
-        #int_sphere, int_time = interpolate3(sphere, time)
-        int_sphere, int_time = interpolate3(sphere, time)
-        div = np.mean(np.diff(int_time))
-        quad = trace_ortholize_njit(int_sphere, a)
-        delta = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-        coolquad = traceless_quad(quad)
-        dt = np.mean(np.diff(int_time))
-        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
-        # Get reference point values - radius and velocity from index 5
-        ref_r = int_sphere[5, 0]
-        drdt = np.zeros_like(int_time)
-        drdt[1:-1] = (int_sphere[2:, 0] - int_sphere[:-2, 0]) / (int_time[2:] - int_time[:-2])
-        ref_drdt = drdt[5]
-        # Create a phase space mapping of points on the BACK HALF of the orbit
-        #  (exclude the last 5 points, since we want a buffer for the derivative stuff)
-        r_scale = np.std(int_sphere[:,0])
-        v_scale = np.std(drdt[1:-1])
-        r_candidates = int_sphere[len(int_time)//2:-5, 0]
-        drdt_candidates = drdt[len(int_time)//2:-5]
-        phase_space_diffs = ((r_candidates - ref_r)/r_scale)**2 + ((drdt_candidates - ref_drdt)/v_scale)**2
-        # Estimate the radial period
-        rad = max(find_rms(a*np.sign(constants[1]))*1.01, np.mean(int_sphere[:,0]))
-        Omega_phi = 1.0 / (rad**1.5 + a)
-        Omega_r = Omega_phi * np.sqrt(1 - 6/rad + 8*a/(rad**1.5) - 3*a*a/(rad**2))
-        T_r = 2*np.pi / Omega_r
-        # Calculate a number of anchor points based on how many radial periods have passed (rounding down)
-        N = int(np.nanmax([1, np.floor(int_time[-1]/T_r)]))
-        # Get the indexes of the candidates, sorted by proximity in phase space (and adjust the indexes to match the original data)
-        sorted_ix = np.argsort(phase_space_diffs) + len(int_time)//2
-        # Grab the first N indexes, since these correspond to the best matches
-        candidates = sorted_ix[:N]
-        # Grab the BIGGEST index, since that corresponds to the one FURTHEST from the start and will give us as many full orbits as possible
-        # (with the assumption that it will usually just be one, but could be more)
-        ref_ix = np.max(candidates)                       
-
-        # If the sign of the radial velocity doesn't match (fully in the wrong phase of the orbit)
-        # Just grab index -5 and take basically the whole thing
-        if np.sign(drdt[5]) != np.sign(drdt[ref_ix]):
-            ref_ix = -5
-        dt2 = dt2[5:ref_ix]
-        dt3 = dt3[5:ref_ix]
-        int_time = int_time[5:ref_ix]   
-        int_sphere = int_sphere[5:ref_ix]    
-
-        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
-        dldt = compute_dldt(dt2, dt3)
-        dE = mu*np.sum(dedt*div)
-        dLx, dLy, dLz = mu*np.sum(dldt*div, axis=0)
-
-        E0, L0, C0 = constants
-        if a == 0:
-            z2 = C0/(L0**2 + C0)
-        else:
-            A = (a**2)*(1 - E0**2)
-            sig = A + L0**2 + C0
-            z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
-
-        def get_observables(test_state, a):
-
-            metric, _ = kerr_2(test_state, a)
-            fmom = metric @ test_state[4:]
-
-            E = -fmom[0]
-            L = np.sqrt(fmom[2]**2 + fmom[3]**2/(np.sin(test_state[2])**2))
-
-            cart_state = sph2cart(test_state, a)
-            L_dir = np.cross(cart_state[1:4], cart_state[5:])
-
-            L_vec = L * L_dir / np.linalg.norm(L_dir)
-            Q = np.matmul(np.matmul(kill_tensor(test_state, a), test_state[4:]), test_state[4:])
-            C = Q - (a*E - fmom[3])**2
-
-            return np.array([E, *L_vec]), C
-
-
-        def perturb_state(test_state, a, dv):
-
-            r, theta = test_state[1], test_state[2]
-
-            rho2 = r**2 + a**2*np.cos(theta)**2
-            tri  = r**2 - 2*r + a**2
-            al2 = (rho2*tri / (rho2*tri + 2*r*(a*a + r*r)))
-            w = (2*r*a / (rho2*tri + 2*r*(a*a + r*r)))
-            wbar2 = ((rho2*tri + 2*r*(a*a + r*r)) / rho2) * np.sin(theta)**2
-
-            tet2kerr = np.array([[1/np.sqrt(al2), 0.0, 0.0, 0.0],
-                                 [0.0, np.sqrt(tri/rho2), 0.0, 0.0],
-                                 [0.0, 0.0, 1/np.sqrt(rho2), 0.0],
-                                 [w/np.sqrt(al2), 0.0, 0.0, 1/np.sqrt(wbar2)]])
-            kerr2tet = np.linalg.inv(tet2kerr)
-            tetrad = kerr2tet @ test_state[4:]
-
-            v = tetrad[1:] / tetrad[0]
-            new_v = v + dv
-            v2 = np.dot(new_v, new_v)
-            if v2 >= 1:
-                raise ValueError(f"Superluminal tetrad velocity encountered: v²={v2, v, dv}")
-
-            gamma = 1/np.sqrt(1 - v2)
-            new_tet = np.array([gamma, *(gamma*new_v)])
-            new_vel = tet2kerr @ new_tet
-
-            return np.array([*test_state[:4], *new_vel])
-
-        obs0, C_init = get_observables(state, a)
-
-        #E0  = obs0[0]
-        Lx0 = obs0[1]
-        Ly0 = obs0[2]
-        Lz0 = L0 #obs0[3]
-
-        target = np.array([dE, dLx, dLy, dLz])
-
-        # ============================================================
-        # Construct Jacobian
-        # ============================================================
-
-        eps = 1e-6
-
-        A = np.zeros((4,3))
-        gradC = np.zeros(3)
-
-        for i in range(3):
-
-            dv = np.zeros(3)
-            dv[i] = eps
-
-            state_p = perturb_state(state, a, dv)
-            state_m = perturb_state(state, a, -dv)
-
-            obs_p, C_p = get_observables(state_p, a)
-            obs_m, C_m = get_observables(state_m, a)
-
-            A[:, i] = (obs_p - obs_m) / (2*eps)
-            gradC[i] = (C_p - C_m) / (2*eps)
-
-        # ============================================================
-        # Solve least squares problem
-        # ============================================================
-        targ_scale = 1
-        while True:
-            true_div, residuals, rank, singular_vals = np.linalg.lstsq(A, targ_scale*target, rcond=None)
-            if np.linalg.norm(true_div) > 1e-8:
-                break
-            else:
-                targ_scale *= 2
-
-        # ============================================================
-        # Linear prediction
-        # ============================================================
-
-        predicted = A @ true_div
-        predicted_dC = gradC @ true_div
-
-        # ============================================================
-        # Apply perturbation
-        # ============================================================
-
-        new_state = perturb_state(state, a, true_div)
-        obs1, C1 = get_observables(new_state, a)
-        actual = obs1 - obs0
-        actual_dC = C1 - C_init
-
-        # ============================================================
-        # Recover final constants
-        # ============================================================
-
-        metric, _ = kerr_2(new_state, a)
-        fmom = metric @ new_state[4:]
-
-        newE = -fmom[0]
-        newLz = fmom[3]
-        newQ = np.matmul(np.matmul(kill_tensor(new_state, a), new_state[4:]),new_state[4:])
-        newC = C1
-        predC = newC - C_init
-        dC = predC/targ_scale
-
-        E, L, C = E0 + dE, L0 + dLz, C0 + dC
-
-        new_state = recalc_state3([E, L, C], state, a, tol=tol)
-        return new_state, np.array([E, L, C])
-    else:
-        #print("----------- kaput!")
-        return state, constants
-
-def RR_const_inc(states, a, mu, ind1, ind2, state, constants, tol):
-    '''
-    Calculates change in characteristic orbital values from path of test particle through space 
-
-    Parameters
-    ----------
-    states : N x 8 numpy array of floats
-        list of state vectors - [4-position, 4-velocity] in geometric units
-    a : int/float
-        dimensionless spin constant of black hole, between 0 and 1 inclusive
-    mu : float
-        mass ratio of test particle to central body
-    ind1 : int
-        index value of the first entry in states relative to the master state list in clean_inspiral
-    ind2 : int
-        index value of the last entry in states relative to the master state list in clean_inspiral
-
-    Returns
-    -------
-     4-element numpy array of floats
-        change in orbital characteristics (energy, cartesian components of L) per unit mass 
-    '''
-    if (ind2 - ind1 - 10) > 2:
-        states = np.array(states)
-        sphere, time = states[:, 1:4], states[:, 0] - states[0,0]
-        int_sphere, int_time = interpolate3(sphere, time)
-        div = np.mean(np.diff(int_time))
-        quad = trace_ortholize_njit(int_sphere, a)
-        coolquad = traceless_quad(quad)
-        dt = np.mean(np.diff(int_time))
-        dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
-        # Get reference point values - radius and velocity from index 5
-        ref_r = int_sphere[5, 0]
-        drdt = np.zeros_like(int_time)
-        drdt[1:-1] = (int_sphere[2:, 0] - int_sphere[:-2, 0]) / (int_time[2:] - int_time[:-2])
-        ref_drdt = drdt[5]
-        # Create a phase space mapping of points on the BACK HALF of the orbit
-        #  (exclude the last 5 points, since we want a buffer for the derivative stuff)
-        r_scale = np.std(int_sphere[:,0])
-        v_scale = np.std(drdt[1:-1])
-        r_candidates = int_sphere[len(int_time)//2:-5, 0]
-        drdt_candidates = drdt[len(int_time)//2:-5]
-        phase_space_diffs = ((r_candidates - ref_r)/r_scale)**2 + ((drdt_candidates - ref_drdt)/v_scale)**2
-        # Estimate the radial period
-        rad = max(find_rms(a*np.sign(constants[1]))*1.01, np.mean(int_sphere[:,0]))
-        Omega_phi = 1.0 / (rad**1.5 + a)
-        Omega_r = Omega_phi * np.sqrt(1 - 6/rad + 8*a/(rad**1.5) - 3*a*a/(rad**2))
-        T_r = 2*np.pi / Omega_r
-        # Calculate a number of anchor points based on how many radial periods have passed (rounding down)
-        N = int(np.nanmax([1, np.floor(int_time[-1]/T_r)]))
-        # Get the indexes of the candidates, sorted by proximity in phase space (and adjust the indexes to match the original data)
-        sorted_ix = np.argsort(phase_space_diffs) + len(int_time)//2
-        # Grab the first N indexes, since these correspond to the best matches
-        candidates = sorted_ix[:N]
-        # Grab the BIGGEST index, since that corresponds to the one FURTHEST from the start and will give us as many full orbits as possible
-        # (with the assumption that it will usually just be one, but could be more)
-        ref_ix = np.max(candidates)                       
-
-        # If the sign of the radial velocity doesn't match (fully in the wrong phase of the orbit)
-        # Just grab index -5 and take basically the whole thing
-        if np.sign(drdt[5]) != np.sign(drdt[ref_ix]):
-            ref_ix = -5
-        dt2 = dt2[5:ref_ix]
-        dt3 = dt3[5:ref_ix]
-        int_time = int_time[5:ref_ix]   
-        int_sphere = int_sphere[5:ref_ix]    
-
-        dedt = (-1/5)*(np.einsum('ijk,ijk ->i', dt3, dt3) - (1/3)*np.einsum('ijj,ikk ->i', dt3, dt3))
-        dldt = compute_dldt(dt2, dt3)
-        dE = mu*np.sum(dedt*div)
-        dLx, dLy, dLz = mu*np.sum(dldt*div, axis=0)
-
-        E0, L0, C0 = constants
-        if a == 0:
-            z2 = C0/(L0**2 + C0)
-        else:
-            A = (a**2)*(1 - E0**2)
-            sig = A + L0**2 + C0
-            z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
-
-        # assume d/dt(cosi) = 0
-        if L0 != 0.0:
-            dC = 2*dLz*C0/L0 
-        else:
-            #polarrr
-            metric, chris = kerr_2(state, a)
-            theta = state[2]
-            fmom = np.matmul(metric, state[4:])
-            L = np.sqrt(fmom[2]**2 + (fmom[3]**2)/(np.sin(theta)**2))
-            cart_state = sph2cart(state, a)
-            L_dir = np.cross(cart_state[1:4], cart_state[5:])
-            L_vec = L*L_dir/np.linalg.norm(L_dir)
-            dC = 2*(L_vec[0]*dLx + L_vec[1]*dLy 
-                    - (a*a)*((1 - E0**2)*np.sin(theta)*np.cos(theta)*(int_sphere[-1,1] - int_sphere[0,1])
-                             + E0*dE*(np.cos(theta)**2))) 
-
-        E, L, C = E0 + dE, L0 + dLz, C0 + dC
-
-        new_state = recalc_state3([E, L, C], state, a, tol=tol)
-        return new_state, np.array([E, L, C])
-    else:
-        #print("----------- kaput!")
-        return state, constants
-
-def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, tol):
+def peters_integrate(states, a, mu, ind1, ind2, state, constants, label, tol):
     '''
     Calculates change in characteristic orbital values from path of test particle through space 
 
@@ -2153,25 +1743,27 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
         coolquad = traceless_quad(quad)
         dt = np.mean(np.diff(int_time))
         dt2, dt3 = matrix_derive3_numba(coolquad, dt) 
+
         # Get reference point values - radius and velocity from index 5
         ref_r = int_sphere[5, 0]
         drdt = np.zeros_like(int_time)
         drdt[1:-1] = (int_sphere[2:, 0] - int_sphere[:-2, 0]) / (int_time[2:] - int_time[:-2])
         ref_drdt = drdt[5]
-        # Create a phase space mapping of points on the BACK HALF of the orbit
+
+        # Create a phase space mapping of points on the latter half of the orbit
         #  (exclude the last 5 points, since we want a buffer for the derivative stuff)
         r_scale = np.std(int_sphere[:,0])
         v_scale = np.std(drdt[1:-1])
         r_candidates = int_sphere[len(int_time)//2:-5, 0]
         drdt_candidates = drdt[len(int_time)//2:-5]
-        #plt.plot((int_sphere[2:, 0] - int_sphere[:-2, 0]))
-        #plt.plot((int_time[2:] - int_time[:-2]))
         phase_space_diffs = ((r_candidates - ref_r)/r_scale)**2 + ((drdt_candidates - ref_drdt)/v_scale)**2
+
         # Estimate the radial period
         rad = max(find_rms(a*np.sign(constants[1]))*1.01, np.mean(int_sphere[:,0]))
         Omega_phi = 1.0 / (rad**1.5 + a)
         Omega_r = Omega_phi * np.sqrt(1 - 6/rad + 8*a/(rad**1.5) - 3*a*a/(rad**2))
         T_r = 2*np.pi / Omega_r
+
         # Calculate a number of anchor points based on how many radial periods have passed (rounding down)
         N = int(np.nanmax([1, np.floor(int_time[-1]/T_r)]))
         # Get the indexes of the candidates, sorted by proximity in phase space (and adjust the indexes to match the original data)
@@ -2204,248 +1796,24 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
             sig = A + L0**2 + C0
             z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
 
-        if "radial" in label:
-            P = E0*(int_sphere[:, 0]**2 + a*a) - a*L0
-            D = int_sphere[:, 0]*(int_sphere[:, 0] - 2) + a*a
-            dC = np.sum(((2*P*(int_sphere[:, 0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:, 2])*div*mu)
-
-        elif "polial" in label:
-            oop = np.min(int_sphere[:, 1])
-            dC = np.sum((np.cos(oop)**2)*(-2*a*a*E0*dedt + (2*L0/(1 - np.cos(oop)**2))*dldt[:, 2])*div*mu)
-
-        elif "poliar" in label:
-            cosi_mod = np.arcsin(L0/np.sqrt(L0**2 + C0))
-            dC = np.sum((np.cos(cosi_mod)**2)*(-2*a*a*E0*dedt + (2*L0/(1 - np.cos(cosi_mod)**2))*dldt[:, 2])*div*mu)
-
-        elif "redial" in label:
-            poly1 = np.array([E0**2 - 1, 2.0, (a**2)*(E0**2 - 1) - L0**2 - C0, 2*((a*E0 - L0)**2) + 2*C0, -C0*(a**2)])
-            if "redialp" in label:
-                ix = -2
+        if "inc_0" in label:
+            # Constant inclination prescription
+            if L0 != 0.0:
+                dC = 2*dLz*C0/L0 
             else:
-                ix = -1
-            r1 = np.sort(np.roots(poly1))[ix]
-            P = E0*(r1**2 + a*a) - a*L0
-            D = r1*(r1 - 2) + a*a
-            dC0 = (2*P*(r1**2 + a*a)/D - 2*a*(a*E0 - L0))*dE + (-2*P*a/D + 2*(a*E0 - L0))*dLz
-            E1, L1, C1 = E0 + dE, L0 + dLz, C0 + dC0
-            poly2 = np.array([E1**2 - 1, 2.0, (a**2)*(E1**2 - 1) - L1**2 - C1, 2*((a*E1 - L1)**2) + 2*C1, -C1*(a**2)])
-            r2 = np.sort(np.roots(poly2))[ix]
-            dC = dC0 + ((2*P/(D**2))*(2*E0*r1*D + (1-r1)*P) - 2*r1)*(r2 - r1)
+                #polarrr
+                metric, chris = kerr_2(state, a)
+                theta = state[2]
+                fmom = np.matmul(metric, state[4:])
+                L = np.sqrt(fmom[2]**2 + (fmom[3]**2)/(np.sin(theta)**2))
+                cart_state = sph2cart(state, a)
+                L_dir = np.cross(cart_state[1:4], cart_state[5:])
+                L_vec = L*L_dir/np.linalg.norm(L_dir)
+                dC = 2*(L_vec[0]*dLx + L_vec[1]*dLy 
+                        - (a*a)*((1 - E0**2)*np.sin(theta)*np.cos(theta)*(int_sphere[-1,1] - int_sphere[0,1])
+                                 + E0*dE*(np.cos(theta)**2)))
 
-        elif "lystsq" in label:
-            metric, _ = kerr_2(np.real(state), a)
-            fmom = metric @ state[4:]
-            r, theta, phi = state[1], state[2], state[3]
-            sint, cost, sinp, cosp = np.sin(theta), np.cos(theta), np.sin(phi), np.cos(phi)
-            sig = r**2 + a**2*np.cos(theta)**2
-            tri  = r**2 - 2*r + a**2
-            al2 = (sig*tri / (sig*tri + 2*r*(a*a + r*r)))
-            w = (2*r*a / (sig*tri + 2*r*(a*a + r*r)))
-            wbar2 = ( (sig*tri + 2*r*(a*a + r*r)) / sig) * np.sin(theta)**2
-            tet2kerr = np.array([
-                [1/np.sqrt(al2), 0.0,               0.0,             0.0],
-                [0.0,            np.sqrt(tri/sig),  0.0,             0.0],
-                [0.0,            0.0,               1/np.sqrt(sig),  0.0],
-                [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
-            kerr2tet = np.linalg.inv(tet2kerr)
-            tetvec = kerr2tet @ state[4:]
-            g = tetvec[0]
-            v = tetvec/g
-            # dE/dv^i = (dE/du^mu) * (du^mu/dv^i)
-            # dL^j/dv^i = (dL^j/du^mu) * (du^mu/dv^i)
-            rho = np.sqrt(r**2 + a**2)
-    
-            A = np.zeros((4, 3))
-            kdeck = np.identity(4)
-            for i in range(1, 4):
-                valE = 0.0
-                valLx = 0.0
-                valLy = 0.0
-                valLz = 0.0
-                for mu in range(4):
-                    dudv_mui = tet2kerr[mu, 0] * (g**3) * v[i]
-                    for j in range(1,4):
-                        dudv_mui += tet2kerr[mu, j] * ((g**3) * v[i] * v[j] + g * kdeck[i, j])
-                    valE  += -metric[mu, 0] * dudv_mui
-
-                    valLx += (a*a*rho/sig) * sint * cost * sinp * metric[mu, 1]
-                    valLx -= (r*rho/sig) * sinp * metric[mu, 2]
-                    valLx -= (r/rho) * cost * cosp * metric[mu, 3] / sint
-                    valLx *= dudv_mui
-
-                    valLy -= (a*a*rho/sig) * sint * cost * cosp * metric[mu, 1]
-                    valLy += (r*rho/sig) * cosp * metric[mu, 2]
-                    valLy -= (r/rho) * cost * sinp * metric[mu, 3] / sint
-                    valLy *= dudv_mui
-
-                    valLz +=  metric[mu, 3] * dudv_mui
-
-                A[0, i-1] += valE
-                A[1, i-1] += valLx
-                A[2, i-1] += valLy
-                A[3, i-1] += valLz
-    
-            #dv = (np.linalg.inv(A.T @ A) @ A.T) @ [dE, dLx, dLy, dLz]
-            dv = np.linalg.lstsq(A, np.array([dE, dLx, dLy, dLz]), rcond=None)[0]
-            new_v = v[1:] + dv
-            v2 = np.dot(new_v, new_v)
-            if v2 >= 1:
-                raise ValueError(f"Superluminal tetrad velocity encountered gufgufguf: v²={v2, v[1:], dv}")
-            new_g = 1/np.sqrt(1 - np.dot(new_v, new_v))
-            new_u = tet2kerr @ (new_g * np.array([1.0, *new_v]))
-            new_fmom = metric @ new_u
-            newE, newLz = -new_fmom[0], new_fmom[3]
-            newQ = (kill_tensor([*state[:4], *new_u], a) @ new_u) @ new_u
-            newC = newQ - (a*newE - newLz)**2
-            dC = newC - C0
-
-        elif "lestsq" in label:
-            metric, _ = kerr_2(np.real(state), a)
-            fmom = metric @ state[4:]
-            r, theta = state[1], state[2]
-            rho2 = r**2 + a**2*np.cos(theta)**2
-            tri  = r**2 - 2*r + a**2
-            al2 = (rho2*tri / (rho2*tri + 2*r*(a*a + r*r)))
-            w = (2*r*a / (rho2*tri + 2*r*(a*a + r*r)))
-            wbar2 = ( (rho2*tri + 2*r*(a*a + r*r)) / rho2) * np.sin(theta)**2
-            tet2kerr = np.array([
-                [1/np.sqrt(al2), 0.0,               0.0,             0.0],
-                [0.0,            np.sqrt(tri/rho2), 0.0,             0.0],
-                [0.0,            0.0,               1/np.sqrt(rho2), 0.0],
-                [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
-            kerr2tet = np.linalg.inv(tet2kerr)
-            tetvec = kerr2tet @ state[4:]
-            g = tetvec[0]
-            v = tetvec/g
-            # dE/dv^i = (dE/du^mu) * (du^mu/dv^i)
-            # dL^j/dv^i = (dL^j/du^mu) * (du^mu/dv^i)
-
-            A = np.zeros((4, 3))
-            kdeck = np.identity(4)
-            for i in range(1, 4):
-                valE = 0.0
-                valLx = 0.0
-                valLy = 0.0
-                valLz = 0.0
-                for mu in range(4):
-                    dudv_mui = 0.0
-                    for j in range(4):
-                        dudv_mui += (tet2kerr[mu, 0] * (g**3) * v[j] + tet2kerr[mu, j] * ((g**3) * v[i] * v[j] + g * kdeck[i, j]))
-                    valE  += -metric[mu, 0] * dudv_mui
-                    valLx += -metric[mu, 2] * dudv_mui * np.sin(state[3]) - metric[mu, 3] * dudv_mui * np.cos(state[3]) / np.tan(state[2])
-                    valLy +=  metric[mu, 2] * dudv_mui * np.cos(state[3]) - metric[mu, 3] * dudv_mui * np.sin(state[3]) / np.tan(state[2])
-                    valLz +=  metric[mu, 3] * dudv_mui
-                A[0, i-1] += valE
-                A[1, i-1] += valLx
-                A[2, i-1] += valLy
-                A[3, i-1] += valLz
-
-            dv = (np.linalg.inv(A.T @ A) @ A.T) @ [dE, dLx, dLy, dLz]
-            new_v = v[1:] + dv
-            v2 = np.dot(new_v, new_v)
-            if v2 >= 1:
-                raise ValueError(f"Superluminal tetrad velocity encountered MKNJBHVKCGF: v²={v2, v[1:], dv}")
-            new_g = 1/np.sqrt(1 - np.dot(new_v, new_v))
-            new_u = tet2kerr @ (new_g * np.array([1.0, *new_v]))
-            new_fmom = metric @ new_u
-            newE, newLz = -new_fmom[0], new_fmom[3]
-            newQ = (kill_tensor([*state[:4], *new_u], a) @ new_u) @ new_u
-            newC = newQ - (a*newE - newLz)**2
-            dC = newC - C0
-
-        elif "liestsq" in label:
-            metric, _ = kerr_2(np.real(state), a)
-            fmom = metric @ state[4:]
-            r, theta, phi = state[1], state[2], state[3]
-            sint, cost, sinp, cosp = np.sin(theta), np.cos(theta), np.sin(phi), np.cos(phi)
-            rho2 = r**2 + (a*cost)**2
-            tri  = r**2 - 2*r + a**2
-            al2 = (rho2*tri / (rho2*tri + 2*r*(a*a + r*r)))
-            w = (2*r*a / (rho2*tri + 2*r*(a*a + r*r)))
-            wbar2 = ( (rho2*tri + 2*r*(a*a + r*r)) / rho2) * sint**2
-            tet2kerr = np.array([
-                [1/np.sqrt(al2), 0.0,               0.0,             0.0],
-                [0.0,            np.sqrt(tri/rho2), 0.0,             0.0],
-                [0.0,            0.0,               1/np.sqrt(rho2), 0.0],
-                [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
-            kerr2tet = np.linalg.inv(tet2kerr)
-            tetvec = kerr2tet @ state[4:]
-            g = tetvec[0]
-            v = tetvec/g
-            lev_civ = np.zeros((4, 4, 4))
-            for ix in [(1, 2, 3), (2, 3, 1), (3, 1, 2)]:
-                lev_civ[ix] = 1
-            for ix in [(1, 3, 2), (2, 1, 3), (3, 2, 1)]:
-                lev_civ[ix] = -1
-            fmom = np.matmul(metric, state[4:])
-            L2 = fmom[2]**2 + (fmom[3]**2)/(sint**2)
-            L = np.sqrt(L2)
-            cart_state = sph2cart(state, a)
-            rc = cart_state[:4]
-            rxu = np.cross(cart_state[1:4], cart_state[5:])
-            rxu_norm = np.linalg.norm(rxu)
-            L_vec = L * rxu/rxu_norm
-            rho = np.sqrt(r**2 + a**2)
-            K = np.array([[0.0, 0.0,                   0.0,               0.0        ],
-                          [0.0, r * sint * cosp / rho, rho * cost * cosp, -rho * sinp],
-                          [0.0, r * sint * sinp / rho, rho * cost * sinp, -rho * cosp],
-                          [0.0, cost,                  r * sint,          0.0        ]])
-
-            # dE/dv^i = (dE/du^mu) * (du^mu/dv^i)
-            # dL^j/dv^i = (dL^j/du^mu) * (du^mu/dv^i)
-            # dE/du^mu = -g_{mu, 0} 
-            # p = fmom, W=Levi-civita, (rc, uc) = cartesian (position, velocity)
-            # K^i_mu = matrix for converting between uc and u
-            # L_vec^j = L rxu^j / rxu_norm
-            # dL_vec^j/du^mu = (L_vec^j/(2 L^2)) d(L^2)/du^mu + (L/rxu_norm)(drxu^j/du^mu - (L_vec^j L_vec^m/L^2) dArxu^m/du^mu)
-            # d(L^2)/du^mu = (2 p_2 g_{mu, 2} + 2 p_3 g_{mu, 3}/sin^2(theta))
-            # drxu^j/du^mu = W_{jkl} rc^k K^l_mu
-
-            A = np.zeros((4, 3))
-            kdeck = np.identity(4)
-            for i in range(1, 4):
-                valE = 0.0
-                valLs = np.zeros(3)  #[valLx, valLy, valLz]
-                for mu in range(4):
-                    dudv_mui = tet2kerr[mu, 0] * g**3 * v[i]
-                    for j in range(1, 4):
-                        dudv_mui += tet2kerr[mu, j] * ((g**3) * v[i] * v[j] + g * kdeck[i, j])
-                    valE  += -metric[mu, 0] * dudv_mui
-
-                    for j in range(3):
-                        first_term = (L_vec[j]/(2*L2)) * (2 * fmom[2] * metric[mu, 2] + 2 * fmom[3] * metric[mu, 3] / (sint**2))
-                        second_term = 0.0
-                        drxudu_jmu = 0.0
-                        for k, l in product(range(3), range(3)):
-                            drxudu_jmu += lev_civ[j+1, k+1, l+1] * rc[k+1] * K[l+1, mu]
-                        second_term += drxudu_jmu
-                        for m in range(3):
-                            drxudu_mmu = 0.0
-                            for n, o in product(range(3), range(3)):
-                                drxudu_mmu += lev_civ[m+1, n+1, o+1] * rc[n+1] * K[o+1, mu]
-                            second_term -= (L_vec[j] * L_vec[m] / L2) * drxudu_mmu
-                        second_term *= (L/rxu_norm)
-                        valLs[j] += (first_term + second_term) * dudv_mui
-                            
-                A[0, i-1] += valE
-                A[1, i-1] += valLs[0]
-                A[2, i-1] += valLs[1]
-                A[3, i-1] += valLs[2]
-
-            dv = (np.linalg.inv(A.T @ A) @ A.T) @ [dE, dLx, dLy, dLz]
-            new_v = v[1:] + dv
-            v2 = np.dot(new_v, new_v)
-            if v2 >= 1:
-                raise ValueError(f"Superluminal tetrad velocity encountered scooby: v²={v2, v[1:], dv}")
-            new_g = 1/np.sqrt(1 - np.dot(new_v, new_v))
-            new_u = tet2kerr @ (new_g * np.array([1.0, *new_v]))
-            new_fmom = metric @ new_u
-            newE, newLz = -new_fmom[0], new_fmom[3]
-            newQ = (kill_tensor([*state[:4], *new_u], a) @ new_u) @ new_u
-            newC = newQ - (a*newE - newLz)**2
-            dC = newC - C0
-        
-        elif "lastsq" in label:
+        elif "leastsq" in label:
             # ============================================================
             # Least-squares radiation reaction update
             # ============================================================
@@ -2455,71 +1823,24 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
                 metric, _ = kerr_2(test_state, a)
 
                 fmom = metric @ test_state[4:]
-
                 E = -fmom[0]
-
-                L = np.sqrt(
-                    fmom[2]**2 +
-                    fmom[3]**2/(np.sin(test_state[2])**2)
-                )
+                L = np.sqrt(fmom[2]**2 + fmom[3]**2/(np.sin(test_state[2])**2))
 
                 cart_state = sph2cart(test_state, a)
 
-                L_dir = np.cross(
-                    cart_state[1:4],
-                    cart_state[5:]
-                )
-
+                L_dir = np.cross(cart_state[1:4], cart_state[5:])
                 L_vec = L * L_dir / np.linalg.norm(L_dir)
-
-                Q = np.matmul(
-                    np.matmul(
-                        kill_tensor(test_state, a),
-                        test_state[4:]
-                    ),
-                    test_state[4:]
-                )
-
+                Q = np.matmul(np.matmul(kill_tensor(test_state, a), 
+                                        test_state[4:]), 
+                              test_state[4:])
                 C = Q - (a*E - fmom[3])**2
 
-                return np.array([
-                    E,
-                    L_vec[0],
-                    L_vec[1],
-                    L_vec[2]
-                ]), C
+                return np.array([E, L_vec[0], L_vec[1], L_vec[2]]), C
 
 
             def perturb_state(test_state, a, dv):
 
-                r, theta = test_state[1], test_state[2]
-
-                rho2 = r**2 + a**2*np.cos(theta)**2
-                tri  = r**2 - 2*r + a**2
-
-                al2 = (
-                    rho2*tri /
-                    (rho2*tri + 2*r*(a*a + r*r))
-                )
-
-                w = (
-                    2*r*a /
-                    (rho2*tri + 2*r*(a*a + r*r))
-                )
-
-                wbar2 = (
-                    (rho2*tri + 2*r*(a*a + r*r))
-                    / rho2
-                ) * np.sin(theta)**2
-
-                tet2kerr = np.array([
-                    [1/np.sqrt(al2), 0.0, 0.0, 0.0],
-                    [0.0, np.sqrt(tri/rho2), 0.0, 0.0],
-                    [0.0, 0.0, 1/np.sqrt(rho2), 0.0],
-                    [w/np.sqrt(al2), 0.0, 0.0, 1/np.sqrt(wbar2)]
-                ])
-
-                kerr2tet = np.linalg.inv(tet2kerr)
+                tet2kerr, kerr2tet = zamo_tetrads(test_state, a)
 
                 tetrad = kerr2tet @ test_state[4:]
 
@@ -2534,19 +1855,14 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
 
                 gamma = 1/np.sqrt(1 - v2)
 
-                new_tet = np.array([
-                    gamma,
-                    gamma*new_v[0],
-                    gamma*new_v[1],
-                    gamma*new_v[2]
-                ])
+                new_tet = np.array([gamma,
+                                    gamma*new_v[0],
+                                    gamma*new_v[1],
+                                    gamma*new_v[2]])
 
                 new_vel = tet2kerr @ new_tet
 
-                return np.array([
-                    *test_state[:4],
-                    *new_vel
-                ])
+                return np.array([*test_state[:4], *new_vel])
 
 
             # ============================================================
@@ -2560,12 +1876,7 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
             Ly0 = obs0[2]
             Lz0 = L0 #obs0[3]
 
-            target = np.array([
-                dE,
-                dLx,
-                dLy,
-                dLz
-            ])
+            target = np.array([dE, dLx, dLy, dLz])
 
             # ============================================================
             # Construct Jacobian
@@ -2587,13 +1898,9 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
                 obs_p, C_p = get_observables(state_p, a)
                 obs_m, C_m = get_observables(state_m, a)
 
-                A[:, i] = (
-                    obs_p - obs_m
-                )/(2*eps)
+                A[:, i] = (obs_p - obs_m)/(2*eps)
 
-                gradC[i] = (
-                    C_p - C_m
-                )/(2*eps)
+                gradC[i] = (C_p - C_m)/(2*eps)
 
             # ============================================================
             # Solve least squares problem
@@ -2603,8 +1910,7 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
                 true_div, residuals, rank, singular_vals = np.linalg.lstsq(
                     A,
                     targ_scale*target,
-                    rcond=None
-                )
+                    rcond=None)
                 if np.linalg.norm(true_div) > 1e-8:
                     break
                 else:
@@ -2621,16 +1927,9 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
             # Apply perturbation
             # ============================================================
 
-            new_state = perturb_state(
-                state,
-                a,
-                true_div
-            )
+            new_state = perturb_state(state, a, true_div)
 
-            obs1, C1 = get_observables(
-                new_state,
-                a
-            )
+            obs1, C1 = get_observables(new_state, a)
 
             actual = obs1 - obs0
             actual_dC = C1 - C_init
@@ -2646,335 +1945,20 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
             newE = -fmom[0]
             newLz = fmom[3]
 
-            newQ = np.matmul(
-                np.matmul(
-                    kill_tensor(new_state, a),
-                    new_state[4:]
-                ),
-                new_state[4:]
-            )
+            newQ = np.matmul(np.matmul(kill_tensor(new_state, a),
+                                       new_state[4:]),
+                             new_state[4:])
 
             newC = C1
 
             predC = newC - C_init
             dC = predC/targ_scale
-
-            # ============================================================
-            # Diagnostics
-            # ============================================================
-
-            '''print("\n================ LSQ DIAGNOSTICS ================")
-
-            print("\nTarget:")
-            print(target)
-
-            print("\nApplied scaling: ", targ_scale)
-
-            print("\nLinear prediction:")
-            print(predicted)
-
-            print("\nActual achieved:")
-            print(actual)
-
-            print("\nTarget - prediction:")
-            print(target - predicted)
-
-            print("\nPrediction - actual:")
-            print(predicted - actual)
-
-            print("\nJacobian:")
-            print(A)
-
-            print("\nC gradient:")
-            print(gradC)
-
-            print("\nSingular values:")
-            print(singular_vals)
-
-            if singular_vals[-1] > 0:
-                print(
-                    "Condition number =",
-                    singular_vals[0]/singular_vals[-1]
-                )
-
-            print("\nRank =", rank)
-
-            print("\nVelocity correction:")
-            print(true_div)
-
-            print(
-                "||dv|| =",
-                np.linalg.norm(true_div)
-            )
-
-            print(
-                "max(|dv|) =",
-                np.max(np.abs(true_div))
-            )
-
-            print("\nC diagnostics:")
-            print("predicted dC =", predicted_dC)
-            print("actual dC    =", actual_dC)
-
-            print("\nFinal constants:")
-            print("E0    =", E0)
-            print("newE  =", newE)
-            print("dE    =", newE - E0)
-
-            print("C0    =", C0)
-            print("newC  =", newC)
-            print("dC    =", predC)
-
-            print("\nTrue changes to be applied:")
-            print("Original dEq:", dE)
-            print("Original dLz:", dLz)
-            print("Final dC", dC)
-
-            print("================================================\n")'''
-
-        elif "leastsq" in label:
-            metric, chris = kerr_2(state, a)
-            true_fmom = metric @ state[4:]
-            E0, L0, Q0 = -true_fmom[0], true_fmom[3], np.matmul(np.matmul(kill_tensor(state, a), state[4:]), state[4:])
-            C0 = Q0 - (a*E0 - L0)**2
-            r, theta, phi = state[1:4]
-            sint, cost, sinp, cosp = np.sin(theta), np.cos(theta), np.sin(phi), np.cos(phi)
-            rho2, tri = r**2 + (a**2)*(cost**2), r**2 - 2*r + a**2
-            al2 = (rho2*tri)/(rho2*tri + 2*r*(a**2 + r**2))
-            w = (2*r*a)/(rho2*tri + 2*r*(a**2 + r**2))
-            wbar2 = ((rho2*tri + 2*r*(a**2 + r**2))/rho2)*(sint**2)
-            tet2kerr = np.array([[1/np.sqrt(al2), 0.0,               0.0,             0.0],
-                                [0.0,            np.sqrt(tri/rho2), 0.0,             0.0],
-                                [0.0,            0.0,               1/np.sqrt(rho2), 0.0],
-                                [w/np.sqrt(al2), 0.0,               0.0,             1/np.sqrt(wbar2)]])
-            kerr2tet = np.linalg.inv(tet2kerr)
-            tetrad = kerr2tet @ state[4:]
-            v = tetrad[1:]/tetrad[0]
-            fmom = np.matmul(metric, state[4:])
-            L = np.sqrt(fmom[2]**2 + (fmom[3]**2)/(np.sin(theta)**2))
-            cart_state = sph2cart(state, a)
-            L_dir = np.cross(cart_state[1:4], cart_state[5:])
-            L_vec = L*L_dir/np.linalg.norm(L_dir)
-
-            A = np.zeros((4,3))
-            A_C = np.zeros(3)
-            eps = 1e-5/state[1]
-            for i in range(3):
-                div = np.zeros(3)
-                div[i] = eps
-                gamma = 1/np.sqrt(1 - np.dot(v + div, v + div))
-                new_tet = np.array([gamma, *(gamma*(v + div))])
-                new_vel = tet2kerr @ new_tet
-                new_fmom = metric @ new_vel
-                new_L = np.sqrt(new_fmom[2]**2 + (new_fmom[3]**2)/(np.sin(theta)**2))
-                new_cart_state = sph2cart([*state[:4], *new_vel], a)
-                new_L_dir = np.cross(new_cart_state[1:4], new_cart_state[5:])
-                new_L_vec = new_L * new_L_dir/np.linalg.norm(new_L_dir)
-                fplus = np.array([-new_fmom[0] - E0, *(new_L_vec - L_vec)])
-                newQ = np.matmul(np.matmul(kill_tensor(np.array([*state[:4], *new_vel]), a), new_vel), new_vel)
-                newC = newQ - (-a*new_fmom[0] - new_fmom[3])**2
-                fC_plus = newC - C0
-                div[i] = -eps
-                gamma = 1/np.sqrt(1 - np.dot(v + div, v + div))
-                new_tet = np.array([gamma, *(gamma*(v + div))])
-                new_vel = tet2kerr @ new_tet
-                new_fmom = metric @ new_vel
-                new_L = np.sqrt(new_fmom[2]**2 + (new_fmom[3]**2)/(np.sin(theta)**2))
-                new_cart_state = sph2cart([*state[:4], *new_vel], a)
-                new_L_dir = np.cross(new_cart_state[1:4], new_cart_state[5:])
-                new_L_vec = new_L * new_L_dir/np.linalg.norm(new_L_dir)
-                fminus = np.array([-new_fmom[0] - E0, *(new_L_vec - L_vec)])
-                newQ = np.matmul(np.matmul(kill_tensor(np.array([*state[:4], *new_vel]), a), new_vel), new_vel)
-                newC = newQ - (-a*new_fmom[0] - new_fmom[3])**2
-                fC_minus = newC - C0
-                A[:, i] = (fplus - fminus)/(2*eps)
-                A_C[i] = (fC_plus - fC_minus)/(2*eps)
-                    
-            u, s, vt = np.linalg.svd(A)
-            true_div = np.linalg.lstsq(A, [dE, dLx, dLy, dLz], rcond=None)[0]
-            gamma = 1/np.sqrt(1 - np.dot(v + true_div, v + true_div))
-            new_tet = np.array([gamma, *(gamma*(v + true_div))])
-            new_vel = tet2kerr @ new_tet
-            test_fmom = metric @ new_vel
-            new_L = np.sqrt(test_fmom[2]**2 + (test_fmom[3]**2)/(np.sin(theta)**2))
-            new_cart_state = sph2cart([*state[:4], *new_vel], a)
-            new_L_dir = np.cross(new_cart_state[1:4], new_cart_state[5:])
-            new_L_vec = new_L * new_L_dir/np.linalg.norm(new_L_dir)
-            predicted_from_mapping = [-test_fmom[0] - E0, *(new_L_vec - L_vec)]
-            #print("predicted from mapping =", predicted_from_mapping)
-            A[i%4, i] = (-new_fmom[0] - E0)/eps
-            new_L = np.sqrt(new_fmom[2]**2 + (new_fmom[3]**2)/(np.sin(theta)**2))
-            new_cart_state = sph2cart([*state[:4], *new_vel], a)
-            new_L_dir = np.cross(new_cart_state[1:4], new_cart_state[5:])
-            new_L_vec = new_L * new_L_dir/np.linalg.norm(new_L_dir)
-            A[1:, i] = (new_L_vec - L_vec)/eps
-            target = np.array([dE, dLx, dLy, dLz])
-            achieved = A @ true_div
-
-            new_v = v + true_div
-            true_gamma = 1/np.sqrt(1 - np.dot(new_v, new_v))
-            true_tet = np.array([true_gamma, *(true_gamma * new_v)])
-            true_vel = tet2kerr @ true_tet
-            new_state = np.array([*state[:4], *true_vel])
-            true_fmom = metric @ true_vel
-            newE, newLz, newQ = -true_fmom[0], true_fmom[3], np.matmul(np.matmul(kill_tensor(new_state, a), new_state[4:]), new_state[4:])
-            newC = newQ - (a*newE - newLz)**2
-            dC = C0 - newC
-            Q0 = np.matmul(np.matmul(kill_tensor(state, a), state[4:]), state[4:])
-
-            actual_L = np.sqrt(
-                true_fmom[2]**2 +
-                true_fmom[3]**2/(np.sin(theta)**2)
-            )
-
-            actual_cart = sph2cart(new_state, a)
-            actual_L_dir = np.cross(actual_cart[1:4], actual_cart[5:])
-            actual_L_vec = actual_L * actual_L_dir/np.linalg.norm(actual_L_dir)
-            test_div = true_div
-
-            gamma = 1/np.sqrt(1 - np.dot(v + test_div, v + test_div))
-            new_tet = np.array([gamma, *(gamma*(v + test_div))])
-            new_vel = tet2kerr @ new_tet
-
-            test_fmom = metric @ new_vel
-
-            test_E = -test_fmom[0]
-
-            test_L = np.sqrt(
-                test_fmom[2]**2 +
-                test_fmom[3]**2/(np.sin(theta)**2)
-            )
-
-            test_cart = sph2cart([*state[:4], *new_vel], a)
-            test_L_dir = np.cross(test_cart[1:4], test_cart[5:])
-            test_L_vec = test_L*test_L_dir/np.linalg.norm(test_L_dir)
-
-        elif "bracket" in label:
-            def R(E, L, C, a):
-                return np.array([ E**2 - 1, 2, (a**2)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)])
-
-            def T(E, L, C, a):
-                return np.array([(a**2)*(1 - E**2), 0.0, -(C + (a**2)*(1 - E**2) + L**2), 0.0, C])
-            
-            def constants_to_pei3(E, L, C, a):
-                # Get roots and extrema
-                R2 = R(E, L, C, a)
-                turns, flats = np.sort(np.roots(R2)), np.sort(np.roots(np.polyder(R2)))
-                T2 = T(E, L, C, a)
-                zs = np.sort(np.roots(T2))
-                pot_min = flats[-1]
-                inner_turn, outer_turn = turns[-2:]
-                inc = np.sign(L)*np.arccos(min(1.0, np.mean(np.abs(zs[1:3]))))
-                dr = np.linspace(turns[-2]*(1 + 1e-5), turns[-1]*(1 - 1e-5), 500)
-                return inner_turn, outer_turn, inc, *np.polyval(np.polyder(R2), turns)
-
-            def get_Js(E, L, C, a):
-                R2 = R(E, L, C, a)
-                turns, flats = np.sort(np.roots(R2)), np.sort(np.roots(np.polyder(R2)))
-                T2 = T(E, L, C, a)
-                zs = np.sort(np.roots(T2))
-
-                def integrand_r(r):
-                    D = r*r - 2*r + a*a
-                    R3 = np.polyval(R2, r)
-                    return np.sqrt(np.maximum(R3, 0.0))/D
-
-                def integrand_z(z):
-                    T3 = np.polyval(T2, z)
-                    return np.sqrt(np.maximum(T3,0.0)) / np.sqrt(np.maximum(1-z*z,1e-15))
-
-                val_r, _ = integrate.quad(integrand_r, turns[-2], turns[-1], limit=200)
-                val_z, _ = integrate.quad(integrand_z, 0, min(1.0, np.mean(np.abs(zs[1:3]))), limit=200)
-                return [val_r/np.pi, 2*val_z/np.pi]
-
-            original = np.array(constants_to_pei3(E0, L0, C0, a))
-            basic = np.array(constants_to_pei3(E0 + dE, L0 + dLz, C0, a))
-            maxim = 20*np.abs(dLz*np.sqrt(L0**2 + C0)/L0)
-            length = 100
-            dCs = -np.linspace(0, maxim, length)
-            full = np.array([constants_to_pei3(E0 + dE, L0 + dLz, C0 + trial, a) for trial in dCs])
-            mask = np.where((full[:, 0] <= original[0])*(full[:, 1] <= original[1])*(full[:,2] <= original[2])*(np.abs(full[:,5]) <= np.abs(original[5]))*(np.abs(full[:,6]) <= np.abs(original[6])))
-            while True:
-                if length > 1000:
-                    break
-                elif (len(mask[0]) < 3):
-                    length *= 2
-                elif mask[0][-1] == len(dCs) - 1:
-                    maxim *= 2
-                else:
-                    break
-                dCs = -np.linspace(0, maxim, length)
-                full = np.array([constants_to_pei3(E0 + dE, L0 + dLz, C0 + trial, a) for trial in dCs])
-                mask = np.where((full[:, 0] <= original[0])*(full[:, 1] <= original[1])*(full[:,2] <= original[2])*(np.abs(full[:,5]) <= np.abs(original[5]))*(np.abs(full[:,6]) <= np.abs(original[6])))
-            if len(mask) == 0:
-                dCs = [[0]]
-            dCs = np.linspace(dCs[mask[0][-1]], dCs[mask[0][0]], length)
-
-            if "j" in label:
-                OJs = np.array(get_Js(E0, L0, C0, a))
-                full_Js = np.array([get_Js(E0 + dE, L0 + dLz, C0 + boop, a) for boop in dCs])
-                if "jtot" in label:
-                    diffy = ((full_Js[:, 0] - OJs[0])/OJs[0])**2 + ((full_Js[:, 1] - OJs[1])/OJs[1])**2   #Get minimum change of [Jr, Jthet]
-                elif "jratio" in label:
-                    diffy = (full_Js[:, 0]/full_Js[:, 1] - OJs[0]/OJs[1])**2  #Get minimum change of Jr/Jthet
-                ix = np.argmin(diffy)
-            elif "rri" in label:    # norm of [d(inc), d(peri)/peri, d(apo)/apo]
-                full = np.array([constants_to_pei3(E0 + dE, L0 + dLz, C0 + trial, a) for trial in dCs])
-                diffy = np.sqrt(((full[:,2] - original[2]))**2 + ((full[:,0] - original[0])/full[:,0])**2 + ((full[:,1] - original[1])/full[:,1])**2)
-                ix = np.argmin(diffy)
-            elif "big" in label:
-                ix = np.argmin(dCs)
-            elif "small" in label:
-                ix = np.argmax(dCs)
-            elif "half" in label:
-                ix = op.get_index(dCs, np.mean(dCs))
     
-            dC = dCs[ix]
-
-        elif "incy0" in label:
-            # assume d/dt(cosi) = 0
-            if L0 != 0.0:
-                dC = 2*dLz*C0/L0 
-            else:
-                #polarrr
-                metric, chris = kerr_2(state, a)
-                theta, phi = state[2], state[3]
-                fmom = np.matmul(metric, state[4:])
-                Lx = -fmom[2] * np.sin(phi) - fmom[3] * np.cos(theta) * np.cos(phi) / np.sin(theta)
-                Ly =  fmom[2] * np.cos(phi) - fmom[3] * np.cos(theta) * np.sin(phi) / np.sin(theta)
-                dC = 2*(Lx*dLx + Ly*dLy 
-                        - (a*a)*((1 - E0**2)*np.sin(theta)*np.cos(theta)*(int_sphere[-1,1] - int_sphere[0,1])
-                                    + E0*dE*(np.cos(theta)**2)))
-
-        elif "inci0" in label:
-            # assume d/dt(cosi) = 0
-            if L0 != 0.0:
-                dC = 2*dLz*C0/L0 
-            else:
-                #polarrr
-                metric, chris = kerr_2(state, a)
-                theta, phi = state[2], state[3]
-                fmom = np.matmul(metric, state[4:])
-                Lx = -fmom[2] * np.sin(phi) - fmom[3] * np.cos(theta) * np.cos(phi) / np.sin(theta)
-                Ly =  fmom[2] * np.cos(phi) - fmom[3] * np.cos(theta) * np.sin(phi) / np.sin(theta)
-                dC = 2*(Lx*dLx + Ly*dLy)
-        
         else:
-            # assume d/dt(cosi) = 0
-            if L0 != 0.0:
-                dC = 2*dLz*C0/L0 
-            else:
-                #polarrr
-                metric, chris = kerr_2(state, a)
-                theta = state[2]
-                fmom = np.matmul(metric, state[4:])
-                L = np.sqrt(fmom[2]**2 + (fmom[3]**2)/(np.sin(theta)**2))
-                cart_state = sph2cart(state, a)
-                L_dir = np.cross(cart_state[1:4], cart_state[5:])
-                L_vec = L*L_dir/np.linalg.norm(L_dir)
-                dC = 2*(L_vec[0]*dLx + L_vec[1]*dLy 
-                        - (a*a)*((1 - E0**2)*np.sin(theta)*np.cos(theta)*(int_sphere[-1,1] - int_sphere[0,1])
-                                 + E0*dE*(np.cos(theta)**2)))
+            # Radial prescription set to default
+            P = E0*(int_sphere[:, 0]**2 + a*a) - a*L0
+            D = int_sphere[:, 0]*(int_sphere[:, 0] - 2) + a*a
+            dC = np.sum(((2*P*(int_sphere[:, 0]**2 + a*a)/D - 2*a*(a*E0 - L0))*dedt + (-2*P*a/D + 2*(a*E0 - L0))*dldt[:, 2])*div*mu)
 
         #dC = min(0.0, dC)
         E, L, C = E0 + dE, L0 + dLz, C0 + dC
@@ -2982,7 +1966,6 @@ def peters_integrate6_6_4_7(states, a, mu, ind1, ind2, state, constants, label, 
         new_state = recalc_state3([E, L, C], state, a, tol=tol)
         return new_state, np.array([E, L, C])
     else:
-        #print("----------- kaput!")
         return state, constants
 
 @njit
@@ -3977,9 +2960,9 @@ def peters_sim_re(a, q, cons=False, params=False, endflag="False"):
     # Use Orbital Parameters
     elif params != False:
         print(params)
-        r0, e, inc = params
-        print(r0, e, inc)
-        p = r0*(1 - e**2)
+        p, e, inc = params
+        print(p, e, inc)
+        r0 = p/(1 - e**2)
         E, L, C = schmidtparam3(*params, a)
         turns, flats, zs = root_getter(E, L, C, a)
     # Nuffin
@@ -4147,8 +3130,8 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
         r0 = p/(1 - e**2)
     elif params != False:
         # Use orbital parameters to start
-        r0, e, inc = params
-        p = r0*(1 - e**2)
+        p, e, inc = params
+        r0 = p/(1 - e**2)
         E, L, C = schmidtparam3(*params, a)
         turns, flats, zs = root_getter(E, L, C, a)
     else:
@@ -4272,13 +3255,13 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
         r0 = p/(1 - e**2)
     elif params != False:
         # Use orbital parameters to start
-        r0, e, inc = params
+        p, e, inc = params
         if a < 0:
             flip = True
             a = abs(a)
             inc *= -1
-        p = r0*(1 - e**2)
-        E, L, C = schmidtparam3(r0, e, inc, a)
+        r0 = p/(1 - e**2)
+        E, L, C = schmidtparam3(p, e, inc, a)
         turns, flats, zs = root_getter(E, L, C, a)
     else:
         # Nuffin
@@ -4332,7 +3315,9 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
     # Useful to keep track of the ISCO and marginally bound radius for later
 
     sep_stuff = get_sep_cosi(a, cosi, mult=500)
-    dist = p - sep_stuff["p"][op.get_index(sep_stuff["e"], 1)]
+    
+    
+    dist = p - sep_stuff["p"][np.where(sep_stuff["e"] == sep_stuff["e"].flat[np.nanargmin(np.abs(sep_stuff["e"] - 1))])[0][0]]
     line = np.polyfit(sep_stuff["p"][:len(sep_stuff["p"])//2], sep_stuff["e"][:len(sep_stuff["p"])//2], 1)
 
     r_isco, r_mb = find_rms(a*np.sign(L)), find_rmb(a*np.sign(L))
@@ -4427,7 +3412,8 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
                 # Tell the user where we're at right now
                 if verbose == True:
                     pbar.set_postfix_str(f"Semilat: {np.real(p):.4f}, Ecc {np.real(e):.4f}, Peri: {np.real((p/(1 + e))):.4f}, dt={dt:.4e}")
-                    new_prog = np.real(max(prog, 1 - (p - sep_stuff["p"][op.get_index(sep_stuff["e"], 1)])/dist))
+                    
+                    new_prog = np.real(max(prog, 1 - (p - sep_stuff["p"][np.where(sep_stuff["e"] == sep_stuff["e"].flat[np.nanargmin(np.abs(sep_stuff["e"] - 1))])[0][0]])/dist))
                     pbar.update(int((new_prog - prog)*10000))
                     prog = new_prog
 

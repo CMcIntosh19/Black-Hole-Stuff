@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 import os
+from pathlib import Path
 import sys
 import time
 import signal
 import numpy as np
-import MetricMathStreamline as mm
 import MainLoopStreamline as ml
-import OrbitPlotter as op
 from email.utils import parsedate_to_datetime
 from multiprocessing import Process, Lock
 import argparse
@@ -35,7 +34,7 @@ def last_index_write_time():
 
     return 0.0
 
-def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=None):
+def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=30.0, folder=None, lock=None):
     """
     inspiral_str : string defining initial EMRI
     write_poll   : seconds to wait when checking if it's safe to write
@@ -44,14 +43,24 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
 
     drain_requested = False
     stop_requested = False
-    inspiral_str = make_inspiral_str(inspiral_cfg)
-    title = inspiral_str.split("label")[1].split("'")[1]
-    heartbeat_path = f"D:/EMRIData/inspiral_{title.replace(' ', '_')}.log"
+    title = inspiral_cfg.get("label", "default")
+
+    if folder is None:
+        path = Path(__file__).resolve().parent / "saved_sims" / "multiproc_logs"
+    else:
+        # Accepts absolute and relative paths
+        path = Path(folder).expanduser() / "multiproc_logs"
+    path = path.resolve()
+    path.mkdir(parents=True, exist_ok=True)
+    filename = f"inspiral_{title.replace(' ', '_')}.log"
+    heartbeat_path = path / filename
+
+    pid = os.getpid()
 
     def heartbeat(msg):
         """Append a message to the worker log immediately."""
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-        with open(heartbeat_path, "a") as f:
+        with heartbeat_path.open("a", encoding="utf-8") as f:
             f.write(f"[{timestamp}] - [worker_{pid}] {msg}\n")
         print(f"[{timestamp}] - [worker_{pid}] {msg}", flush=True)
 
@@ -65,17 +74,11 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
             heartbeat("Shutdown signal received, ending current chunk...")
             stop_requested = True
 
-
-    #def should_stop():
-    #    heartbeat(f"Sending shutdown signal...")
-    #    return stop_requested
     def should_stop():
         return stop_requested
 
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
-
-    pid = os.getpid()
 
     heartbeat(f"Started {title}")
     # ---- Load latest checkpoint ONCE ----
@@ -102,6 +105,7 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
     chunk_counter = len(refs)
 
     # ---- Main evolution loop ----
+    inspiral_str = make_inspiral_str(inspiral_cfg)
     while not stop_requested:
         if drain_requested:
             heartbeat("Drain signal registered, exiting...")
@@ -112,20 +116,19 @@ def run_single_inspiral(inspiral_cfg, write_poll=20.0, min_spacing=60.0, lock=No
             ins = eval(inspiral_str)
         else:
             ins = ml.EMRIGenerator(
+                ins["inputs"][0],
                 ins["inputs"][1],
-                ins["inputs"][2],
-                endflag=ins["inputs"][3],
+                endflag=ins["inputs"][2],
                 pos=ins["raw"][-1, :4],
                 veltrue=ins["raw"][-1, 4:],
                 label=f"{title} {chunk_counter + 1}",
                 verbose=0,
-                err_target=ins["inputs"][4],
-                force_stop=should_stop,
-            )
+                err_target=ins["inputs"][3],
+                force_stop=should_stop)
 
         heartbeat(f"Completed chunk {chunk_counter + 1}, attempting to save...")
         time.sleep(np.random.uniform(1, 6))
-        chunk_name = ml.save_emri_data(ins, auto=True, lock=lock)   
+        chunk_name = ml.save_emri_data(ins, filename=False, folder=folder, auto=True, lock=lock)   
         heartbeat(f"Chunk {chunk_counter + 1} saved as {chunk_name}.")
         time.sleep(np.random.uniform(1, 5))
         chunk_counter += 1
@@ -156,13 +159,13 @@ def format_value(val):
         except ValueError:
             return repr(val)
 
-    # Numbers
-    if isinstance(val, (int, float)):
-        return repr(val)
-
     # Booleans
     if isinstance(val, bool):
         return "True" if val else "False"
+
+    # Numbers
+    if isinstance(val, (int, float)):
+        return repr(val)
 
     return repr(val)
 
@@ -172,7 +175,7 @@ def make_inspiral_str(cfg):
                 "mu": 0.0,
                 "endflag": "min_radius < 0.5", 
                 "mass": 1.0, 
-                "err_target": 1e-15, 
+                "err_target": 1e-12, 
                 "label": "default", 
                 "cons": False, 
                 "velorient": False, 
@@ -180,10 +183,9 @@ def make_inspiral_str(cfg):
                 "params": False, 
                 "pos": False, 
                 "veltrue": False, 
-                "units": "grav",
                 "verbose": 0,
+                "skip_tar": 0,
                 "force_stop": "should_stop",
-                "skip_tar": 0
                 } 
     
     insp_str = "ml.EMRIGenerator("
@@ -204,12 +206,14 @@ def make_inspiral_str(cfg):
 
 def lower_priority(proc):
     try:
+        process = psutil.Process(proc.pid)
+
         if sys.platform.startswith("win"):
-            import psutil
-            psutil.Process(proc.pid).nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+            process.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
         else:
-            os.setpriority(os.PRIO_PROCESS, proc.pid, 10)
-    except Exception as e:
+            process.nice(10)
+
+    except (psutil.Error, OSError) as e:
         print(f"Priority set failed: {e}", flush=True)
 
 def main():
@@ -234,6 +238,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="Run EMRI inspirals from YAML config.")
     parser.add_argument("config", help="Path to YAML config file")
+    parser.add_argument("save_dir", help="Path to save directory", default=None)
     parser.add_argument("--timeout", type=float, default=30.0)
 
     args = parser.parse_args()
@@ -257,10 +262,7 @@ def main():
     #counter = 0
     for cfg, p in zip(inspiral_cfgs, polls):
         while len(active) >= max_workers and not shutdown_requested:
-            #counter += 1
-            #print("___________________________________________________") if counter%30 == 0 else None
             for proc in active[:]:
-                #print(f"PID={proc.pid}, alive={proc.is_alive()}, "f"exitcode={proc.exitcode}", flush=True) if counter%30 == 0 else None
                 if not proc.is_alive():
                     proc.join()
                     active.remove(proc)
@@ -268,16 +270,13 @@ def main():
 
         if shutdown_requested or main_drain_requested:
             break
-        
-        proc = Process(target=run_single_inspiral, args=(cfg, p, args.timeout, lock))
+
+        proc = Process(target=run_single_inspiral, args=(cfg, p, args.timeout, args.save_dir, lock))
         proc.start()
         lower_priority(proc)
         processes.append(proc)
         active.append(proc)
 
-    #for proc in active[:]:
-        #print(f"PID={proc.pid}, alive={proc.is_alive()}, "f"exitcode={proc.exitcode}", flush=True)
-    
     for proc in active[:]:
         while proc.is_alive():
             if shutdown_requested:
