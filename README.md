@@ -1,11 +1,12 @@
 # EMRICode (name pending)
-## A Python Toolkit for generating and displaying generic Extreme Mass Ratio Inspirals
-Extreme Mass Ratio Inspirals are binary systems consisting of a massive or supermassive black hole orbited by a much smaller object, such that the mass ratio between them is $\leq$ 10<sup>-4</sup>. 
-EMRI systems are expected to be potent emitters of gravitational radiation as well as a thorough test of General Relativity in regions of extreme gravity, 
-which makes them of great interest to astronomers and astrophysicists in the field of multi-messenger astronomy.
 
-As part of the ongoing effort to study EMRI systems, this package is being developed as a tool to generate orbits across as much of the parameter space as possible. 
-The project is currently incomplete.
+### A Python Toolkit for Generating and Visualizing Generic Extreme Mass-Ratio Inspirals
+
+Extreme mass-ratio inspirals (EMRIs) are binary systems consisting of a massive or supermassive black hole orbited by a much smaller compact object, with a mass ratio typically \(\lesssim 10^{-4}\). These systems are expected to be important sources of gravitational radiation and provide opportunities to test General Relativity in the strong-field regime.
+
+EMRICode is an ongoing project intended to provide a flexible framework for simulating EMRI orbital dynamics across a broad range of orbital parameters. The long-term goal is to support the inclusion of additional physical effects beyond vacuum geodesic motion and gravitational radiation reaction.
+
+**This project is under active development.** Some functionality is incomplete or subject to change.
 
 Packages Used:
 - Numpy
@@ -19,25 +20,6 @@ Packages Used:
 - filelock
 - PyYAML
 - psutil
-
-## Future Functionality Goals
-- Full/Partial Tidal Disruption of smaller body
-- Accretion Disk interaction
-- Higher order corrections to energy loss calculations
-- Effects of non-zero smaller body spin
-
-
-
-
-# EMRICode (name pending)
-
-### A Python Toolkit for Generating and Visualizing Generic Extreme Mass-Ratio Inspirals
-
-Extreme mass-ratio inspirals (EMRIs) are binary systems consisting of a massive or supermassive black hole orbited by a much smaller compact object, with a mass ratio typically \(\lesssim 10^{-4}\). These systems are expected to be important sources of gravitational radiation and provide opportunities to test General Relativity in the strong-field regime.
-
-EMRICode is an ongoing project intended to provide a flexible framework for simulating EMRI orbital dynamics across a broad range of orbital parameters. The long-term goal is to support the inclusion of additional physical effects beyond vacuum geodesic motion and gravitational radiation reaction.
-
-**This project is under active development.** Some functionality is incomplete or subject to change.
 
 ## Current Functionality
 
