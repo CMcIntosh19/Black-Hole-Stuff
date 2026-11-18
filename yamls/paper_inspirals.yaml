@@ -1,0 +1,72 @@
+inspirals:
+  - label: 'Quasi-Circular Inspiral (Paper) leastsq'
+    a: 0.9
+    mu: 1e-5
+    params: [10/(1 - (1e-3)**2), 1e-3, -60*np.pi/180]
+    err_target: 1e-12
+
+  - label: 'Zoom-Whirl Inspiral (Paper) leastsq'
+    a: 0.98
+    mu: 1e-5
+    params: [2.600391212268585/(1 - 0.95**2), 0.95, 1.5707963267948966]
+    err_target: 1e-14
+
+  - label: 'Generic Inspiral (Paper) leastsq'
+    a: 0.8
+    mu: 1e-5
+    params: [12/(1 - 0.35**2), 0.35, -30*np.pi/180]
+    err_target: 1e-12
+  
+  - label: 'Near-Polar Inspiral (Paper) leastsq'
+    a: 0.95
+    mu: 1e-5
+    cons: [0.962076494, 0.3344033764, 13.96778]
+    err_target: 1e-12
+
+  - label: 'Quasi-Circular Inspiral (Paper) radial'
+    a: 0.9
+    mu: 1e-5
+    params: [10/(1 - (1e-3)**2), 1e-3, -60*np.pi/180]
+    err_target: 1e-12
+
+  - label: 'Zoom-Whirl Inspiral (Paper) radial'
+    a: 0.98
+    mu: 1e-5
+    params: [2.600391212268585/(1 - 0.95**2), 0.95, 1.5707963267948966]
+    err_target: 1e-14
+
+  - label: 'Generic Inspiral (Paper) radial'
+    a: 0.8
+    mu: 1e-5
+    params: [12/(1 - 0.35**2), 0.35, -30*np.pi/180]
+    err_target: 1e-12
+  
+  - label: 'Near-Polar Inspiral (Paper) radial'
+    a: 0.95
+    mu: 1e-5
+    cons: [0.962076494, 0.3344033764, 13.96778]
+    err_target: 1e-12
+
+  - label: 'Quasi-Circular Inspiral (Paper) inc0'
+    a: 0.9
+    mu: 1e-5
+    params: [10/(1 - (1e-3)**2), 1e-3, -60*np.pi/180]
+    err_target: 1e-12
+
+  - label: 'Zoom-Whirl Inspiral (Paper) inc0'
+    a: 0.98
+    mu: 1e-5
+    params: [2.600391212268585/(1 - 0.95**2), 0.95, 1.5707963267948966]
+    err_target: 1e-14
+
+  - label: 'Generic Inspiral (Paper) inc0'
+    a: 0.8
+    mu: 1e-5
+    params: [12/(1 - 0.35**2), 0.35, -30*np.pi/180]
+    err_target: 1e-12
+  
+  - label: 'Near-Polar Inspiral (Paper) inc0'
+    a: 0.95
+    mu: 1e-5
+    cons: [0.962076494, 0.3344033764, 13.96778]
+    err_target: 1e-12
