@@ -16,7 +16,7 @@ from OrbitPlotter import plotvalues
 RUN_NEW_SIM = True
 
 if RUN_NEW_SIM:
-    # Gotta do a big ol example inspiral, lets do something with 1e-4?
+    # Quick example inspiral that plunges relatively quickly
     # This took about 2 minutes to run on the author's laptop
     orbit = ml.EMRIGenerator(
         a=0.8, 
@@ -26,8 +26,9 @@ if RUN_NEW_SIM:
         label="example generic orbit")
 
     # This saves the resulting data as an hdf5 file in a subdirectory called 'example_data' 
-    #   inside the 'examples' directory. 
-    ml.save_emri_data(orbit, filename="example_inspiral", folder=EXAMPLE_DATA)
+    #   inside the 'examples' directory. Setting auto=True makes it default to 
+    #   NOT overwriting any files with the same name.
+    ml.save_emri_data(orbit, filename="example_inspiral", folder=EXAMPLE_DATA, auto=False)
 
 # It also creates an 'index.json' file that tracks useful information about the saved data.
 # We can load the index and retrieve that information without reloading everything.

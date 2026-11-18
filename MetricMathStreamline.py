@@ -1463,7 +1463,7 @@ def gwaves(quad_moment, time, distance, n_hat=None):
         Distance to the source in geometric units.
     n_hat : array-like, shape (3,), optional
         Unit vector pointing from the source toward the observer.
-        If omitted, the observer is placed along the +x direction.
+        If omitted, the observer is placed along the +z direction.
 
     Returns
     -------
@@ -1575,18 +1575,26 @@ def full_transform(data, distance, supress=True, samp_freq=1, m_bh=False, n_hat 
     else:
         return 1e-4*h_plus, 1e-4*h_cross, int_time
 
-def full_transform2(data, distance, samp_freq=1, m_bh=False, n_hat = None, start=None, end=None):    #defunctish??
+def full_transform2(data, distance=None, samp_freq=1.0, n_hat = None, start=None, end=None):
     '''
     Calculates gravitational wave moment from orbit dictionary
 
     Parameters
     ----------
-    data : 30 element dictionary
-        full data package of an orbit given by clean_inspiral
-    distance : float
-        distance from GW source in geometric units
-    m_bh : float
-        central body mass in solar masses - optional
+    data : dict
+        full data package of an orbit given by EMRIGenerator
+    distance : float, optional
+        distance from GW source to observer in geometric units (M). 
+        Defaults to 10^4 times the maximum radius of the orbit
+    samp_freq : float, optional
+        sampling frequency in geometric units (1/M). Defaults to 1.
+    n_hat : array-like, shape (3,), optional
+        Unit vector pointing from the source toward the observer.
+        If omitted, the observer is placed along the +z direction.
+    start : float, optional
+        timestamp of when to start evaluating signal. Defaults to beginning of data.
+    end : float, optional
+            timestamp of when to stop evaluating signal. Defaults to end of data.
 
     Returns
     -------
@@ -1597,7 +1605,7 @@ def full_transform2(data, distance, samp_freq=1, m_bh=False, n_hat = None, start
         N is maximum of the length of the original time array or the integerized number of time units that have passed
     '''
     sphere, time = data["raw"][:, 1:], data["raw"][:, 0]
-    int_time = np.arange(int(start or 0), int(end or time[-1]), samp_freq)
+    int_time = np.arange(int(start or 0), int(end or time[-1]), 1/samp_freq)
     int_sphere = np.transpose([spi.CubicSpline(time, sphere[:, 0])(int_time),
                                spi.CubicSpline(time, sphere[:, 1])(int_time),
                                spi.CubicSpline(time, sphere[:, 2])(int_time)])
@@ -1612,7 +1620,7 @@ def full_transform2(data, distance, samp_freq=1, m_bh=False, n_hat = None, start
     qmom = carts[:, :, None] * carts[:, None, :]
     qmom -= np.eye(3)[None,:,:] * (r2[:,None,None]/3)
 
-    h_plus, h_cross = gwaves(qmom, int_time, distance, n_hat)
+    h_plus, h_cross = gwaves(qmom, int_time, distance or (10**4) * np.max(sphere[:, 0]), n_hat)
     if data["inputs"][2]:
         return data["inputs"][1]*h_plus, data["inputs"][1]*h_cross, int_time
     else:
@@ -2952,9 +2960,9 @@ def peters_sim_re(a, q, cons=False, params=False, endflag="False"):
     # Use Orbital Parameters
     elif params != False:
         print(params)
-        r0, e, inc = params
-        print(r0, e, inc)
-        p = r0*(1 - e**2)
+        p, e, inc = params
+        print(p, e, inc)
+        r0 = p/(1 - e**2)
         E, L, C = schmidtparam3(*params, a)
         turns, flats, zs = root_getter(E, L, C, a)
     # Nuffin
@@ -3122,8 +3130,8 @@ def glamp_2002(a, q, cons=False, params=False, endflag="False", eps=1e-3, verbos
         r0 = p/(1 - e**2)
     elif params != False:
         # Use orbital parameters to start
-        r0, e, inc = params
-        p = r0*(1 - e**2)
+        p, e, inc = params
+        r0 = p/(1 - e**2)
         E, L, C = schmidtparam3(*params, a)
         turns, flats, zs = root_getter(E, L, C, a)
     else:
@@ -3247,13 +3255,13 @@ def gair_glamp_2006(a, q, cons=False, params=False, endflag="False", eps=1e-3, v
         r0 = p/(1 - e**2)
     elif params != False:
         # Use orbital parameters to start
-        r0, e, inc = params
+        p, e, inc = params
         if a < 0:
             flip = True
             a = abs(a)
             inc *= -1
-        p = r0*(1 - e**2)
-        E, L, C = schmidtparam3(r0, e, inc, a)
+        r0 = p/(1 - e**2)
+        E, L, C = schmidtparam3(p, e, inc, a)
         turns, flats, zs = root_getter(E, L, C, a)
     else:
         # Nuffin

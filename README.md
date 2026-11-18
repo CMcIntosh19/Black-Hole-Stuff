@@ -218,4 +218,4 @@ This citation will be updated when the journal version becomes available.
 
 ## License
 
-???
+Free to use with attribution, do not distribute.

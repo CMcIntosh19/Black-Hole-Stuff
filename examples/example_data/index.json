@@ -21,5 +21,51 @@
     "Dataset Size (MiB)": 101.32,
     "File Size (MiB)": 34.15,
     "Created": "Tue, 17 Nov 2026 13:29:24 UTC"
+  },
+  "loose_error.h5": {
+    "Spin": 0.8,
+    "Mass Ratio": 0.0001,
+    "Endflag": "min_radius < 0.5",
+    "Target Error": 1e-10,
+    "Label": "1e-10 inspiral",
+    "Constants": false,
+    "Orientation Velocity": false,
+    "Tetrad Velocity": false,
+    "Kepler Parameters": [
+      13,
+      0.6,
+      -0.5235987755982988
+    ],
+    "Position": false,
+    "True Velocity": false,
+    "Halted": false,
+    "Plunged": true,
+    "Escaped": false,
+    "Dataset Size (MiB)": 329.09,
+    "File Size (MiB)": 112.6,
+    "Created": "Tue, 17 Nov 2026 23:54:23 UTC"
+  },
+  "tighter_error.h5": {
+    "Spin": 0.8,
+    "Mass Ratio": 0.0001,
+    "Endflag": "min_radius < 0.5",
+    "Target Error": 1e-12,
+    "Label": "1e-12 inspiral",
+    "Constants": false,
+    "Orientation Velocity": false,
+    "Tetrad Velocity": false,
+    "Kepler Parameters": [
+      13,
+      0.6,
+      -0.5235987755982988
+    ],
+    "Position": false,
+    "True Velocity": false,
+    "Halted": false,
+    "Plunged": true,
+    "Escaped": false,
+    "Dataset Size (MiB)": 757.72,
+    "File Size (MiB)": 278.83,
+    "Created": "Tue, 17 Nov 2026 23:55:12 UTC"
   }
 }

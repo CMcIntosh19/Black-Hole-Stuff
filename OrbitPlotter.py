@@ -135,9 +135,9 @@ def plotvalues(datalist, yvalue="radius", xvalue=None,
         "tracktime": [lambda d: d["tracktime"], "Coordinate Time (at Radial Orbit) (M)", "tracktime"],
         "energy": [lambda d: d["energy"], "Specific Energy", "tracktime"],
         "L_z": [lambda d: d["phi_momentum"], "Specific Axial Angular Momentum", "tracktime"],
-        "carter": [lambda d: d["carter"], "Carter Constant", "tracktime"],
+        "carter": [lambda d: d["carter"], "Specific Carter Constant", "tracktime"],
         "approx_L": [lambda d: np.sqrt(d["carter"] + d["phi_momentum"]**2),
-                     r"Approximate Angular Momentum $\sqrt{C + L_z^2}$", "tracktime"],
+                     r"Effective Angular Momentum $\sqrt{C + L_z^2}$", "tracktime"],
         "qarter": [lambda d: d["carter"] + (d["spin"] * d["energy"] - d["phi_momentum"])**2,
                    "Carter Constant (Non-normalized)", "tracktime"],
         "periapse": [lambda d: d["it"], "Periapse", "tracktime"],
@@ -2128,162 +2128,122 @@ def justfourier(datalist, start=0, end=-1, filename=False, supress=True, m_bh=Fa
     else:
         plt.show()
 
-def justfouriernew(datalist, start=None, end=None, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
+def justfouriernew(datalist, distance=None, samp_freq=1.0, n_hat=None, start=None, end=None, polarization=False, analyze_peaks=None):
     if type(datalist) != list:
         datalist = [datalist]
+
     num = len(datalist)
-    if not width:
-        width = max(8, 2*num)
-    if not height:
-        height = max(3, 1.5*num)
-    fig, ax = plt.subplots(num, figsize=(width, height), sharex=True, sharey=True)
+    fig, ax = plt.subplots(num, figsize=(max(8, 2*num), max(3, 1.5*num)), sharex=True, sharey=True)
     if num == 1:
         ax = [ax]
 
+    if analyze_peaks:
+        final_report = []
+
     for i in range(num):
         data = datalist[i]
-        print(data["name"])
-        if not distance:
-            distance = max(data["raw"][:,1])*100000  # distance is in GU
-        h_plus, h_cross, time = mm.full_transform2(data, distance, samp_freq=samp_freq, m_bh=m_bh, n_hat=n_hat, start=start, end=end)
+        if distance is None:
+            distance = mm.find_rms(data["spin"]) * 100000
+        h_plus, h_cross, time = mm.full_transform2(data, distance=distance, samp_freq=samp_freq, n_hat=n_hat, start=start, end=end)
  
-        x = np.copy(time)
-        y1 = np.copy(h_plus)
-        y2 = np.copy(h_cross)
-        N = x.size
-        T = x[1] - x[0]
-        yf1 = np.fft.rfft(y1)
-        yf2 = np.fft.rfft(y2)
-        xf = np.fft.rfftfreq(N, d=T)
-        h_plus_fft = 2.0/N * np.abs(yf1)
-        h_cross_fft = 2.0/N * np.abs(yf2)
-        power = np.abs(yf1)**2
-        power[1:-1] *= 2
-        # Don't include DC
-        power[0] = 0
+        N = time.size
+        dt = time[1] - time[0]
+        window = np.hanning(N)
+        Hp = np.fft.rfft(h_plus * window)
+        Hc = np.fft.rfft(h_cross * window)
+        xf = np.fft.rfftfreq(N, d=dt)
 
-        num_peaks = 3
-        peaks, properties = find_peaks(h_plus_fft,
-                                    prominence=np.max(h_plus_fft) * 0.01,
-                                    distance=10)
-        highest = peaks[np.argsort(h_plus_fft[peaks])[::-1]]
-        counted = len(highest[:num_peaks])
+        if analyze_peaks is not None and analyze_peaks > 0:
+            final_report.append(analyze_fourier_peaks(xf, Hp, num_peaks=analyze_peaks))
 
-        peak_freqs = xf[highest[:num_peaks]]
-        peak_amps = h_plus_fft[highest[:num_peaks]]
-        peak_pows = power[highest[:num_peaks]]
-
-        #print("Peak frequencies:", peak_freqs)
-        #print("Peak amplitudes:", peak_amps)
-        fr, fth, fph = np.abs(mm.freqs_finder(data["energy"][0], data["phi_momentum"][0], data["carter"][0], data["spin"])/(2 * np.pi))
-        peri_ix = np.argmin(data["raw"][:data["trackix"][1], 1])
-        #f_pph = (np.abs(data["raw"][peri_ix + 2, 3] - data["raw"][peri_ix - 2, 3])/(data["time"][peri_ix + 2] - data["time"][peri_ix - 2]))/(2*np.pi)
-        #f_pph = np.abs(np.mean(data["raw"][peri_ix - 2: peri_ix + 2, 7]))/(2*np.pi)
-        f_pph = np.abs(((data["raw"][peri_ix+3, 3] - data["raw"][peri_ix-2, 3])/(data["time"][peri_ix+3] - data["time"][peri_ix-2]))/(2*np.pi))
-
-        last_ix, fr_f = -1, np.nan
-        if data["plunge"] == True:
-            last_ix = -2
+        if not polarization:
+            # Plot absolute values of h+ and h_x
+            h_plus_fft = 2.0/N * np.abs(Hp)
+            h_cross_fft = 2.0/N * np.abs(Hc)
+            ax[i].plot(xf[1:], h_plus_fft[1:], label = "h+" if i==0 else None, alpha=0.8)
+            ax[i].plot(xf[1:], h_cross_fft[1:], label = "hx" if i==0 else None, alpha=0.8)
+            ax[i].set_yscale('log')
         else:
-            last_ix = -1
-        fr_f, fth_f, fph_f = np.abs(mm.freqs_finder(data["energy"][last_ix], data["phi_momentum"][last_ix], data["carter"][last_ix], data["spin"])/(2 * np.pi))
-        peri_ix_f = np.argmin(data["raw"][data["trackix"][last_ix-1]:data["trackix"][last_ix], 1])
-        #f_pph_f = (np.abs(data["raw"][peri_ix_f + 2, 3] - data["raw"][peri_ix_f - 2, 3])/(data["time"][peri_ix_f + 2] - data["time"][peri_ix_f - 2]))/(2*np.pi)
-        #f_pph_f = np.abs(np.mean(data["raw"][peri_ix_f - 2: peri_ix_f + 2, 7]))/(2*np.pi)
-        f_pph_f = np.abs(((data["raw"][peri_ix_f+3, 3] - data["raw"][peri_ix_f-2, 3])/(data["time"][peri_ix_f+3] - data["time"][peri_ix_f-2]))/(2*np.pi))
-        print(f"fr span: init={fr:.5e}, final={fr_f:.5e}, diff={fr_f - fr:.5e}")
-        print(f"fth span: init={fth:.5e}, final={fth_f:.5e}, diff={fth_f - fth:.5e}")
-        print(f"fph span: init={fph:.5e}, final={fph_f:.5e}, diff={fph_f - fph:.5e}")
-        print(f"f_pph span: init={f_pph:.5e}, final={f_pph_f:.5e}, diff={f_pph_f - f_pph:.5e}")
+            if i == 0:
+                print("Experimental Polarization mode, unfinished.")
+            # Plot polarization information
+            I = np.abs(Hp)**2 + np.abs(Hc)**2
+            Q = np.abs(Hp)**2 - np.abs(Hc)**2
+            V = 2 * np.imag(Hp * np.conj(Hc))
+            threshold = 1e-8 * np.max(I)
+            valid = I > threshold
+            ax[i].plot(xf[valid], (V/I)[valid], label = "linear vs circular" if i==0 else None, alpha=0.8)
+            ax[i].plot(xf[valid], (Q/I)[valid], label = "relative strength" if i==0 else None, alpha=0.8)
+            ax[i].plot(xf[1:], 0.0*(Q/I)[1:], alpha=0.0) # Invisible plot so the bounds match non-polarization mode
 
-        f_nyq = 1/(2*T)
-        f_safe = 0.1*f_nyq
-        
-    
-        order = np.argsort(power)[::-1]
-        
-        cumulative = np.cumsum(power[order])
-        fraction = cumulative / np.sum(power)
-        print("bin size", xf[1] - xf[0])
-
-        l = np.searchsorted(fraction, 0.50) + 1
-        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 50% of the total power out of {len(xf)-1}")
-
-        l = np.searchsorted(fraction, 0.99) + 1
-        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 99% of the total power out of {len(xf)-1}")
-
-        l = np.searchsorted(fraction, 0.90) + 1
-        print(f"{l} bins ({100*l/(len(xf)-1)}% of total) contain 90% of the total power out of {len(xf)-1}")
-
-        print("HEYTEV", peak_freqs)
-        for j in range(len(peak_freqs)):
-            int_num = 0
-            flip_base = False
-            flip_pph = False
-            print(f"Frequency {j+1}: {peak_freqs[j]:.5e} (power = {peak_pows[j]:.5e} ; {100*peak_pows[j]/np.sum(power):.2f}% of total)")
-            hold_base = [100, 0.0, -1000, -1000, -1000]
-            hold_pph = [100, 0.0, -1000, -1000, -1000]
-            while (100*(1 - hold_base[0]) < 99.5 or 100*(1 - hold_pph[0]) < 99.5) and int_num < 30:
-                int_num += 1
-                vals = np.arange(-int_num, int_num + 1)
-                for m, k, n, m2 in product(vals[::-1], repeat=4):
-                    if np.max(np.abs([m, k, n, m2])) != int_num or m < 0:
-                        continue
-                    mode_freq_base = np.abs(m*fph + k*fth + n*fr)
-                    mode_freq_pph = np.abs(m2*f_pph + k*fth + n*fr)
-                    val_base = np.abs((peak_freqs[j] - mode_freq_base)/peak_freqs[j])
-                    val_pph = np.abs((peak_freqs[j] - mode_freq_pph)/peak_freqs[j])
-                    if m2 == 0:   # Doesn't include periapse freq
-                        if val_base < hold_base[0]:     # Is closer to the target frequency
-                            hold_base = [val_base, mode_freq_base, m, k, n]
-                            if 100*(1 - hold_base[0]) >= 99.5 and not flip_base:
-                                flip_base = True
-                                print(f"    First Base Mode: {hold_base[1]:.5e} - {100*(1 - hold_base[0]):.2f}% match to ({hold_base[2]}*fph + {hold_base[3]}*fth + {hold_base[4]}*fr)")
-                    else:
-                        if val_pph < hold_pph[0]:
-                            if m2 < 0:
-                                m2, k, n = -m2, -k, -n
-                            hold_pph = [val_pph, mode_freq_pph, m2, k, n]
-                            if 100*(1 - hold_pph[0]) >= 99.5 and not flip_pph:
-                                flip_pph = True
-                                print(f"    First pph Mode: {hold_pph[1]:.5e} - {100*(1 - hold_pph[0]):.2f}% match to ({hold_pph[2]}*f_pph + {hold_pph[3]}*fth + {hold_pph[4]}*fr)")
-            print(f"    Closest Base Mode: {hold_base[1]:.5e} - {100*(1 - hold_base[0]):.2f}% match to ({hold_base[2]}*fph + {hold_base[3]}*fth + {hold_base[4]}*fr)")
-            print(f"    Closest fpph Mode: {hold_pph[1]:.5e} - {100*(1 - hold_pph[0]):.2f}% match to ({hold_pph[2]}*f_pph + {hold_pph[3]}*fth + {hold_pph[4]}*fr)")
-        print("---")                                                   #'''
-        #ax[i].axvline(f_safe, c="red")
-        #ax[i].axvline(f_nyq, c="blue")'''
-
-        #ax[i].axvline(2*np.abs(fph), c="red", label=r"$2f_{\phi} = $" + f"{2*np.abs(fph):.3e}", linestyle="--")  
-        #[ax[i].axvline(burp * 6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black", linewidth=1) for burp in [1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1]]
-        #ax[i].axvline(6.67e-11 * 1.989e30 * 5e6 / (3e8)**3, c="black")  
-        ax[i].plot(xf[1:], h_plus_fft[1:], label = "h+" if i==0 else None, alpha=0.8)
-        ax[i].plot(xf[1:], h_cross_fft[1:], label = "hx" if i==0 else None, alpha=0.8)
-        #ax[i].scatter(peak_freqs, peak_amps, marker="x", color="red")
-        #plt.setp(ax3.get_yticklabels(), visible=False)
-        #plt.setp(ax4.get_yticklabels(), visible=False)
-        #ax.set_title('Waveform Frequency ' + freq_unit)
-        ax[i].set_yscale('log')
-        if xlog:
-            ax[i].set_xscale('log')
-        else:
-            #ax[i].set_xlim(-0.001, 0.15)
-            pass
-        if data["inputs"][-1] == "grav" and not m_bh:
-            freq_unit = r"$M^{-1}$"#'(G\u209C\u207B\u00B9)'
-        else:
-            freq_unit = '(Hz)'
         if i == 0:
             ax[i].set_title("Gravitational Waveform Fourier Transform")
         if i == num-1:
-            ax[i].set_xlabel("Frequency " + freq_unit)
-        #ax[i].set_ylabel("Strain Intensity")
+            ax[i].set_xlabel("Frequency " + r"$M^{-1}$")
+
         ax[i].grid()
-        ax[i].legend(title=data["name"])#, loc="upper right")
+        ax[i].legend(title=data["name"])
+
     fig.subplots_adjust(wspace=0, hspace=0)
-    if filename:
-        plt.savefig("%s.png"%(filename), bbox_inches="tight")
+
+    if analyze_peaks:
+        return fig, ax, final_report
     else:
-        plt.show()
+        return fig, ax, None
+
+def analyze_fourier_peaks(xf, Hp, num_peaks=5):
+    """Summarize the strongest peaks in a windowed h+ Fourier spectrum."""
+
+    # One-sided spectral power, excluding the DC component.
+    power = np.abs(Hp)**2
+    if len(power) > 2:
+        power[1:-1] *= 2
+    power[0] = 0
+
+    total_power = np.sum(power)
+    if total_power <= 0:
+        return [], {}
+
+    # Identify local peaks in the amplitude spectrum.
+    amplitude = np.abs(Hp)
+    peaks, _ = find_peaks(amplitude, prominence=0.01 * np.max(amplitude))
+
+    # Sort by peak power, strongest first.
+    peaks = peaks[np.argsort(power[peaks])[::-1]]
+    peaks = peaks[:num_peaks]
+
+    peak_results = [{"frequency": xf[i], "power_fraction": power[i] / total_power} for i in peaks]
+
+    # Number of bins containing specified fractions of total power.
+    cumulative = np.cumsum(np.sort(power[1:])[::-1])
+    cumulative /= total_power
+
+    summary = {"frequency_resolution": xf[1] - xf[0],
+               "bins_50": np.searchsorted(cumulative, 0.50) + 1,
+               "bins_90": np.searchsorted(cumulative, 0.90) + 1,
+               "bins_99": np.searchsorted(cumulative, 0.99) + 1,
+               "total_bins": len(power) - 1,
+               "peak_results": peak_results}
+    return summary
+
+def print_peak_summary(name, summary):
+    big_str = f"{name}\n"
+
+    total = summary["total_bins"]
+    big_str += f"Power Distribution among {total} bins\n"
+    for fraction in (50, 90, 99):
+        count = summary[f"bins_{fraction}"]
+        big_str += f"{fraction}% of spectral power:      {count} bins ({100 * count / total:.2f}%)\n"
+
+
+    big_str += f"Frequency resolution: {summary['frequency_resolution']:.5e} M^-1\n"
+    big_str += f"{'Peak':>5} | {'Frequency (M^-1)':>18} | {'Power (%)':>12}\n"
+    big_str += "-" * 43 + "\n"
+
+    for i, peak in enumerate(summary["peak_results"], start=1):
+        big_str += f"{i:>5} | {peak['frequency']:>18.6e} | {100 * peak['power_fraction']:>12.4f}\n"
+
+    return big_str
 
 def justfourier2(datalist, start=0, end=-1, filename=False, supress=True, m_bh=False, distance=False, width=False, height=False, n_hat=None, xlog=True, samp_freq=1):
     if type(datalist) != list:
@@ -2415,10 +2375,8 @@ def justfourier2(datalist, start=0, end=-1, filename=False, supress=True, m_bh=F
     fig.subplots_adjust(wspace=0, hspace=0)
     return fig, ax
 
-
-def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
-                     overlap=0.5, max_freq=None, log=True,
-                     interpolate=True, ax=None):
+def plot_spectrogram(data, distance=None, samp_freq=1.0, n_hat=None, start=None, end=None, 
+                     window_time=None, overlap=0.6, max_freq=None, polarization=False):
     """
     Plot a spectrogram of a time-domain signal.
 
@@ -2426,33 +2384,18 @@ def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
     ----------
     time : 1D numpy array
         Coordinate-time samples. Does not need to be uniformly spaced.
-
     signal : 1D numpy array
         Signal corresponding to `time`.
-
     window_time : float, optional
         Length of each FFT window in coordinate time. If None,
-        approximately 10% of the total duration is used.
-
-    samples_per_window : int, default=2048
-        Number of uniformly spaced samples used in each FFT window.
-
-    overlap : float, default=0.5
+        approximately 10% of the total duration is used. NUH UH
+    overlap : float, default=0.6
         Fractional overlap between adjacent windows. Must be between 0 and 1.
-
     max_freq : float, optional
         Maximum frequency to display. If None, displays the full
         positive-frequency range.
-
     log : bool, default=True
         If True, display the Fourier amplitude on a logarithmic scale.
-
-    interpolate : bool, default=True
-        If True, interpolate the input onto a uniformly sampled time grid.
-        This should generally be left True for your adaptive-step trajectories.
-
-    ax : matplotlib axis, optional
-        Existing axis to plot on.
 
     Returns
     -------
@@ -2467,58 +2410,28 @@ def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
         Shape is (len(freqs), len(times)).
     """
 
-    time = np.asarray(time)
-    signal = np.asarray(signal)
-
-    if time.ndim != 1 or signal.ndim != 1:
-        raise ValueError("time and signal must both be 1D arrays")
-
-    if len(time) != len(signal):
-        raise ValueError("time and signal must have the same length")
+    h_plus, h_cross, time = mm.full_transform2(data, distance=distance, samp_freq=samp_freq, n_hat=n_hat, start=start, end=end)
+    N = time.size
+    dt = time[1] - time[0]
 
     if not 0 <= overlap < 1:
         raise ValueError("overlap must satisfy 0 <= overlap < 1")
 
-    # Remove any non-finite values
-    good = np.isfinite(time) & np.isfinite(signal)
-    time = time[good]
-    signal = signal[good]
-
-    # Make sure time is increasing
-    order = np.argsort(time)
-    time = time[order]
-    signal = signal[order]
-
-    # Interpolate onto a uniform grid
-    if interpolate:
-        dt = np.median(np.diff(time))
-        uniform_time = np.arange(time[0], time[-1], dt)
-        uniform_signal = np.interp(uniform_time, time, signal)
-    else:
-        uniform_time = time
-        uniform_signal = signal
-        dt = np.mean(np.diff(time))
-
-    total_time = uniform_time[-1] - uniform_time[0]
-
     if window_time is None:
-        window_time = total_time / 10
+        window_time = data["tracktime"][2] - data["tracktime"][1]
+        window_time = min(200 * window_time * np.sqrt(1e-4 / data["inputs"][1]), window_time * 2000)
 
     # Number of samples in each FFT window
-    nperseg = min(
-        samples_per_window,
-        int(window_time / dt)
-    )
+    nperseg = int(window_time / dt)
 
     if nperseg < 16:
         raise ValueError(
             "FFT window contains too few samples. "
-            "Increase window_time or sampling density."
-        )
+            "Increase window_time or sampling density.")
 
     # Make sure we have enough samples for at least one window
-    if nperseg > len(uniform_signal):
-        nperseg = len(uniform_signal)
+    if nperseg > len(time):
+        nperseg = len(time)
 
     step = max(1, int(nperseg * (1 - overlap)))
 
@@ -2529,29 +2442,43 @@ def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
 
     spectra = []
     center_times = []
+    if polarization:
+        from matplotlib import colormaps
+        cmap = colormaps["bwr"]
 
-    for start in range(0, len(uniform_signal) - nperseg + 1, step):
+    for start in range(0, len(time) - nperseg + 1, step):
 
-        segment = uniform_signal[start:start + nperseg]
+        hp_segment = h_plus[start:start + nperseg]
+        hc_segment = h_cross[start:start + nperseg]
 
         # Remove the local mean
-        segment = segment - np.mean(segment)
+        hp_segment = hp_segment - np.mean(hp_segment)
+        hc_segment = hc_segment - np.mean(hc_segment)
 
         # Window before FFT
-        segment = segment * fft_window
+        hp_segment = hp_segment * fft_window
+        hc_segment = hc_segment * fft_window
 
-        fft = np.fft.rfft(segment)
+        hp_fft = np.abs(np.fft.rfft(hp_segment))
+        hc_fft = np.abs(np.fft.rfft(hc_segment))
 
-        # Amplitude normalization analogous to your existing FFT code
-        amplitude = 2.0 / np.sum(fft_window) * np.abs(fft)
+        if polarization:
+            I = hp_fft**2 + hc_fft**2
+            Q = hp_fft**2 - hc_fft**2
+            amplitude = cmap((Q/I + 1)/2)[:, :-1]
+            amplitude[:, 0] *= I/max(I)
+            amplitude[:, 1] *= I/max(I)
+            amplitude[:, 2] *= I/max(I)
+        else:
+            amplitude = 2.0 / np.sum(fft_window) * np.sqrt(hp_fft**2 + hc_fft**2)
 
         spectra.append(amplitude)
+        center_times.append(time[start + nperseg // 2])
 
-        center_times.append(
-            uniform_time[start + nperseg // 2]
-        )
-
-    spectrogram = np.asarray(spectra).T
+    if polarization:
+        spectrogram = np.transpose(spectra, (1, 0, 2))
+    else:
+        spectrogram = np.transpose(spectra)
     center_times = np.asarray(center_times)
 
     # Frequency cutoff
@@ -2560,38 +2487,21 @@ def plot_spectrogram(time, signal, window_time=None, samples_per_window=2048,
         freqs = freqs[keep]
         spectrogram = spectrogram[keep]
 
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    print(np.shape(center_times), np.shape(freqs), np.shape(spectrogram))
-    if log:
-        plot_data = np.maximum(spectrogram, np.max(spectrogram) * 1e-12)
-        plot_data = np.log10(plot_data)
 
-        mesh = ax.pcolormesh(
-            center_times,
-            freqs,
-            plot_data,
-            shading="auto"
-        )
+    mesh = ax.pcolormesh(center_times,
+                         freqs,
+                         spectrogram,
+                         shading="auto")
 
-        cbar = plt.colorbar(mesh, ax=ax)
-        cbar.set_label(r"$\log_{10}|h(f)|$")
-    else:
-        mesh = ax.pcolormesh(
-            center_times,
-            freqs,
-            spectrogram,
-            shading="auto"
-        )
-
-        cbar = plt.colorbar(mesh, ax=ax)
-        cbar.set_label(r"$|h(f)|$")
+    cbar = plt.colorbar(mesh, ax=ax)
+    cbar.set_label(r"$|h(f)|$")
 
     ax.set_xlabel("Coordinate time")
     ax.set_ylabel(r"Frequency ($1/M$)")
 
-    return center_times, freqs, spectrogram
+    return fig, ax, center_times, freqs, spectrogram
     
 def peters_compare(data, plot=True):
     timen = data["tracktime"]
