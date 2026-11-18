@@ -1796,7 +1796,7 @@ def peters_integrate(states, a, mu, ind1, ind2, state, constants, label, tol):
             sig = A + L0**2 + C0
             z2 = (sig - (sig**2 - 4*A*C0)**(1/2))/(2*A)
 
-        if "inc_0" in label:
+        if "inc0" in label:
             # Constant inclination prescription
             if L0 != 0.0:
                 dC = 2*dLz*C0/L0 
