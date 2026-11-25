@@ -621,6 +621,138 @@ def schmidtparam3(p, e, i, a):
         else:
             return False
 
+def schmidtparam4(p, e, i, a, tick=False):
+    '''
+    Returns characteristic constants of an orbit given observable parameters + spin
+    Cannot generate unbound orbits (e >= 1.0)
+
+    Parameters
+    ----------
+    p : int/float
+        semilatus rectum of the approximate Keplerian orbit
+    e : int/float
+        eccentricity of approximate Keplerian orbit, between 0 and 1
+    i : int/float
+        inclination of orbit w.r.t. angular momentum of black hole, where pi/2 is a prograde equatorial orbit, 0 is a polar orbit, and -pi/2 is a retrograde equatorial orbit
+        parameter space extends in both directions s.t. any i + 2*n*pi is equivalent for any integer n
+    a : int/float
+        dimensionlesss spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    cons : 3-element list/array of floats
+        energy, angular momentum, and carter constant per unit mass
+    '''
+    #Why was I using sympy again??
+    z = np.cos(i)
+    if e == 0.0:
+        D = p**2 - 2*p + a**2
+        f1 = p**4 + a*a*(p*(p + 2) + z*z*D)
+        g1 = 2*a*p
+        h1 = p*(p - 2) + z*z*D/(1 - z*z)
+        d1 = (p*p + a*a*z*z)*D
+        f2 = 4*p*p*p + 2*a*a*((1 + z*z)*p + (1 - z*z))
+        g2 = 2*a
+        h2 = 2*(p - 1)/(1 - z*z)
+        d2 = 2*(2*p - 3)*p*p + 2*a*a*((1 + z*z)*p - z*z)
+    else:
+        r_p, r_a = p/(1 + e), p/(1 - e)
+        D1 = r_p**2 - 2*r_p + a**2
+        f1 = r_p**4 + a*a*(r_p*(r_p + 2) + z*z*D1)
+        g1 = 2*a*r_p
+        h1 = r_p*(r_p - 2) + z*z*D1/(1 - z*z)
+        d1 = (r_p*r_p + a*a*z*z)*D1
+        D2 = r_a**2 - 2*r_a + a**2
+        f2 = r_a**4 + a*a*(r_a*(r_a + 2) + z*z*D2)
+        g2 = 2*a*r_a
+        h2 = r_a*(r_a - 2) + z*z*D2/(1 - z*z)
+        d2 = (r_a*r_a + a*a*z*z)*D2
+    rho = f1*h2 - h1*f2
+    eta = f1*g2 - g1*f2
+    sig = g1*h2 - h1*g2
+    kap = d1*h2 - h1*d2
+    eps = d1*g2 - g1*d2
+    if i >= 0:
+        # prograde, lower energy
+        E = np.sqrt((kap*rho + 2*eps*sig - 2*np.sqrt(sig*(sig*eps*eps + rho*eps*kap - eta*kap*kap)))/(rho*rho + 4*eta*sig))
+        L = (2*g1*E - np.sqrt(4*g1*g1*E*E + 4*h1*(f1*E*E - d1)))/(-2 * h1)
+        C = z*z*(a*a*(1 - E*E) + L*L/(1 - z*z))
+    else:
+        # retrograde, higher energy
+        E = np.sqrt((kap*rho + 2*eps*sig + 2*np.sqrt(sig*(sig*eps*eps + rho*eps*kap - eta*kap*kap)))/(rho*rho + 4*eta*sig))
+        L = (2*g1*E + np.sqrt(4*g1*g1*E*E + 4*h1*(f1*E*E - d1)))/(-2 * h1)
+        C = z*z*(a*a*(1 - E*E) + L*L/(1 - z*z))
+
+    if tick:
+        poly = [E**2 - 1, 2, (a*a)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)]
+        poly2 = np.polyder(poly)
+        big = np.max(np.roots(poly2))
+        h = np.polyval(poly, big)
+        while np.iscomplex(h) or h < 0.0:
+            E *= 1 + 1e-15
+            poly = [E**2 - 1, 2, (a*a)*(E**2 - 1) - L**2 - C, 2*((a*E - L)**2 + C), -C*(a**2)]
+            poly2 = np.polyder(poly)
+            big = np.max(np.roots(poly2))
+            h = np.polyval(poly, big)
+    return [E, L, C]
+
+def schmidtcircle(p, i, a, tick=False):
+    '''
+    Returns characteristic constants of an orbit given observable parameters + spin
+    Cannot generate unbound orbits (e >= 1.0)
+
+    Parameters
+    ----------
+    p : int/float
+        semilatus rectum of the approximate Keplerian orbit
+    e : int/float
+        eccentricity of approximate Keplerian orbit, between 0 and 1
+    i : int/float
+        inclination of orbit w.r.t. angular momentum of black hole, where pi/2 is a prograde equatorial orbit, 0 is a polar orbit, and -pi/2 is a retrograde equatorial orbit
+        parameter space extends in both directions s.t. any i + 2*n*pi is equivalent for any integer n
+    a : int/float
+        dimensionlesss spin constant of black hole, between 0 and 1 inclusive
+
+    Returns
+    -------
+    cons : 3-element list/array of floats
+        energy, angular momentum, and carter constant per unit mass
+    '''
+    #Why was I using sympy again??
+
+    z = np.cos(i)
+    D = p**2 - 2*p + a**2
+    f1 = p**4 + a*a*(p*(p + 2) + z*z*D)
+    g1 = 2*a*p
+    h1 = p*(p - 2) + z*z*D/(1 - z*z)
+    d1 = (p*p + a*a*z*z)*D
+    f2 = 4*p*p*p + 2*a*a*((1 + z*z)*p + (1 - z*z))
+    g2 = 2*a
+    h2 = 2*(p - 1)/(1 - z*z)
+    d2 = 2*(2*p - 3)*p*p + 2*a*a*((1 + z*z)*p - z*z)
+
+    rho = f1*h2 - h1*f2
+    eta = f1*g2 - g1*f2
+    sig = g1*h2 - h1*g2
+    kap = d1*h2 - h1*d2
+    eps = d1*g2 - g1*d2
+    E, L, C = np.zeros_like(rho), np.zeros_like(rho), np.zeros_like(rho)
+    E = np.where(i >= 0,
+                 np.sqrt((kap*rho + 2*eps*sig - 2*np.sqrt(sig*(sig*eps*eps + rho*eps*kap - eta*kap*kap)))/(rho*rho + 4*eta*sig)),
+                 np.sqrt((kap*rho + 2*eps*sig + 2*np.sqrt(sig*(sig*eps*eps + rho*eps*kap - eta*kap*kap)))/(rho*rho + 4*eta*sig)))
+    L = np.where(i >=0,
+                 (2*g1*E - np.sqrt(4*g1*g1*E*E + 4*h1*(f1*E*E - d1)))/(-2 * h1),
+                 (2*g1*E + np.sqrt(4*g1*g1*E*E + 4*h1*(f1*E*E - d1)))/(-2 * h1))
+    C = z*z*(a*a*(1 - E*E) + L*L/(1 - z*z))
+
+    h = (E**2 - 1)*(p**4) + 2*(p**3) + ((a*a)*(E**2 - 1) - L**2 - C)*p*p + 2*((a*E - L)**2 + C)*p -C*(a**2)
+    bad_mask = (np.iscomplex(h) + (h < 0.0))
+    while True in bad_mask:
+        E[bad_mask] *= 1 + 1e-15
+        h = (E**2 - 1)*(p**4) + 2*(p**3) + ((a*a)*(E**2 - 1) - L**2 - C)*p*p + 2*((a*E - L)**2 + C)*p -C*(a**2)
+        bad_mask = (np.iscomplex(h) + (h < 0.0))
+    return [E, L, C]
+
 @njit
 def getCons(state, a):
     metric, _ = kerr_2(state, a)  # assuming this returns (metric, chris), and we only need metric
@@ -1028,16 +1160,6 @@ def recalc_state3(constants, state, a, g=None, tol=1e-12):
 
     u *= np.sqrt(-1.0 / norm)
     new_state[4:] = u
-
-    # ===== Optional consistency check (VERY useful for debugging) =====
-    # Uncomment if needed
-    """
-    E_check = -np.dot(g[0], u)  # depends on your conventions
-    L_check = np.dot(g[3], u)
-    # Carter check depends on your implementation
-
-    print("ΔE:", E_check - energy, "ΔL:", L_check - lmom)
-    """
 
     return new_state
 
@@ -2013,36 +2135,27 @@ def sph2cart_vec(raw, a):
 
 def cart2sph(vec, a):
     t, x, y, z, tdot, vx, vy, vz = vec
-
-    # --- Position ---
-    R2 = x*x + y*y
-    term = R2 + z*z - a*a
-    r2 = 0.5 * (term + np.sqrt(term*term + 4*a*a*z*z))
-    r = np.sqrt(r2)
-
-    theta = np.arccos(z / r)
+    rho = np.sqrt(x*x + y*y)
+    theta = np.arctan2(rho, z)
     phi = np.arctan2(y, x)
+    r = np.sqrt(x*x + y*y + z*z - (a*np.sin(theta)**2))
+    r0_2 = x*x + y*y + z*z 
+    phi_dot = (-y*vx + x*vy)/(x*x + y*y)
+    theta_dot = (1/r0_2)*((x*vx + y*vy)*z/(rho) - vz*rho)
+    r_dot = (1/r) * ((x*vx + y*vy)*(1 + (a*a/r0_2)*((x*x + y*x)/r0_2 - 1)) + z*vz*(1 + a*a*(x*x + y*y)/(r0_2**2)))
+    return np.transpose([t, r, theta, phi, tdot, r_dot, theta_dot, phi_dot])
 
-    sinth = np.sin(theta)
-    costh = np.cos(theta)
-    rho = np.sqrt(r*r + a*a)
-
-    # --- Jacobian ---
-    J = np.array([
-        [r/rho * sinth * np.cos(phi), rho * costh * np.cos(phi), -rho * sinth * np.sin(phi)],
-        [r/rho * sinth * np.sin(phi), rho * costh * np.sin(phi),  rho * sinth * np.cos(phi)],
-        [                      costh,                -r * sinth,                        0.0]
-    ])
-
-    v_cart = np.array([vx, vy, vz])
-
-    # Solve for (rdot, thetadot, phidot)
-    rdot, thetadot, phidot = np.linalg.solve(J, v_cart)
-
-    return np.array([
-        t, r, theta, phi,
-        tdot, rdot, thetadot, phidot
-    ])
+def cart2sph_vec(carts, a):
+    t, x, y, z, tdot, vx, vy, vz = carts.T
+    rho = np.sqrt(x*x + y*y)
+    theta = np.arctan2(rho, z)
+    phi = np.arctan2(y, x)
+    r = np.sqrt(x*x + y*y + z*z - (a*np.sin(theta)**2))
+    r0_2 = x*x + y*y + z*z 
+    phi_dot = (-y*vx + x*vy)/(x*x + y*y)
+    theta_dot = (1/r0_2)*((x*vx + y*vy)*z/(rho) - vz*rho)
+    r_dot = (1/r) * ((x*vx + y*vy)*(1 + (a*a/r0_2)*((x*x + y*x)/r0_2 - 1)) + z*vz*(1 + a*a*(x*x + y*y)/(r0_2**2)))
+    return np.transpose([t, r, theta, phi, tdot, r_dot, theta_dot, phi_dot])
 
 def Jfunc(x, r0, e, i, a, E, L, C):
     '''
