@@ -567,7 +567,6 @@ def EMRIGenerator(a, mu,
             anomval = get_true_anom(new_step, r0, e) + orbCount*2*np.pi
             if anomval - true_anom[i-1] < -np.pi:
                 anomval += 2*np.pi
-                orbCount += 1
             true_anom[i] = anomval
             ctx.i = i
             ctx.all_states = all_states[:i+1]
